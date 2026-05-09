@@ -12,7 +12,7 @@ interface EditCollectionModalProps {
   onClose: () => void;
   /** When provided, editing an existing collection; otherwise creating new */
   collection?: Collection | null;
-  onSave: (name: string, coverImage?: string) => void;
+  onSave: (name: string, coverImage?: string, description?: string) => void;
 }
 
 const FIELD_STYLE = {
@@ -43,6 +43,7 @@ export default function EditCollectionModal({ open, onClose, collection, onSave 
   const [visible, setVisible] = useState(false);
   const [name, setName] = useState('');
   const [coverUrl, setCoverUrl] = useState('');
+  const [description, setDescription] = useState('');
   const [coverMode, setCoverMode] = useState<'url' | 'upload'>('url');
   const [uploadPreview, setUploadPreview] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
@@ -51,6 +52,7 @@ export default function EditCollectionModal({ open, onClose, collection, onSave 
   useEffect(() => {
     if (open) {
       setName(collection?.name ?? '');
+      setDescription(collection?.description ?? '');
       setCoverUrl(collection?.coverImage ?? '');
       setCoverMode('url');
       setUploadPreview(null);
@@ -98,7 +100,7 @@ export default function EditCollectionModal({ open, onClose, collection, onSave 
     e.preventDefault();
     if (!name.trim()) { toast.error('Collection name is required'); return; }
     const finalCover = coverMode === 'url' ? coverUrl.trim() || undefined : (uploadPreview ?? undefined);
-    onSave(name.trim(), finalCover);
+    onSave(name.trim(), finalCover, description.trim() || undefined);
     handleClose();
   };
 
@@ -160,6 +162,20 @@ export default function EditCollectionModal({ open, onClose, collection, onSave 
                 required
                 autoFocus
                 style={{ ...FIELD_STYLE }}
+                onFocus={(e) => (e.target.style.borderColor = 'oklch(0.769 0.188 70.08 / 0.5)')}
+                onBlur={(e) => (e.target.style.borderColor = 'oklch(1 0 0 / 0.1)')}
+              />
+            </div>
+
+            {/* Description */}
+            <div>
+              <label style={LABEL_STYLE}>Description <span style={{ opacity: 0.5, fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>(optional)</span></label>
+              <textarea
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="What is this collection about?"
+                rows={2}
+                style={{ ...FIELD_STYLE, resize: 'vertical' as const }}
                 onFocus={(e) => (e.target.style.borderColor = 'oklch(0.769 0.188 70.08 / 0.5)')}
                 onBlur={(e) => (e.target.style.borderColor = 'oklch(1 0 0 / 0.1)')}
               />

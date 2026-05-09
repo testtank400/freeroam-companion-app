@@ -8,6 +8,7 @@ import { useCallback, useEffect, useState } from 'react';
 export interface Collection {
   id: string;
   name: string;
+  description?: string;
   characterIds: string[];
   createdAt: number;
   coverImage?: string; // URL of the cover image
@@ -65,7 +66,7 @@ export function useCollections() {
   }, []);
 
   // Update collection metadata (name, coverImage)
-  const updateCollection = useCallback((id: string, updates: Partial<Pick<Collection, 'name' | 'coverImage'>>) => {
+  const updateCollection = useCallback((id: string, updates: Partial<Pick<Collection, 'name' | 'coverImage' | 'description'>>) => {
     setCollections(prev =>
       prev.map(c => c.id === id ? { ...c, ...updates } : c)
     );

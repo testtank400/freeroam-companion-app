@@ -257,6 +257,14 @@ export default function Home() {
                 >
                   {activeCollection.name}
                 </h1>
+                {activeCollection.description && (
+                  <p
+                    className="text-[10px] mt-0.5 truncate max-w-xs"
+                    style={{ fontFamily: 'JetBrains Mono, monospace', color: 'oklch(0.45 0.01 264)' }}
+                  >
+                    {activeCollection.description}
+                  </p>
+                )}
               </>
             ) : (
               <h1
@@ -472,7 +480,7 @@ export default function Home() {
                 No collections yet — click to create one
               </button>
             ) : (
-              <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10 gap-3">
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
                 {collections.map(col => (
                   <CollectionCard
                     key={col.id}
@@ -838,12 +846,12 @@ export default function Home() {
         open={showNewCollectionModal || !!editingCollection}
         onClose={() => { setShowNewCollectionModal(false); setEditingCollection(null); }}
         collection={editingCollection}
-        onSave={(name, coverImage) => {
+        onSave={(name, coverImage, description) => {
           if (editingCollection) {
-            updateCollection(editingCollection.id, { name, coverImage });
+            updateCollection(editingCollection.id, { name, coverImage, description });
           } else {
             const newCol = createCollection(name);
-            if (coverImage) updateCollection(newCol.id, { coverImage });
+            if (coverImage || description) updateCollection(newCol.id, { coverImage, description });
           }
         }}
       />
