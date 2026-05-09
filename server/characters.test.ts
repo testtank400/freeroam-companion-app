@@ -26,6 +26,91 @@ const makeCharacter = (id: string, name: string) => ({
   privacy_status: "private" as const,
 });
 
+describe("characters.get", () => {
+  beforeEach(() => {
+    vi.resetAllMocks();
+    process.env.cookie = "session=test-session-cookie";
+  });
+
+  it("returns full character data including appearance field", async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        external_id: "abc-123",
+        name: "Gareth",
+        backstory: "A hulking warrior with a gentle heart.",
+        description: null,
+        appearance: "Towering and broad-shouldered, clad in battle-scarred plate armor.",
+        headshot_url: "https://images.getfreeroam.com/test.webp",
+        display_headshot_url: null,
+        privacy_status: "private",
+        owner: { username: "Test Tank" },
+      }),
+    });
+
+    const caller = appRouter.createCaller(createCtx());
+    const result = await caller.characters.get({ characterId: "abc-123" });
+
+    expect(result.name).toBe("Gareth");
+    expect(result.appearance).toBe("Towering and broad-shouldered, clad in battle-scarred plate armor.");
+    expect(result.privacy_status).toBe("private");
+  });
+
+  it("calls the correct single-character API URL", async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        external_id: "xyz-999",
+        name: "Test",
+        backstory: null,
+        description: null,
+        appearance: null,
+        headshot_url: null,
+        display_headshot_url: null,
+        privacy_status: "public",
+        owner: { username: "Test Tank" },
+      }),
+    });
+
+    const caller = appRouter.createCaller(createCtx());
+    await caller.characters.get({ characterId: "xyz-999" });
+
+    const calledUrl = mockFetch.mock.calls[0][0] as string;
+    expect(calledUrl).toContain("getfreeroam.com/api/characters/xyz-999");
+  });
+
+  it("handles null appearance gracefully", async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        external_id: "no-appearance",
+        name: "Ghost",
+        backstory: "Unknown origin.",
+        description: null,
+        appearance: null,
+        headshot_url: null,
+        display_headshot_url: null,
+        privacy_status: "linked",
+        owner: { username: "Test Tank" },
+      }),
+    });
+
+    const caller = appRouter.createCaller(createCtx());
+    const result = await caller.characters.get({ characterId: "no-appearance" });
+
+    expect(result.appearance).toBeNull();
+  });
+
+  it("throws when API returns non-ok status", async () => {
+    mockFetch.mockResolvedValueOnce({ ok: false, status: 404 });
+
+    const caller = appRouter.createCaller(createCtx());
+    await expect(
+      caller.characters.get({ characterId: "missing-id" })
+    ).rejects.toThrow("API responded with status 404");
+  });
+});
+
 describe("characters.list", () => {
   beforeEach(() => {
     vi.resetAllMocks();

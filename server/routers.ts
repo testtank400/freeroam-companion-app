@@ -20,6 +20,22 @@ const CharacterSchema = z.object({
   privacy_status: z.enum(["private", "public", "linked"]),
 });
 
+// Single character response — includes the `appearance` field not in the list endpoint
+const SingleCharacterSchema = z.object({
+  external_id: z.string(),
+  name: z.string(),
+  backstory: z.string().nullable(),
+  description: z.string().nullable(),
+  appearance: z.string().nullable(),
+  headshot_url: z.string().nullable(),
+  display_headshot_url: z.string().nullable(),
+  privacy_status: z.enum(["private", "public", "linked"]),
+  owner: z.object({
+    username: z.string(),
+    display_name: z.string().optional(),
+  }),
+});
+
 const CharactersResponseSchema = z.object({
   characters: z.array(CharacterSchema),
   has_more: z.boolean(),
@@ -78,6 +94,36 @@ export const appRouter = router({
         const data = await response.json();
         const parsed = CharactersResponseSchema.parse(data);
         return parsed;
+      }),
+
+    get: publicProcedure
+      .input(z.object({ characterId: z.string() }))
+      .query(async ({ input }) => {
+        const cookie = process.env.cookie;
+        if (!cookie) {
+          throw new Error("Cookie not configured in environment");
+        }
+
+        const url = `https://getfreeroam.com/api/characters/${encodeURIComponent(input.characterId)}`;
+
+        const response = await fetch(url, {
+          headers: {
+            accept: "*/*",
+            "accept-language": "en-US,en;q=0.9",
+            cookie: cookie,
+            origin: "https://getfreeroam.com",
+            referer: "https://getfreeroam.com",
+            "user-agent":
+              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36",
+          },
+        });
+
+        if (!response.ok) {
+          throw new Error(`API responded with status ${response.status}`);
+        }
+
+        const data = await response.json();
+        return SingleCharacterSchema.parse(data);
       }),
   }),
 });
