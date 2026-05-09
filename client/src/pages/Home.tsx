@@ -56,6 +56,8 @@ export default function Home() {
   const [privacyFilter, setPrivacyFilter] = useState<PrivacyStatus | null>(null);
   // null = show all; true = personas only; false = characters only
   const [personaFilter, setPersonaFilter] = useState<boolean | null>(null);
+  // true = show only saved/favorited characters
+  const [favoritesOnly, setFavoritesOnly] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const sortDropdownRef = useRef<HTMLDivElement>(null);
   const utils = trpc.useUtils();
@@ -396,6 +398,38 @@ export default function Home() {
               </button>
             ))}
 
+            {/* Favorites chip */}
+            {(() => {
+              const favCount = allCharacters.filter(c => isSaved(c.external_id)).length;
+              const isActive = favoritesOnly;
+              return (
+                <button
+                  onClick={() => setFavoritesOnly(v => !v)}
+                  className="flex items-center gap-1.5 px-3 py-1 rounded-sm text-[11px] font-semibold tracking-wider uppercase transition-all"
+                  style={{
+                    fontFamily: 'Rajdhani, sans-serif',
+                    background: isActive ? 'oklch(0.65 0.22 25 / 0.2)' : 'oklch(0.15 0.01 264)',
+                    border: isActive ? '1px solid oklch(0.65 0.22 25 / 0.5)' : '1px solid oklch(1 0 0 / 0.08)',
+                    color: isActive ? 'oklch(0.75 0.18 25)' : 'oklch(0.45 0.01 264)',
+                  }}
+                >
+                  ❤️ Favorites
+                  {!isLoading && (
+                    <span
+                      className="inline-flex items-center justify-center rounded-sm px-1 min-w-[18px] h-[16px] text-[9px] font-bold"
+                      style={{
+                        fontFamily: 'JetBrains Mono, monospace',
+                        background: 'oklch(1 0 0 / 0.12)',
+                        color: 'inherit',
+                      }}
+                    >
+                      {favCount}
+                    </span>
+                  )}
+                </button>
+              );
+            })()}
+
             {/* Persona chip — only shown when at least one persona exists in the roster */}
             {!isLoading && allCharacters.some(c => c.is_persona) && (() => {
               const personaCount = allCharacters.filter(c => c.is_persona).length;
@@ -487,14 +521,15 @@ export default function Home() {
           </div>
         )}
 
-        {/* Derive filtered list — applies search, privacy, and persona filters */}
+        {/* Derive filtered list — applies search, privacy, persona, and favorites filters */}
         {(() => {
           const q = searchQuery.trim().toLowerCase();
           const visibleCharacters = allCharacters.filter(c => {
             const matchesPrivacy = !privacyFilter || c.privacy_status === privacyFilter;
             const matchesSearch = !q || c.name.toLowerCase().includes(q);
             const matchesPersona = personaFilter === null || c.is_persona === personaFilter;
-            return matchesPrivacy && matchesSearch && matchesPersona;
+            const matchesFavorites = !favoritesOnly || isSaved(c.external_id);
+            return matchesPrivacy && matchesSearch && matchesPersona && matchesFavorites;
           });
 
           const filteredEmpty = !isLoading && !isError && allCharacters.length > 0 && visibleCharacters.length === 0;
@@ -509,14 +544,16 @@ export default function Home() {
                   </p>
                   <p style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '12px', color: 'oklch(0.35 0.01 264)' }}>
                     {searchQuery
-                      ? `No characters match "${searchQuery}"${privacyFilter ? ` with ${privacyFilter} visibility` : ''}${personaFilter ? ' (personas only)' : ''}.`
-                      : personaFilter
-                        ? 'No personas found in your roster.'
-                        : `None of your characters have ${privacyFilter} visibility.`}
+                      ? `No characters match "${searchQuery}"${privacyFilter ? ` with ${privacyFilter} visibility` : ''}${personaFilter ? ' (personas only)' : ''}${favoritesOnly ? ' in favorites' : ''}.`
+                      : favoritesOnly
+                        ? "You haven't saved any characters yet."
+                        : personaFilter
+                          ? 'No personas found in your roster.'
+                          : `None of your characters have ${privacyFilter} visibility.`}
 
                   </p>
                   <button
-                    onClick={() => { setPrivacyFilter(null); setPersonaFilter(null); setSearchQuery(''); }}
+                    onClick={() => { setPrivacyFilter(null); setPersonaFilter(null); setFavoritesOnly(false); setSearchQuery(''); }}
                     className="mt-1 px-3 py-1.5 rounded-sm text-[11px] font-semibold tracking-wider uppercase transition-all"
                     style={{
                       fontFamily: 'Rajdhani, sans-serif',
@@ -541,7 +578,8 @@ export default function Home() {
               const matchesPrivacy = !privacyFilter || c.privacy_status === privacyFilter;
               const matchesSearch = !q || c.name.toLowerCase().includes(q);
               const matchesPersona = personaFilter === null || c.is_persona === personaFilter;
-              return matchesPrivacy && matchesSearch && matchesPersona;
+              const matchesFavorites = !favoritesOnly || isSaved(c.external_id);
+              return matchesPrivacy && matchesSearch && matchesPersona && matchesFavorites;
             }).map((character) => (
               <CharacterCard
                 key={character.external_id}
