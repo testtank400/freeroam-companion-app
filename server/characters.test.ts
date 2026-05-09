@@ -111,6 +111,45 @@ describe("characters.get", () => {
   });
 });
 
+describe("characters.delete", () => {
+  beforeEach(() => {
+    vi.resetAllMocks();
+    process.env.cookie = "session=test-session-cookie";
+  });
+
+  it("sends DELETE to the correct endpoint and returns success", async () => {
+    mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({}) });
+
+    const caller = appRouter.createCaller(createCtx());
+    const result = await caller.characters.delete({ characterId: "abc-123" });
+
+    const [calledUrl, calledOptions] = mockFetch.mock.calls[0] as [string, RequestInit];
+    expect(calledUrl).toContain("getfreeroam.com/api/characters/abc-123");
+    expect(calledOptions.method).toBe("DELETE");
+    expect(result.success).toBe(true);
+    expect(result.characterId).toBe("abc-123");
+  });
+
+  it("URL-encodes the character ID", async () => {
+    mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({}) });
+
+    const caller = appRouter.createCaller(createCtx());
+    await caller.characters.delete({ characterId: "id with spaces" });
+
+    const calledUrl = mockFetch.mock.calls[0][0] as string;
+    expect(calledUrl).toContain("id%20with%20spaces");
+  });
+
+  it("throws when API returns an error status", async () => {
+    mockFetch.mockResolvedValueOnce({ ok: false, status: 404, text: async () => "Not found" });
+
+    const caller = appRouter.createCaller(createCtx());
+    await expect(
+      caller.characters.delete({ characterId: "missing-id" })
+    ).rejects.toThrow("Delete failed (404)");
+  });
+});
+
 describe("characters.update", () => {
   beforeEach(() => {
     vi.resetAllMocks();

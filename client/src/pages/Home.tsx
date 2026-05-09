@@ -6,6 +6,7 @@
 import CharacterCard from '@/components/CharacterCard';
 import CharacterProfile from '@/components/CharacterProfile';
 import CreateCharacterModal from '@/components/CreateCharacterModal';
+import DeleteConfirmDialog from '@/components/DeleteConfirmDialog';
 import { trpc } from '@/lib/trpc';
 import { Plus, RefreshCw } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -32,6 +33,8 @@ export default function Home() {
   const [selectedCharacter, setSelectedCharacter] = useState<ApiCharacter | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editCharacter, setEditCharacter] = useState<ApiCharacter | null>(null);
+  const [deleteCharacter, setDeleteCharacter] = useState<ApiCharacter | null>(null);
+  const deleteMutation = trpc.characters.delete.useMutation();
   const [allCharacters, setAllCharacters] = useState<ApiCharacter[]>([]);
   const [cursor, setCursor] = useState<string | undefined>(undefined);
   const [hasMore, setHasMore] = useState(true);
@@ -102,6 +105,19 @@ export default function Home() {
   };
 
   const handleAddCharacter = () => setShowCreateModal(true);
+
+  const handleConfirmDelete = async (character: ApiCharacter) => {
+    try {
+      await deleteMutation.mutateAsync({ characterId: character.external_id });
+      // Remove from local list immediately (optimistic)
+      setAllCharacters(prev => prev.filter(c => c.external_id !== character.external_id));
+      toast.success(`${character.name} deleted`);
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Failed to delete character');
+    } finally {
+      setDeleteCharacter(null);
+    }
+  };
 
   const handleCharacterCreated = () => {
     // Reset and re-fetch from the top
@@ -270,6 +286,7 @@ export default function Home() {
                 character={character}
                 onClick={setSelectedCharacter}
                 onEdit={setEditCharacter}
+                onDelete={setDeleteCharacter}
               />
             ))}
 
@@ -317,6 +334,14 @@ export default function Home() {
           onClose={() => setSelectedCharacter(null)}
         />
       )}
+
+      {/* Delete confirmation dialog */}
+      <DeleteConfirmDialog
+        character={deleteCharacter}
+        onConfirm={handleConfirmDelete}
+        onCancel={() => setDeleteCharacter(null)}
+        isDeleting={deleteMutation.isPending}
+      />
 
       {/* Create character modal */}
       <CreateCharacterModal
