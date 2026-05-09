@@ -42,15 +42,12 @@ export default function Home() {
   const [deleteCharacter, setDeleteCharacter] = useState<ApiCharacter | null>(null);
   const deleteMutation = trpc.characters.delete.useMutation();
   const [allCharacters, setAllCharacters] = useState<ApiCharacter[]>([]);
-  const [cursor, setCursor] = useState<string | undefined>(undefined);
-  const [hasMore, setHasMore] = useState(true);
-  const [isFetchingMore, setIsFetchingMore] = useState(false);
+  const [isLoadingAll, setIsLoadingAll] = useState(false);
   const [sort, setSort] = useState<string>('recent');
   const [sortDropdownOpen, setSortDropdownOpen] = useState(false);
   // null = show all; otherwise only show matching privacy status
   const [privacyFilter, setPrivacyFilter] = useState<PrivacyStatus | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
-  const sentinelRef = useRef<HTMLDivElement>(null);
   const sortDropdownRef = useRef<HTMLDivElement>(null);
   const utils = trpc.useUtils();
 
@@ -65,77 +62,50 @@ export default function Home() {
     return () => document.removeEventListener('mousedown', handler);
   }, []);
 
-  // Initial load
-  const { data, isLoading, isError, refetch, isFetching } = trpc.characters.list.useQuery(
-    { username: USERNAME, limit: LIMIT, sort, cursor: undefined },
-    { staleTime: 60_000 }
-  );
-
-  // When initial data arrives, seed the list
-  useEffect(() => {
-    if (data) {
-      setAllCharacters(data.characters as ApiCharacter[]);
-      setHasMore(data.has_more);
-      setCursor(data.next_cursor ?? undefined);
-    }
-  }, [data]);
-
-  // Fetch the next page
-  const loadMore = useCallback(async () => {
-    if (isFetchingMore || !hasMore || !cursor) return;
-    setIsFetchingMore(true);
-    try {
-      const result = await utils.characters.list.fetch({
-        username: USERNAME,
-        limit: LIMIT,
-        sort,
-        cursor,
-      });
-      setAllCharacters(prev => [...prev, ...(result.characters as ApiCharacter[])]);
-      setHasMore(result.has_more);
-      setCursor(result.next_cursor ?? undefined);
-    } catch (err) {
-      toast.error('Failed to load more characters');
-    } finally {
-      setIsFetchingMore(false);
-    }
-  }, [isFetchingMore, hasMore, cursor, utils]);
-
-  // IntersectionObserver watching the sentinel div
-  useEffect(() => {
-    const sentinel = sentinelRef.current;
-    if (!sentinel) return;
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0].isIntersecting) {
-          loadMore();
-        }
-      },
-      { rootMargin: '200px' } // trigger 200px before hitting the very bottom
-    );
-
-    observer.observe(sentinel);
-    return () => observer.disconnect();
-  }, [loadMore]);
-
-  // Full refresh — reset everything and re-fetch from the top
-  const handleRefresh = () => {
+  // Fetch ALL pages upfront by walking the cursor chain
+  const fetchAll = useCallback(async (sortValue: string) => {
+    setIsLoadingAll(true);
     setAllCharacters([]);
-    setCursor(undefined);
-    setHasMore(true);
-    refetch();
-  };
+    const collected: ApiCharacter[] = [];
+    let cursor: string | undefined = undefined;
+    try {
+      while (true) {
+        const result = await utils.characters.list.fetch({
+          username: USERNAME,
+          limit: LIMIT,
+          sort: sortValue,
+          cursor,
+        });
+        collected.push(...(result.characters as ApiCharacter[]));
+        if (!result.has_more || !result.next_cursor) break;
+        cursor = result.next_cursor;
+      }
+      setAllCharacters(collected);
+    } catch (err) {
+      toast.error('Failed to load characters');
+    } finally {
+      setIsLoadingAll(false);
+    }
+  }, [utils]);
 
-  // Change sort — reset list and reload
+  // Load all on mount and when sort changes
+  useEffect(() => {
+    fetchAll(sort);
+  }, [sort]);
+
+  const isLoading = isLoadingAll;
+  const isError = false; // errors are surfaced via toast
+  const isFetching = isLoadingAll;
+
+  // Full refresh
+  const handleRefresh = () => fetchAll(sort);
+
+  // Change sort
   const handleSortChange = (newSort: string) => {
     if (newSort === sort) { setSortDropdownOpen(false); return; }
     setSort(newSort);
-    setAllCharacters([]);
-    setCursor(undefined);
-    setHasMore(true);
     setSortDropdownOpen(false);
-    // The query will auto-refetch because `sort` changed
+    // useEffect above will trigger fetchAll(newSort)
   };
 
   const handleAddCharacter = () => setShowCreateModal(true);
@@ -214,11 +184,10 @@ export default function Home() {
                       return matchesPrivacy && matchesSearch;
                     }).length;
                     const total = allCharacters.length;
-                    const suffix = hasMore ? '+' : '';
                     const isFiltered = privacyFilter || q;
                     return isFiltered
-                      ? `${visible} of ${total}${suffix} unit${total !== 1 ? 's' : ''}`
-                      : `${total}${suffix} unit${total !== 1 ? 's' : ''} on record`;
+                      ? `${visible} of ${total} unit${total !== 1 ? 's' : ''}`
+                      : `${total} unit${total !== 1 ? 's' : ''} on record`;
                   })()}
             </p>
           </div>
@@ -553,30 +522,12 @@ export default function Home() {
               />
             ))}
 
-            {/* Skeleton cards appended while loading more */}
-            {isFetchingMore && Array.from({ length: 5 }).map((_, i) => (
-              <div
-                key={`skeleton-more-${i}`}
-                className="rounded-sm overflow-hidden animate-pulse"
-                style={{ background: 'oklch(0.13 0.01 264)', border: '1px solid oklch(1 0 0 / 0.07)' }}
-              >
-                <div style={{ paddingBottom: '115%', background: 'oklch(0.16 0.01 264)' }} />
-                <div className="p-3 space-y-2">
-                  <div className="h-4 rounded" style={{ background: 'oklch(0.18 0.01 264)', width: '70%' }} />
-                  <div className="h-3 rounded" style={{ background: 'oklch(0.16 0.01 264)', width: '45%' }} />
-                  <div className="h-2 rounded mt-2" style={{ background: 'oklch(0.15 0.01 264)' }} />
-                  <div className="h-2 rounded" style={{ background: 'oklch(0.15 0.01 264)', width: '80%' }} />
-                </div>
-              </div>
-            ))}
+
           </div>
         )}
 
-        {/* Sentinel div — IntersectionObserver watches this to trigger loadMore */}
-        <div ref={sentinelRef} className="h-4 mt-4" />
-
         {/* End of list indicator */}
-        {!isLoading && !hasMore && allCharacters.length > 0 && (
+        {!isLoading && allCharacters.length > 0 && (
           <div className="flex items-center gap-3 mt-6">
             <div className="h-px flex-1" style={{ background: 'oklch(1 0 0 / 0.05)' }} />
             <span
