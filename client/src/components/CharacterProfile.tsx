@@ -337,18 +337,19 @@ export default function CharacterProfile({ character, onClose, onUpdated }: Char
                       Tags
                     </span>
                     <div className="flex flex-wrap gap-1.5">
-                      {displayCharacter.tags.map(tag => (
+                      {displayCharacter.tags.map((tag, i) => (
                         <span
-                          key={tag}
-                          className="inline-flex items-center px-2 py-0.5 rounded-sm text-[10px] font-medium tracking-wide"
+                          key={`${tag.name}-${i}`}
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-sm text-[10px] font-medium tracking-wide"
                           style={{
                             fontFamily: 'JetBrains Mono, monospace',
-                            background: 'oklch(0.769 0.188 70.08 / 0.1)',
-                            border: '1px solid oklch(0.769 0.188 70.08 / 0.25)',
-                            color: 'oklch(0.769 0.188 70.08 / 0.85)',
+                            background: tag.is_fandom ? 'oklch(0.25 0.08 220 / 0.3)' : 'oklch(0.769 0.188 70.08 / 0.1)',
+                            border: tag.is_fandom ? '1px solid oklch(0.55 0.15 220 / 0.4)' : '1px solid oklch(0.769 0.188 70.08 / 0.25)',
+                            color: tag.is_fandom ? 'oklch(0.75 0.15 220)' : 'oklch(0.769 0.188 70.08 / 0.85)',
                           }}
                         >
-                          {tag}
+                          <span>{tag.emoji}</span>
+                          {tag.name}
                         </span>
                       ))}
                     </div>

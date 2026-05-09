@@ -27,7 +27,7 @@ export interface ApiCharacter {
   privacy_status: PrivacyStatus;
   // Library endpoint extras
   is_saved?: boolean;
-  tags?: string[];
+  tags?: Array<{ name: string; is_fandom: boolean; emoji: string }>;
   creator_username?: string;
   created_at?: string;
   is_yours?: boolean;

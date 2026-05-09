@@ -145,7 +145,7 @@ export const appRouter = router({
             creator_username: string;
             is_yours: boolean;
             is_saved: boolean;
-            tags: string[];
+            tags: Array<{ name: string; is_fandom: boolean; emoji: string }>;
           }>;
           your_characters: unknown;
           pagination: unknown;
