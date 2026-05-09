@@ -1,14 +1,17 @@
 // CharacterCard.tsx
 // Design: Tactical Dark Ops — tall portrait card, gradient image overlay,
 // amber glow on hover, privacy badge top-left, action buttons top-right
+// Uses ApiCharacter shape from getfreeroam API
 
-import { Character, PrivacyStatus } from '@/lib/characters';
+import { ApiCharacter } from '@/pages/Home';
 import { Globe, Link, Lock, Pencil, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 
+type PrivacyStatus = 'private' | 'public' | 'linked';
+
 interface CharacterCardProps {
-  character: Character;
-  onClick: (character: Character) => void;
+  character: ApiCharacter;
+  onClick: (character: ApiCharacter) => void;
 }
 
 function PrivacyBadge({ status }: { status: PrivacyStatus }) {
@@ -43,6 +46,9 @@ function PrivacyBadge({ status }: { status: PrivacyStatus }) {
   );
 }
 
+// Fallback placeholder image for characters without a headshot
+const FALLBACK_IMAGE = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjUwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iNDAwIiBoZWlnaHQ9IjUwMCIgZmlsbD0iIzFhMWEyNCIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBmb250LWZhbWlseT0ibW9ub3NwYWNlIiBmb250LXNpemU9IjE0IiBmaWxsPSIjMzMzMzQ0IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkeT0iLjNlbSI+Tk8gSU1BR0U8L3RleHQ+PC9zdmc+';
+
 export default function CharacterCard({ character, onClick }: CharacterCardProps) {
   const handleEdit = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -54,6 +60,8 @@ export default function CharacterCard({ character, onClick }: CharacterCardProps
     toast.info('Delete feature coming soon');
   };
 
+  const imageUrl = character.display_headshot_url || character.headshot_url || FALLBACK_IMAGE;
+
   return (
     <div
       className="char-card relative flex flex-col rounded-sm overflow-hidden cursor-pointer"
@@ -63,15 +71,18 @@ export default function CharacterCard({ character, onClick }: CharacterCardProps
       }}
       onClick={() => onClick(character)}
     >
-      {/* Image area — takes ~58% of card height */}
+      {/* Image area */}
       <div className="relative w-full" style={{ paddingBottom: '115%' }}>
         <img
-          src={character.image}
+          src={imageUrl}
           alt={character.name}
           className="absolute inset-0 w-full h-full object-cover object-top"
           loading="lazy"
+          onError={(e) => {
+            (e.target as HTMLImageElement).src = FALLBACK_IMAGE;
+          }}
         />
-        {/* Gradient overlay — transparent top to dark bottom */}
+        {/* Gradient overlay */}
         <div
           className="absolute inset-0"
           style={{
@@ -81,14 +92,14 @@ export default function CharacterCard({ character, onClick }: CharacterCardProps
 
         {/* Top-left: Privacy badge */}
         <div className="absolute top-3 left-3 z-10">
-          <PrivacyBadge status={character.privacy} />
+          <PrivacyBadge status={character.privacy_status} />
         </div>
 
         {/* Top-right: Action buttons */}
         <div className="absolute top-2.5 right-2.5 z-10 flex gap-1.5">
           <button
             onClick={handleEdit}
-            className="w-7 h-7 flex items-center justify-center rounded-sm transition-colors"
+            className="w-7 h-7 flex items-center justify-center rounded-sm transition-colors hover:text-amber-400"
             style={{
               background: 'oklch(0.18 0.01 264 / 0.85)',
               border: '1px solid oklch(1 0 0 / 0.12)',
@@ -133,7 +144,7 @@ export default function CharacterCard({ character, onClick }: CharacterCardProps
               color: 'oklch(0.55 0.01 264)',
             }}
           >
-            by {character.creator}
+            by {character.owner.display_name}
           </p>
         </div>
       </div>
@@ -144,14 +155,15 @@ export default function CharacterCard({ character, onClick }: CharacterCardProps
         style={{ borderTop: '1px solid oklch(1 0 0 / 0.06)' }}
       >
         <p
-          className="text-xs leading-relaxed line-clamp-4"
+          className="line-clamp-4"
           style={{
             fontFamily: 'JetBrains Mono, monospace',
             color: 'oklch(0.55 0.01 264)',
             fontSize: '11px',
+            lineHeight: '1.6',
           }}
         >
-          {character.backstory}
+          {character.backstory || 'No backstory provided.'}
         </p>
       </div>
     </div>

@@ -1,18 +1,19 @@
 // CharacterProfile.tsx
 // Design: Tactical Dark Ops — full-screen modal overlay
-// Two tabs: About and Appearance
-// Slide-up animation, backdrop blur, amber accent tabs
+// Shows backstory and description from the live API
+// Two tabs: About and Appearance (description)
 
-import { Character, PrivacyStatus } from '@/lib/characters';
+import { ApiCharacter } from '@/pages/Home';
 import { Globe, Link, Lock, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
 interface CharacterProfileProps {
-  character: Character | null;
+  character: ApiCharacter | null;
   onClose: () => void;
 }
 
 type Tab = 'about' | 'appearance';
+type PrivacyStatus = 'private' | 'public' | 'linked';
 
 function PrivacyBadgeLarge({ status }: { status: PrivacyStatus }) {
   const config = {
@@ -44,6 +45,17 @@ function PrivacyBadgeLarge({ status }: { status: PrivacyStatus }) {
   );
 }
 
+function SectionLabel({ label }: { label: string }) {
+  return (
+    <span
+      className="text-[10px] uppercase tracking-widest block mb-2"
+      style={{ fontFamily: 'Rajdhani, sans-serif', color: 'oklch(0.769 0.188 70.08)', fontWeight: 600 }}
+    >
+      {label}
+    </span>
+  );
+}
+
 function InfoRow({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex flex-col gap-0.5 py-3" style={{ borderBottom: '1px solid oklch(1 0 0 / 0.07)' }}>
@@ -55,13 +67,15 @@ function InfoRow({ label, value }: { label: string; value: string }) {
       </span>
       <span
         className="text-sm leading-relaxed"
-        style={{ fontFamily: 'JetBrains Mono, monospace', color: 'oklch(0.82 0.005 65)' }}
+        style={{ fontFamily: 'JetBrains Mono, monospace', color: 'oklch(0.82 0.005 65)', fontSize: '12px' }}
       >
         {value}
       </span>
     </div>
   );
 }
+
+const FALLBACK_IMAGE = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjUwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iNDAwIiBoZWlnaHQ9IjUwMCIgZmlsbD0iIzFhMWEyNCIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBmb250LWZhbWlseT0ibW9ub3NwYWNlIiBmb250LXNpemU9IjE0IiBmaWxsPSIjMzMzMzQ0IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkeT0iLjNlbSI+Tk8gSU1BR0U8L3RleHQ+PC9zdmc+';
 
 export default function CharacterProfile({ character, onClose }: CharacterProfileProps) {
   const [activeTab, setActiveTab] = useState<Tab>('about');
@@ -70,7 +84,6 @@ export default function CharacterProfile({ character, onClose }: CharacterProfil
   useEffect(() => {
     if (character) {
       setActiveTab('about');
-      // Trigger animation after mount
       requestAnimationFrame(() => setVisible(true));
     } else {
       setVisible(false);
@@ -82,12 +95,10 @@ export default function CharacterProfile({ character, onClose }: CharacterProfil
     setTimeout(onClose, 250);
   };
 
-  // Close on backdrop click
   const handleBackdropClick = (e: React.MouseEvent<HTMLDivElement>) => {
     if (e.target === e.currentTarget) handleClose();
   };
 
-  // Close on Escape key
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.key === 'Escape') handleClose();
@@ -97,6 +108,9 @@ export default function CharacterProfile({ character, onClose }: CharacterProfil
   }, []);
 
   if (!character) return null;
+
+  const imageUrl = character.display_headshot_url || character.headshot_url || FALLBACK_IMAGE;
+  const hasDescription = character.description && character.description.trim().length > 0;
 
   return (
     <div
@@ -120,14 +134,14 @@ export default function CharacterProfile({ character, onClose }: CharacterProfil
           boxShadow: '0 0 0 1px oklch(0.769 0.188 70.08 / 0.15), 0 24px 64px rgba(0,0,0,0.6)',
         }}
       >
-        {/* Header: image + name + close */}
+        {/* Header image strip */}
         <div className="relative flex-shrink-0">
-          {/* Background image strip */}
           <div className="relative h-48 sm:h-64 overflow-hidden">
             <img
-              src={character.image}
+              src={imageUrl}
               alt={character.name}
               className="w-full h-full object-cover object-top"
+              onError={(e) => { (e.target as HTMLImageElement).src = FALLBACK_IMAGE; }}
             />
             <div
               className="absolute inset-0"
@@ -152,7 +166,7 @@ export default function CharacterProfile({ character, onClose }: CharacterProfil
             <X size={16} strokeWidth={2} />
           </button>
 
-          {/* Name + creator + badge — overlaid on image bottom */}
+          {/* Name + creator + badge */}
           <div className="absolute bottom-0 left-0 right-0 px-6 pb-4">
             <div className="flex items-end justify-between gap-4">
               <div>
@@ -166,11 +180,11 @@ export default function CharacterProfile({ character, onClose }: CharacterProfil
                   className="text-xs mt-1"
                   style={{ fontFamily: 'JetBrains Mono, monospace', color: 'oklch(0.5 0.01 264)' }}
                 >
-                  by {character.creator}
+                  by {character.owner.display_name}
                 </p>
               </div>
               <div className="flex-shrink-0 mb-1">
-                <PrivacyBadgeLarge status={character.privacy} />
+                <PrivacyBadgeLarge status={character.privacy_status} />
               </div>
             </div>
           </div>
@@ -202,59 +216,49 @@ export default function CharacterProfile({ character, onClose }: CharacterProfil
         {/* Tab content — scrollable */}
         <div className="flex-1 overflow-y-auto">
           {activeTab === 'about' && (
-            <div className="p-6 grid sm:grid-cols-2 gap-x-10 gap-y-0">
-              <div>
-                <InfoRow label="Full Name" value={character.about.fullName} />
-                <InfoRow label="Designation" value={character.about.designation} />
-                <InfoRow label="Affiliation" value={character.about.affiliation} />
-                <InfoRow label="Rank" value={character.about.rank} />
-                <InfoRow label="Origin" value={character.about.origin} />
-              </div>
-              <div>
-                <div className="py-3">
-                  <span
-                    className="text-[10px] uppercase tracking-widest block mb-2"
-                    style={{ fontFamily: 'Rajdhani, sans-serif', color: 'oklch(0.769 0.188 70.08)', fontWeight: 600 }}
-                  >
-                    Biography
-                  </span>
-                  <p
-                    className="text-sm leading-loose"
-                    style={{ fontFamily: 'JetBrains Mono, monospace', color: 'oklch(0.72 0.008 264)', fontSize: '12px' }}
-                  >
-                    {character.about.bio}
-                  </p>
-                </div>
+            <div className="p-6">
+              <InfoRow label="Name" value={character.name} />
+              <InfoRow label="Owner" value={character.owner.display_name} />
+              <InfoRow label="Visibility" value={character.privacy_status.charAt(0).toUpperCase() + character.privacy_status.slice(1)} />
+              <InfoRow label="Type" value={character.is_persona ? 'Persona' : 'Character'} />
+              <div className="py-4">
+                <SectionLabel label="Backstory" />
+                <p
+                  className="leading-loose whitespace-pre-wrap"
+                  style={{ fontFamily: 'JetBrains Mono, monospace', color: 'oklch(0.72 0.008 264)', fontSize: '12px' }}
+                >
+                  {character.backstory || 'No backstory provided.'}
+                </p>
               </div>
             </div>
           )}
 
           {activeTab === 'appearance' && (
-            <div className="p-6 grid sm:grid-cols-2 gap-x-10 gap-y-0">
-              <div>
-                <InfoRow label="Height" value={character.appearance.height} />
-                <InfoRow label="Build" value={character.appearance.build} />
-                <InfoRow label="Hair" value={character.appearance.hair} />
-                <InfoRow label="Eyes" value={character.appearance.eyes} />
-                <InfoRow label="Distinguishing Features" value={character.appearance.distinguishingFeatures} />
-                <InfoRow label="Equipment" value={character.appearance.equipment} />
-              </div>
-              <div>
-                <div className="py-3">
-                  <span
-                    className="text-[10px] uppercase tracking-widest block mb-2"
-                    style={{ fontFamily: 'Rajdhani, sans-serif', color: 'oklch(0.769 0.188 70.08)', fontWeight: 600 }}
-                  >
-                    Description
-                  </span>
+            <div className="p-6">
+              {hasDescription ? (
+                <div className="py-2">
+                  <SectionLabel label="Appearance Description" />
                   <p
-                    className="text-sm leading-loose"
+                    className="leading-loose whitespace-pre-wrap"
                     style={{ fontFamily: 'JetBrains Mono, monospace', color: 'oklch(0.72 0.008 264)', fontSize: '12px' }}
                   >
-                    {character.appearance.description}
+                    {character.description}
                   </p>
                 </div>
-              </div>
+              ) : (
+                <div className="flex flex-col items-center justify-center py-16 gap-3">
+                  <p
+                    style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: '16px', fontWeight: 700, color: 'oklch(0.35 0.01 264)' }}
+                  >
+                    NO APPEARANCE DATA
+                  </p>
+                  <p
+                    style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '11px', color: 'oklch(0.3 0.01 264)' }}
+                  >
+                    This character has no appearance description on file.
+                  </p>
+                </div>
+              )}
             </div>
           )}
         </div>
