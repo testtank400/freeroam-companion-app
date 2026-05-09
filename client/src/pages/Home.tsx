@@ -27,7 +27,7 @@ export interface ApiCharacter {
 }
 
 const USERNAME = 'Test Tank';
-const LIMIT = 20;
+const LIMIT = 50;
 
 type SortOption = { value: string; label: string; description: string };
 const SORT_OPTIONS: SortOption[] = [
@@ -63,23 +63,15 @@ export default function Home() {
   }, []);
 
   // Fetch ALL pages client-side, one tRPC call per page.
-  // Each call is a small independent request — avoids server-side loop timeouts.
-  // A short delay between pages prevents rate-limiting and keeps the API happy.
+  // 50 per page = ~4 requests for a 200-character roster instead of 10.
   const fetchAll = useCallback(async (sortValue: string) => {
     setIsLoadingAll(true);
     setAllCharacters([]);
     const collected: ApiCharacter[] = [];
     let cursor: string | undefined = undefined;
     let hasMore = true;
-    let isFirstPage = true;
     try {
       while (hasMore) {
-        // Small delay between pages (skip on first page for fast initial render)
-        if (!isFirstPage) {
-          await new Promise(resolve => setTimeout(resolve, 300));
-        }
-        isFirstPage = false;
-
         const result = await utils.characters.list.fetch({
           username: USERNAME,
           limit: LIMIT,
