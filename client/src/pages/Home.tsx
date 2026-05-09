@@ -47,6 +47,8 @@ export default function Home() {
   const [isFetchingMore, setIsFetchingMore] = useState(false);
   const [sort, setSort] = useState<string>('recent');
   const [sortDropdownOpen, setSortDropdownOpen] = useState(false);
+  // null = show all; otherwise only show matching privacy status
+  const [privacyFilter, setPrivacyFilter] = useState<PrivacyStatus | null>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
   const sortDropdownRef = useRef<HTMLDivElement>(null);
   const utils = trpc.useUtils();
@@ -203,7 +205,16 @@ export default function Home() {
             >
               {isLoading
                 ? 'Loading...'
-                : `${allCharacters.length} unit${allCharacters.length !== 1 ? 's' : ''} on record${hasMore ? '+' : ''}`}
+                : (() => {
+                    const visible = privacyFilter
+                      ? allCharacters.filter(c => c.privacy_status === privacyFilter).length
+                      : allCharacters.length;
+                    const total = allCharacters.length;
+                    const suffix = hasMore ? '+' : '';
+                    return privacyFilter
+                      ? `${visible} of ${total}${suffix} unit${total !== 1 ? 's' : ''}`
+                      : `${total}${suffix} unit${total !== 1 ? 's' : ''} on record`;
+                  })()}
             </p>
           </div>
         </div>
@@ -318,16 +329,70 @@ export default function Home() {
 
       {/* Main content */}
       <main className="container py-8">
-        {/* Section label */}
-        <div className="flex items-center gap-3 mb-6">
-          <div className="h-px flex-1" style={{ background: 'oklch(1 0 0 / 0.06)' }} />
-          <span
-            className="text-[10px] uppercase tracking-[0.2em] px-3"
-            style={{ fontFamily: 'Rajdhani, sans-serif', color: 'oklch(0.4 0.01 264)', fontWeight: 600 }}
-          >
-            All Characters
-          </span>
-          <div className="h-px flex-1" style={{ background: 'oklch(1 0 0 / 0.06)' }} />
+        {/* Section label + filter chips */}
+        <div className="flex flex-wrap items-center gap-3 mb-6">
+          <div className="h-px flex-1 hidden sm:block" style={{ background: 'oklch(1 0 0 / 0.06)' }} />
+
+          {/* Privacy filter chips */}
+          <div className="flex items-center gap-2">
+            {/* All chip */}
+            <button
+              onClick={() => setPrivacyFilter(null)}
+              className="flex items-center gap-1.5 px-3 py-1 rounded-sm text-[11px] font-semibold tracking-wider uppercase transition-all"
+              style={{
+                fontFamily: 'Rajdhani, sans-serif',
+                background: privacyFilter === null ? 'oklch(0.769 0.188 70.08 / 0.15)' : 'oklch(0.15 0.01 264)',
+                border: privacyFilter === null ? '1px solid oklch(0.769 0.188 70.08 / 0.45)' : '1px solid oklch(1 0 0 / 0.08)',
+                color: privacyFilter === null ? 'oklch(0.769 0.188 70.08)' : 'oklch(0.45 0.01 264)',
+              }}
+            >
+              All
+            </button>
+
+            {/* Private chip */}
+            <button
+              onClick={() => setPrivacyFilter(privacyFilter === 'private' ? null : 'private')}
+              className="flex items-center gap-1.5 px-3 py-1 rounded-sm text-[11px] font-semibold tracking-wider uppercase transition-all"
+              style={{
+                fontFamily: 'Rajdhani, sans-serif',
+                background: privacyFilter === 'private' ? 'oklch(0.22 0.01 264)' : 'oklch(0.15 0.01 264)',
+                border: privacyFilter === 'private' ? '1px solid oklch(1 0 0 / 0.25)' : '1px solid oklch(1 0 0 / 0.08)',
+                color: privacyFilter === 'private' ? 'oklch(0.88 0.005 65)' : 'oklch(0.45 0.01 264)',
+              }}
+            >
+              🔒 Private
+            </button>
+
+            {/* Public chip */}
+            <button
+              onClick={() => setPrivacyFilter(privacyFilter === 'public' ? null : 'public')}
+              className="flex items-center gap-1.5 px-3 py-1 rounded-sm text-[11px] font-semibold tracking-wider uppercase transition-all"
+              style={{
+                fontFamily: 'Rajdhani, sans-serif',
+                background: privacyFilter === 'public' ? 'oklch(0.22 0.08 145 / 0.4)' : 'oklch(0.15 0.01 264)',
+                border: privacyFilter === 'public' ? '1px solid oklch(0.55 0.15 145 / 0.6)' : '1px solid oklch(1 0 0 / 0.08)',
+                color: privacyFilter === 'public' ? 'oklch(0.75 0.15 145)' : 'oklch(0.45 0.01 264)',
+              }}
+            >
+              🌐 Public
+            </button>
+
+            {/* Linked chip */}
+            <button
+              onClick={() => setPrivacyFilter(privacyFilter === 'linked' ? null : 'linked')}
+              className="flex items-center gap-1.5 px-3 py-1 rounded-sm text-[11px] font-semibold tracking-wider uppercase transition-all"
+              style={{
+                fontFamily: 'Rajdhani, sans-serif',
+                background: privacyFilter === 'linked' ? 'oklch(0.22 0.08 220 / 0.4)' : 'oklch(0.15 0.01 264)',
+                border: privacyFilter === 'linked' ? '1px solid oklch(0.55 0.15 220 / 0.6)' : '1px solid oklch(1 0 0 / 0.08)',
+                color: privacyFilter === 'linked' ? 'oklch(0.75 0.15 220)' : 'oklch(0.45 0.01 264)',
+              }}
+            >
+              🔗 Linked
+            </button>
+          </div>
+
+          <div className="h-px flex-1 hidden sm:block" style={{ background: 'oklch(1 0 0 / 0.06)' }} />
         </div>
 
         {/* Initial loading skeleton */}
@@ -387,10 +452,47 @@ export default function Home() {
           </div>
         )}
 
+        {/* Derive filtered list */}
+        {(() => {
+          const visibleCharacters = privacyFilter
+            ? allCharacters.filter(c => c.privacy_status === privacyFilter)
+            : allCharacters;
+
+          const filteredEmpty = !isLoading && !isError && allCharacters.length > 0 && visibleCharacters.length === 0;
+
+          return (
+            <>
+              {/* No results for this filter */}
+              {filteredEmpty && (
+                <div className="flex flex-col items-center justify-center py-16 gap-3">
+                  <p style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: '16px', fontWeight: 700, color: 'oklch(0.4 0.01 264)' }}>
+                    NO {privacyFilter?.toUpperCase()} CHARACTERS
+                  </p>
+                  <p style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '12px', color: 'oklch(0.35 0.01 264)' }}>
+                    None of your characters have {privacyFilter} visibility.
+                  </p>
+                  <button
+                    onClick={() => setPrivacyFilter(null)}
+                    className="mt-1 px-3 py-1.5 rounded-sm text-[11px] font-semibold tracking-wider uppercase transition-all"
+                    style={{
+                      fontFamily: 'Rajdhani, sans-serif',
+                      background: 'oklch(0.769 0.188 70.08 / 0.1)',
+                      border: '1px solid oklch(0.769 0.188 70.08 / 0.3)',
+                      color: 'oklch(0.769 0.188 70.08)',
+                    }}
+                  >
+                    Show All
+                  </button>
+                </div>
+              )}
+            </>
+          );
+        })()}
+
         {/* Card grid */}
         {allCharacters.length > 0 && (
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-            {allCharacters.map((character) => (
+            {(privacyFilter ? allCharacters.filter(c => c.privacy_status === privacyFilter) : allCharacters).map((character) => (
               <CharacterCard
                 key={character.external_id}
                 character={character}
@@ -430,7 +532,7 @@ export default function Home() {
               className="text-[10px] uppercase tracking-[0.2em] px-3"
               style={{ fontFamily: 'Rajdhani, sans-serif', color: 'oklch(0.3 0.01 264)', fontWeight: 600 }}
             >
-              End of Roster — {allCharacters.length} units
+              End of Roster — {allCharacters.length} units{privacyFilter ? ` · ${allCharacters.filter(c => c.privacy_status === privacyFilter).length} ${privacyFilter}` : ''}
             </span>
             <div className="h-px flex-1" style={{ background: 'oklch(1 0 0 / 0.05)' }} />
           </div>
