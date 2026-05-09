@@ -151,15 +151,18 @@ export default function Home() {
 
   // Click outside cards to deselect (only when selection is active)
   const gridRef = useRef<HTMLDivElement>(null);
+  const bulkBarRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (selectedIds.size === 0) return;
     const handler = (e: MouseEvent) => {
-      // If click is outside the card grid, clear selection
-      if (gridRef.current && !gridRef.current.contains(e.target as Node)) {
+      const target = e.target as Node;
+      // Ignore clicks inside the card grid or the bulk action bar
+      const inGrid = gridRef.current?.contains(target);
+      const inBulkBar = bulkBarRef.current?.contains(target);
+      if (!inGrid && !inBulkBar) {
         setSelectedIds(new Set());
       }
     };
-    // Use mousedown so it fires before click handlers
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, [selectedIds]);
@@ -737,6 +740,7 @@ export default function Home() {
 
       {/* Bulk action bar — shown when characters are selected */}
       <BulkActionBar
+        ref={bulkBarRef}
         selectedCount={selectedIds.size}
         selectedIds={Array.from(selectedIds)}
         onClear={() => setSelectedIds(new Set())}
