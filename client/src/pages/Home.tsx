@@ -3,6 +3,7 @@
 // Data: cursor-based infinite scroll from getfreeroam API via tRPC proxy
 // Automatically loads more when the sentinel div at the bottom enters the viewport
 
+import BulkActionBar from '@/components/BulkActionBar';
 import CharacterCard from '@/components/CharacterCard';
 import CharacterProfile from '@/components/CharacterProfile';
 import CollectionsStrip from '@/components/CollectionsStrip';
@@ -134,6 +135,19 @@ export default function Home() {
   const { isSaved, toggleSave, initFromApi } = useSavedCharacters();
   const { collections, createCollection, renameCollection, deleteCollection, toggleInCollection, isInCollection } = useCollections();
   const [activeCollectionId, setActiveCollectionId] = useState<string | null>(null);
+
+  // Multi-select state
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const lastSelectedIndexRef = useRef<number>(-1);
+
+  // Clear selection on Escape
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && selectedIds.size > 0) setSelectedIds(new Set());
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [selectedIds]);
 
   const handleAddCharacter = () => setShowCreateModal(true);
 
@@ -605,12 +619,63 @@ export default function Home() {
               <CharacterCard
                 key={character.external_id}
                 character={character}
-                onClick={setSelectedCharacter}
+                onClick={(char, e) => {
+                  // Ctrl/Cmd click: toggle selection
+                  if (e.ctrlKey || e.metaKey) {
+                    e.preventDefault();
+                    setSelectedIds(prev => {
+                      const next = new Set(prev);
+                      if (next.has(char.external_id)) next.delete(char.external_id);
+                      else next.add(char.external_id);
+                      return next;
+                    });
+                    // Track index for shift-range
+                    const visibleList = allCharacters.filter(c => {
+                      const q = searchQuery.trim().toLowerCase();
+                      const activeCol = activeCollectionId ? collections.find(col => col.id === activeCollectionId) : null;
+                      return (!privacyFilter || c.privacy_status === privacyFilter)
+                        && (!q || c.name.toLowerCase().includes(q))
+                        && (personaFilter === null || c.is_persona === personaFilter)
+                        && (!favoritesOnly || isSaved(c.external_id))
+                        && (!activeCol || activeCol.characterIds.includes(c.external_id));
+                    });
+                    lastSelectedIndexRef.current = visibleList.findIndex(c => c.external_id === char.external_id);
+                    return;
+                  }
+                  // Shift click: range select
+                  if (e.shiftKey && lastSelectedIndexRef.current >= 0) {
+                    e.preventDefault();
+                    const visibleList = allCharacters.filter(c => {
+                      const q = searchQuery.trim().toLowerCase();
+                      const activeCol = activeCollectionId ? collections.find(col => col.id === activeCollectionId) : null;
+                      return (!privacyFilter || c.privacy_status === privacyFilter)
+                        && (!q || c.name.toLowerCase().includes(q))
+                        && (personaFilter === null || c.is_persona === personaFilter)
+                        && (!favoritesOnly || isSaved(c.external_id))
+                        && (!activeCol || activeCol.characterIds.includes(c.external_id));
+                    });
+                    const currentIdx = visibleList.findIndex(c => c.external_id === char.external_id);
+                    const [from, to] = [Math.min(lastSelectedIndexRef.current, currentIdx), Math.max(lastSelectedIndexRef.current, currentIdx)];
+                    setSelectedIds(prev => {
+                      const next = new Set(prev);
+                      visibleList.slice(from, to + 1).forEach(c => next.add(c.external_id));
+                      return next;
+                    });
+                    return;
+                  }
+                  // Normal click: open profile (clear selection if any)
+                  if (selectedIds.size > 0) {
+                    setSelectedIds(new Set());
+                    return;
+                  }
+                  setSelectedCharacter(char);
+                }}
                 onEdit={setEditCharacter}
                 onDelete={setDeleteCharacter}
                 searchQuery={searchQuery}
                 isSaved={isSaved(character.external_id)}
                 onToggleSave={(c) => toggleSave(c.external_id, c.name)}
+                isSelected={selectedIds.has(character.external_id)}
               />
             ))}
 
@@ -650,6 +715,27 @@ export default function Home() {
           onCreateCollection={createCollection}
         />
       )}
+
+      {/* Bulk action bar — shown when characters are selected */}
+      <BulkActionBar
+        selectedCount={selectedIds.size}
+        selectedIds={Array.from(selectedIds)}
+        onClear={() => setSelectedIds(new Set())}
+        onBulkFavorite={(ids) => {
+          const allCurrentlySaved = ids.every(id => isSaved(id));
+          ids.forEach(id => {
+            const char = allCharacters.find(c => c.external_id === id);
+            if (!char) return;
+            // Toggle: if all saved → unsave all; otherwise save all unsaved
+            if (allCurrentlySaved || !isSaved(id)) toggleSave(id, char.name);
+          });
+        }}
+        allSaved={(ids) => ids.length > 0 && ids.every(id => isSaved(id))}
+        collections={collections}
+        isInCollection={isInCollection}
+        onToggleInCollection={toggleInCollection}
+        onCreateCollection={createCollection}
+      />
 
       {/* Delete confirmation dialog */}
       <DeleteConfirmDialog

@@ -11,13 +11,14 @@ type PrivacyStatus = 'private' | 'public' | 'unlisted';
 
 interface CharacterCardProps {
   character: ApiCharacter;
-  onClick: (character: ApiCharacter) => void;
+  onClick: (character: ApiCharacter, e: React.MouseEvent) => void;
   onEdit: (character: ApiCharacter) => void;
   onDelete: (character: ApiCharacter) => void;
   /** Active search query — matching portion of the name is highlighted in amber */
   searchQuery?: string;
   isSaved?: boolean;
   onToggleSave?: (character: ApiCharacter) => void;
+  isSelected?: boolean;
 }
 
 /** Splits text into segments and wraps the matching part in an amber span */
@@ -72,7 +73,7 @@ function PrivacyBadge({ status }: { status: PrivacyStatus }) {
 // Fallback placeholder image for characters without a headshot
 const FALLBACK_IMAGE = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjUwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iNDAwIiBoZWlnaHQ9IjUwMCIgZmlsbD0iIzFhMWEyNCIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBmb250LWZhbWlseT0ibW9ub3NwYWNlIiBmb250LXNpemU9IjE0IiBmaWxsPSIjMzMzMzQ0IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkeT0iLjNlbSI+Tk8gSU1BR0U8L3RleHQ+PC9zdmc+';
 
-export default function CharacterCard({ character, onClick, onEdit, onDelete, searchQuery = '', isSaved = false, onToggleSave }: CharacterCardProps) {
+export default function CharacterCard({ character, onClick, onEdit, onDelete, searchQuery = '', isSaved = false, onToggleSave, isSelected = false }: CharacterCardProps) {
   const handleEdit = (e: React.MouseEvent) => {
     e.stopPropagation();
     onEdit(character);
@@ -90,9 +91,10 @@ export default function CharacterCard({ character, onClick, onEdit, onDelete, se
       className="char-card relative flex flex-col rounded-sm overflow-hidden cursor-pointer"
       style={{
         background: 'oklch(0.13 0.01 264)',
-        border: '1px solid oklch(1 0 0 / 0.07)',
+        border: isSelected ? '1px solid oklch(0.769 0.188 70.08 / 0.7)' : '1px solid oklch(1 0 0 / 0.07)',
+        boxShadow: isSelected ? '0 0 0 2px oklch(0.769 0.188 70.08 / 0.2)' : undefined,
       }}
-      onClick={() => onClick(character)}
+      onClick={(e) => onClick(character, e)}
     >
       {/* Image area */}
       <div className="relative w-full" style={{ paddingBottom: '115%' }}>
@@ -112,6 +114,23 @@ export default function CharacterCard({ character, onClick, onEdit, onDelete, se
             background: 'linear-gradient(to bottom, transparent 30%, oklch(0.13 0.01 264 / 0.85) 70%, oklch(0.13 0.01 264) 100%)',
           }}
         />
+
+        {/* Selection checkmark overlay */}
+        {isSelected && (
+          <div
+            className="absolute inset-0 z-20 flex items-start justify-start p-2"
+            style={{ background: 'oklch(0.769 0.188 70.08 / 0.08)' }}
+          >
+            <div
+              className="w-5 h-5 rounded-sm flex items-center justify-center"
+              style={{ background: 'oklch(0.769 0.188 70.08)', border: '1px solid oklch(0.769 0.188 70.08)' }}
+            >
+              <svg width="10" height="8" viewBox="0 0 10 8" fill="none">
+                <path d="M1 4L3.5 6.5L9 1" stroke="oklch(0.11 0.009 264)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+            </div>
+          </div>
+        )}
 
         {/* Top-left: Privacy badge */}
         <div className="absolute top-3 left-3 z-10">
