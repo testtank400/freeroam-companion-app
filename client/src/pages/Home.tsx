@@ -7,6 +7,7 @@ import CharacterCard from '@/components/CharacterCard';
 import CharacterProfile from '@/components/CharacterProfile';
 import CreateCharacterModal from '@/components/CreateCharacterModal';
 import DeleteConfirmDialog from '@/components/DeleteConfirmDialog';
+import { useSavedCharacters } from '@/hooks/useSavedCharacters';
 import { trpc } from '@/lib/trpc';
 import { ArrowDownUp, ChevronDown, Plus, RefreshCw, Search, X as XIcon } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -112,6 +113,8 @@ export default function Home() {
     setSortDropdownOpen(false);
     // useEffect above will trigger fetchAll(newSort)
   };
+
+  const { isSaved, toggleSave } = useSavedCharacters();
 
   const handleAddCharacter = () => setShowCreateModal(true);
 
@@ -534,6 +537,8 @@ export default function Home() {
                 onEdit={setEditCharacter}
                 onDelete={setDeleteCharacter}
                 searchQuery={searchQuery}
+                isSaved={isSaved(character.external_id)}
+                onToggleSave={(c) => toggleSave(c.external_id, c.name)}
               />
             ))}
 

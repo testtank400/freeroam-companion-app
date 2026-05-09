@@ -4,7 +4,7 @@
 // Uses ApiCharacter shape from getfreeroam API
 
 import { ApiCharacter } from '@/pages/Home';
-import { Globe, Link, Lock, Pencil, Trash2 } from 'lucide-react';
+import { Globe, Heart, Link, Lock, Pencil, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 
 type PrivacyStatus = 'private' | 'public' | 'unlisted';
@@ -16,6 +16,8 @@ interface CharacterCardProps {
   onDelete: (character: ApiCharacter) => void;
   /** Active search query — matching portion of the name is highlighted in amber */
   searchQuery?: string;
+  isSaved?: boolean;
+  onToggleSave?: (character: ApiCharacter) => void;
 }
 
 /** Splits text into segments and wraps the matching part in an amber span */
@@ -70,7 +72,7 @@ function PrivacyBadge({ status }: { status: PrivacyStatus }) {
 // Fallback placeholder image for characters without a headshot
 const FALLBACK_IMAGE = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjUwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iNDAwIiBoZWlnaHQ9IjUwMCIgZmlsbD0iIzFhMWEyNCIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBmb250LWZhbWlseT0ibW9ub3NwYWNlIiBmb250LXNpemU9IjE0IiBmaWxsPSIjMzMzMzQ0IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkeT0iLjNlbSI+Tk8gSU1BR0U8L3RleHQ+PC9zdmc+';
 
-export default function CharacterCard({ character, onClick, onEdit, onDelete, searchQuery = '' }: CharacterCardProps) {
+export default function CharacterCard({ character, onClick, onEdit, onDelete, searchQuery = '', isSaved = false, onToggleSave }: CharacterCardProps) {
   const handleEdit = (e: React.MouseEvent) => {
     e.stopPropagation();
     onEdit(character);
@@ -118,6 +120,24 @@ export default function CharacterCard({ character, onClick, onEdit, onDelete, se
 
         {/* Top-right: Action buttons */}
         <div className="absolute top-2.5 right-2.5 z-10 flex gap-1.5">
+          {/* Heart / save button */}
+          <button
+            onClick={(e) => { e.stopPropagation(); onToggleSave?.(character); }}
+            className="w-7 h-7 flex items-center justify-center rounded-sm transition-all"
+            style={{
+              background: isSaved ? 'oklch(0.65 0.22 25 / 0.2)' : 'oklch(0.18 0.01 264 / 0.85)',
+              border: isSaved ? '1px solid oklch(0.65 0.22 25 / 0.5)' : '1px solid oklch(1 0 0 / 0.12)',
+              color: isSaved ? 'oklch(0.7 0.22 25)' : 'oklch(0.7 0.005 65)',
+              backdropFilter: 'blur(4px)',
+            }}
+            title={isSaved ? 'Remove from favorites' : 'Add to favorites'}
+          >
+            <Heart
+              size={13}
+              strokeWidth={2}
+              fill={isSaved ? 'currentColor' : 'none'}
+            />
+          </button>
           <button
             onClick={handleEdit}
             className="w-7 h-7 flex items-center justify-center rounded-sm transition-colors hover:text-amber-400"

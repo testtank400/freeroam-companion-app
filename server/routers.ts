@@ -245,6 +245,66 @@ export const appRouter = router({
         return SingleCharacterSchema.parse(data);
       }),
 
+    save: publicProcedure
+      .input(z.object({ characterId: z.string() }))
+      .mutation(async ({ input }) => {
+        const cookie = process.env.cookie;
+        if (!cookie) throw new Error("Cookie not configured in environment");
+
+        const response = await fetch(
+          `https://getfreeroam.com/api/characters/${encodeURIComponent(input.characterId)}/save`,
+          {
+            method: "POST",
+            headers: {
+              accept: "*/*",
+              "accept-language": "en-US,en;q=0.9",
+              cookie: cookie,
+              origin: "https://getfreeroam.com",
+              referer: "https://getfreeroam.com",
+              "user-agent":
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36",
+            },
+          }
+        );
+
+        if (!response.ok) {
+          const text = await response.text();
+          throw new Error(`Save failed (${response.status}): ${text}`);
+        }
+
+        return { success: true, saved: true, characterId: input.characterId };
+      }),
+
+    unsave: publicProcedure
+      .input(z.object({ characterId: z.string() }))
+      .mutation(async ({ input }) => {
+        const cookie = process.env.cookie;
+        if (!cookie) throw new Error("Cookie not configured in environment");
+
+        const response = await fetch(
+          `https://getfreeroam.com/api/characters/${encodeURIComponent(input.characterId)}/save`,
+          {
+            method: "DELETE",
+            headers: {
+              accept: "*/*",
+              "accept-language": "en-US,en;q=0.9",
+              cookie: cookie,
+              origin: "https://getfreeroam.com",
+              referer: "https://getfreeroam.com",
+              "user-agent":
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36",
+            },
+          }
+        );
+
+        if (!response.ok) {
+          const text = await response.text();
+          throw new Error(`Unsave failed (${response.status}): ${text}`);
+        }
+
+        return { success: true, saved: false, characterId: input.characterId };
+      }),
+
     delete: publicProcedure
       .input(z.object({ characterId: z.string() }))
       .mutation(async ({ input }) => {
