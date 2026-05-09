@@ -840,8 +840,6 @@ export default function Home() {
                 onEdit={setEditCharacter}
                 onDelete={setDeleteCharacter}
                 searchQuery={searchQuery}
-                isSaved={isSaved(character.external_id)}
-                onToggleSave={(c) => toggleSave(c.external_id, c.name)}
                 isSelected={selectedIds.has(character.external_id)}
               />
             ))}
@@ -880,6 +878,8 @@ export default function Home() {
           isInCollection={isInCollection}
           onToggleInCollection={toggleInCollection}
           onCreateCollection={createCollection}
+          isSaved={selectedCharacter ? isSaved(selectedCharacter.external_id) : false}
+          onToggleSave={selectedCharacter ? () => toggleSave(selectedCharacter.external_id, selectedCharacter.name) : undefined}
         />
       )}
 

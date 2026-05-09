@@ -9,7 +9,7 @@ import CreateCharacterModal from '@/components/CreateCharacterModal';
 import { Collection } from '@/hooks/useCollections';
 import { trpc } from '@/lib/trpc';
 import { ApiCharacter } from '@/pages/Home';
-import { Copy, FolderPlus, Globe, Link, Lock, Pencil, X } from 'lucide-react';
+import { Copy, FolderPlus, Globe, Heart, Link, Lock, Pencil, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
 interface CharacterProfileProps {
@@ -22,6 +22,9 @@ interface CharacterProfileProps {
   isInCollection?: (collectionId: string, characterId: string) => boolean;
   onToggleInCollection?: (collectionId: string, characterId: string) => void;
   onCreateCollection?: (name: string) => void;
+  // Favorites
+  isSaved?: boolean;
+  onToggleSave?: () => void;
 }
 
 type Tab = 'about' | 'appearance';
@@ -76,7 +79,7 @@ function InfoRow({ label, value }: { label: string; value: string }) {
 
 const FALLBACK_IMAGE = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjUwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iNDAwIiBoZWlnaHQ9IjUwMCIgZmlsbD0iIzFhMWEyNCIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBmb250LWZhbWlseT0ibW9ub3NwYWNlIiBmb250LXNpemU9IjE0IiBmaWxsPSIjMzMzMzQ0IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkeT0iLjNlbSI+Tk8gSU1BR0U8L3RleHQ+PC9zdmc+';
 
-export default function CharacterProfile({ character, onClose, onUpdated, collections = [], isInCollection, onToggleInCollection, onCreateCollection }: CharacterProfileProps) {
+export default function CharacterProfile({ character, onClose, onUpdated, collections = [], isInCollection, onToggleInCollection, onCreateCollection, isSaved = false, onToggleSave }: CharacterProfileProps) {
   const [activeTab, setActiveTab] = useState<Tab>('about');
   const [visible, setVisible] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
@@ -207,6 +210,29 @@ export default function CharacterProfile({ character, onClose, onUpdated, collec
 
             {/* Top-right action buttons: Duplicate + Edit + Close */}
             <div className="absolute top-3 right-3 flex items-center gap-2">
+              {/* Favorite button */}
+              {onToggleSave && (
+                <button
+                  onClick={onToggleSave}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-sm transition-all hover:brightness-110"
+                  style={{
+                    background: isSaved ? 'oklch(0.65 0.22 25 / 0.2)' : 'oklch(0.18 0.01 264 / 0.85)',
+                    border: isSaved ? '1px solid oklch(0.65 0.22 25 / 0.5)' : '1px solid oklch(1 0 0 / 0.15)',
+                    color: isSaved ? 'oklch(0.75 0.18 25)' : 'oklch(0.65 0.01 264)',
+                    backdropFilter: 'blur(4px)',
+                    fontFamily: 'Rajdhani, sans-serif',
+                    fontSize: '11px',
+                    fontWeight: 700,
+                    letterSpacing: '0.1em',
+                    textTransform: 'uppercase',
+                  }}
+                  title={isSaved ? 'Remove from favorites' : 'Add to favorites'}
+                >
+                  <Heart size={12} strokeWidth={2} fill={isSaved ? 'currentColor' : 'none'} />
+                  {isSaved ? 'Saved' : 'Save'}
+                </button>
+              )}
+
               {/* Add to Collection button */}
               {onToggleInCollection && (
                 <div className="relative">
