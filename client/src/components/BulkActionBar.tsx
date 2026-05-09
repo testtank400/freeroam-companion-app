@@ -93,7 +93,7 @@ const BulkActionBar = forwardRef<HTMLDivElement, BulkActionBarProps>(
           </button>
 
           {showCollectionPopover && (
-            <div style={{ position: 'absolute', bottom: '100%', left: 0, marginBottom: 8 }}>
+            <div style={{ position: 'fixed', bottom: 80, left: '50%', transform: 'translateX(-50%)', zIndex: 60, width: 280 }}>
               <AddToCollectionPopover
                 characterId="__bulk__"
                 collections={collections}

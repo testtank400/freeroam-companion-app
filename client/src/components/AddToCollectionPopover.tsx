@@ -54,12 +54,9 @@ export default function AddToCollectionPopover({
   return (
     <div
       ref={containerRef}
-      className="absolute z-10 rounded-sm overflow-hidden"
+      className="rounded-sm overflow-hidden"
       style={{
-        top: '100%',
-        right: 0,
-        marginTop: 6,
-        width: 220,
+        width: '100%',
         background: 'oklch(0.16 0.01 264)',
         border: '1px solid oklch(1 0 0 / 0.12)',
         boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
@@ -82,7 +79,7 @@ export default function AddToCollectionPopover({
       </div>
 
       {/* Collection list */}
-      <div className="max-h-48 overflow-y-auto">
+      <div className="overflow-y-auto" style={{ maxHeight: 'min(300px, 50vh)' }}>
         {collections.length === 0 && !isCreating && (
           <div className="px-3 py-4 text-center">
             <FolderOpen size={18} className="mx-auto mb-1.5" style={{ color: 'oklch(0.35 0.01 264)' }} />
