@@ -10,6 +10,7 @@ export interface Collection {
   name: string;
   characterIds: string[];
   createdAt: number;
+  coverImage?: string; // URL of the cover image
 }
 
 const STORAGE_KEY = 'character_collections';
@@ -60,6 +61,13 @@ export function useCollections() {
   const renameCollection = useCallback((id: string, name: string) => {
     setCollections(prev =>
       prev.map(c => c.id === id ? { ...c, name: name.trim() } : c)
+    );
+  }, []);
+
+  // Update collection metadata (name, coverImage)
+  const updateCollection = useCallback((id: string, updates: Partial<Pick<Collection, 'name' | 'coverImage'>>) => {
+    setCollections(prev =>
+      prev.map(c => c.id === id ? { ...c, ...updates } : c)
     );
   }, []);
 
@@ -124,6 +132,7 @@ export function useCollections() {
     collections,
     createCollection,
     renameCollection,
+    updateCollection,
     deleteCollection,
     addToCollection,
     removeFromCollection,

@@ -6,13 +6,14 @@
 import BulkActionBar from '@/components/BulkActionBar';
 import CharacterCard from '@/components/CharacterCard';
 import CharacterProfile from '@/components/CharacterProfile';
-import CollectionsStrip from '@/components/CollectionsStrip';
+import CollectionCard from '@/components/CollectionCard';
 import CreateCharacterModal from '@/components/CreateCharacterModal';
 import DeleteConfirmDialog from '@/components/DeleteConfirmDialog';
-import { useCollections } from '@/hooks/useCollections';
+import EditCollectionModal from '@/components/EditCollectionModal';
+import { Collection, useCollections } from '@/hooks/useCollections';
 import { useSavedCharacters } from '@/hooks/useSavedCharacters';
 import { trpc } from '@/lib/trpc';
-import { ArrowDownUp, ChevronDown, Plus, RefreshCw, Search, X as XIcon } from 'lucide-react';
+import { ArrowDownUp, ArrowLeft, ChevronDown, Plus, RefreshCw, Search, X as XIcon } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
@@ -133,8 +134,12 @@ export default function Home() {
   };
 
   const { isSaved, toggleSave, initFromApi } = useSavedCharacters();
-  const { collections, createCollection, renameCollection, deleteCollection, toggleInCollection, isInCollection } = useCollections();
+  const { collections, createCollection, renameCollection, updateCollection, deleteCollection, toggleInCollection, isInCollection } = useCollections();
   const [activeCollectionId, setActiveCollectionId] = useState<string | null>(null);
+  const [editingCollection, setEditingCollection] = useState<Collection | null>(null);
+  const [showNewCollectionModal, setShowNewCollectionModal] = useState(false);
+
+  const activeCollection = activeCollectionId ? collections.find(c => c.id === activeCollectionId) ?? null : null;
 
   // Multi-select state
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -209,26 +214,58 @@ export default function Home() {
         }}
       >
         <div className="flex items-center gap-3">
-          {/* Logo mark */}
-          <div
-            className="w-8 h-8 flex items-center justify-center rounded-sm"
-            style={{
-              background: 'oklch(0.769 0.188 70.08 / 0.12)',
-              border: '1px solid oklch(0.769 0.188 70.08 / 0.3)',
-            }}
-          >
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-              <path d="M8 1L14 4.5V11.5L8 15L2 11.5V4.5L8 1Z" stroke="oklch(0.769 0.188 70.08)" strokeWidth="1.5" fill="none"/>
-              <circle cx="8" cy="8" r="2" fill="oklch(0.769 0.188 70.08)"/>
-            </svg>
-          </div>
-          <div>
-            <h1
-              className="text-base font-bold tracking-widest uppercase leading-none"
-              style={{ fontFamily: 'Rajdhani, sans-serif', color: 'oklch(0.92 0.005 65)' }}
+          {/* Back button when in collection view */}
+          {activeCollection ? (
+            <button
+              onClick={() => { setActiveCollectionId(null); setSelectedIds(new Set()); }}
+              className="w-8 h-8 flex items-center justify-center rounded-sm transition-colors hover:bg-white/10"
+              style={{
+                background: 'oklch(0.769 0.188 70.08 / 0.12)',
+                border: '1px solid oklch(0.769 0.188 70.08 / 0.3)',
+                color: 'oklch(0.769 0.188 70.08)',
+              }}
+              title="Back to roster"
             >
-              Character Roster
-            </h1>
+              <ArrowLeft size={16} strokeWidth={2} />
+            </button>
+          ) : (
+            <div
+              className="w-8 h-8 flex items-center justify-center rounded-sm"
+              style={{
+                background: 'oklch(0.769 0.188 70.08 / 0.12)',
+                border: '1px solid oklch(0.769 0.188 70.08 / 0.3)',
+              }}
+            >
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                <path d="M8 1L14 4.5V11.5L8 15L2 11.5V4.5L8 1Z" stroke="oklch(0.769 0.188 70.08)" strokeWidth="1.5" fill="none"/>
+                <circle cx="8" cy="8" r="2" fill="oklch(0.769 0.188 70.08)"/>
+              </svg>
+            </div>
+          )}
+          <div>
+            {activeCollection ? (
+              <>
+                <p
+                  className="text-[10px] uppercase tracking-widest leading-none"
+                  style={{ fontFamily: 'Rajdhani, sans-serif', color: 'oklch(0.45 0.01 264)', fontWeight: 600 }}
+                >
+                  Character Roster
+                </p>
+                <h1
+                  className="text-base font-bold tracking-widest uppercase leading-none mt-0.5"
+                  style={{ fontFamily: 'Rajdhani, sans-serif', color: 'oklch(0.769 0.188 70.08)' }}
+                >
+                  {activeCollection.name}
+                </h1>
+              </>
+            ) : (
+              <h1
+                className="text-base font-bold tracking-widest uppercase leading-none"
+                style={{ fontFamily: 'Rajdhani, sans-serif', color: 'oklch(0.92 0.005 65)' }}
+              >
+                Character Roster
+              </h1>
+            )}
             <p
               className="text-[10px] mt-0.5"
               style={{ fontFamily: 'JetBrains Mono, monospace', color: 'oklch(0.45 0.01 264)' }}
@@ -399,16 +436,58 @@ export default function Home() {
 
       {/* Main content */}
       <main className="container py-8">
-          {/* Collections strip */}
-          <CollectionsStrip
-            collections={collections}
-            allCharacters={allCharacters}
-            activeCollectionId={activeCollectionId}
-            onSelect={setActiveCollectionId}
-            onCreate={createCollection}
-            onRename={renameCollection}
-            onDelete={deleteCollection}
-          />
+
+        {/* Collections section — only shown when NOT in collection view */}
+        {!activeCollectionId && (
+          <div className="mb-8">
+            <div className="flex items-center justify-between mb-3">
+              <span
+                className="text-[10px] uppercase tracking-[0.2em]"
+                style={{ fontFamily: 'Rajdhani, sans-serif', color: 'oklch(0.4 0.01 264)', fontWeight: 600 }}
+              >
+                Collections
+              </span>
+              <button
+                onClick={() => setShowNewCollectionModal(true)}
+                className="flex items-center gap-1 text-[10px] font-semibold tracking-wider uppercase transition-all hover:brightness-110"
+                style={{ fontFamily: 'Rajdhani, sans-serif', color: 'oklch(0.769 0.188 70.08)', background: 'none', border: 'none' }}
+              >
+                <span style={{ fontSize: 14 }}>+</span> New
+              </button>
+            </div>
+
+            {collections.length === 0 ? (
+              <button
+                onClick={() => setShowNewCollectionModal(true)}
+                className="flex items-center gap-2 px-4 py-3 rounded-sm w-full transition-all hover:brightness-110"
+                style={{
+                  background: 'oklch(0.13 0.01 264)',
+                  border: '1px dashed oklch(1 0 0 / 0.12)',
+                  color: 'oklch(0.4 0.01 264)',
+                  fontFamily: 'JetBrains Mono, monospace',
+                  fontSize: '12px',
+                }}
+              >
+                <span style={{ fontSize: 18 }}>📁</span>
+                No collections yet — click to create one
+              </button>
+            ) : (
+              <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10 gap-3">
+                {collections.map(col => (
+                  <CollectionCard
+                    key={col.id}
+                    collection={col}
+                    characters={allCharacters.filter(c => col.characterIds.includes(c.external_id))}
+                    onClick={(c) => setActiveCollectionId(c.id)}
+                    onEdit={(c) => setEditingCollection(c)}
+                    onDelete={(c) => { deleteCollection(c.id); }}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
 
         {/* Section label + filter chips */}
         <div className="flex flex-wrap items-center gap-3 mb-6">
@@ -737,6 +816,21 @@ export default function Home() {
           onCreateCollection={createCollection}
         />
       )}
+
+      {/* Edit / Create collection modal */}
+      <EditCollectionModal
+        open={showNewCollectionModal || !!editingCollection}
+        onClose={() => { setShowNewCollectionModal(false); setEditingCollection(null); }}
+        collection={editingCollection}
+        onSave={(name, coverImage) => {
+          if (editingCollection) {
+            updateCollection(editingCollection.id, { name, coverImage });
+          } else {
+            const newCol = createCollection(name);
+            if (coverImage) updateCollection(newCol.id, { coverImage });
+          }
+        }}
+      />
 
       {/* Bulk action bar — shown when characters are selected */}
       <BulkActionBar
