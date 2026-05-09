@@ -77,5 +77,14 @@ export function useSavedCharacters() {
     [savedIds, saveMutation, unsaveMutation]
   );
 
-  return { isSaved, toggleSave, savedIds };
+  // Seed saved state from API data (merges with any locally toggled IDs)
+  const initFromApi = useCallback((apiSavedIds: string[]) => {
+    setSavedIds(prev => {
+      const merged = new Set(prev);
+      apiSavedIds.forEach(id => merged.add(id));
+      return merged;
+    });
+  }, []);
+
+  return { isSaved, toggleSave, savedIds, initFromApi };
 }

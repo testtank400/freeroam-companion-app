@@ -106,6 +106,60 @@ export const appRouter = router({
         return parsed;
       }),
 
+    // Single-request library endpoint — returns ALL characters with is_saved, description, tags
+    library: publicProcedure
+      .query(async () => {
+        const cookie = process.env.cookie;
+        if (!cookie) throw new Error("Cookie not configured in environment");
+
+        const response = await fetch(
+          "https://getfreeroam.com/api/characters/library?page=1&limit=18&filter=",
+          {
+            headers: {
+              accept: "*/*",
+              "accept-language": "en-US,en;q=0.9",
+              cookie: cookie,
+              origin: "https://getfreeroam.com",
+              referer: "https://getfreeroam.com",
+              "user-agent":
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36",
+            },
+          }
+        );
+
+        if (!response.ok) {
+          const text = await response.text();
+          throw new Error(`Library fetch failed (${response.status}): ${text}`);
+        }
+
+        const data = await response.json() as {
+          characters: Array<{
+            external_id: string;
+            name: string;
+            headshot_url: string | null;
+            display_headshot_url: string | null;
+            backstory: string | null;
+            description: string | null;
+            privacy_status: string;
+            created_at: string;
+            creator_username: string;
+            is_yours: boolean;
+            is_saved: boolean;
+            tags: string[];
+          }>;
+          your_characters: unknown;
+          pagination: unknown;
+        };
+
+        // Coerce privacy_status to known values
+        return data.characters.map(c => ({
+          ...c,
+          privacy_status: (["private", "public", "unlisted"].includes(c.privacy_status)
+            ? c.privacy_status
+            : "private") as "private" | "public" | "unlisted",
+        }));
+      }),
+
     // Upload a headshot image — expects multipart/form-data with a "file" field
     // The server receives a base64-encoded file string and forwards it as multipart
     uploadHeadshot: publicProcedure

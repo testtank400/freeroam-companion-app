@@ -19,12 +19,18 @@ export interface ApiCharacter {
   external_id: string;
   name: string;
   backstory: string | null;
-  description: string | null;
+  description: string | null;  // appearance data
   headshot_url: string | null;
   display_headshot_url: string | null;
   is_persona: boolean;
   owner: { username: string; display_name: string };
   privacy_status: PrivacyStatus;
+  // Library endpoint extras
+  is_saved?: boolean;
+  tags?: string[];
+  creator_username?: string;
+  created_at?: string;
+  is_yours?: boolean;
 }
 
 const USERNAME = 'Test Tank';
@@ -65,28 +71,35 @@ export default function Home() {
     return () => document.removeEventListener('mousedown', handler);
   }, []);
 
-  // Fetch ALL pages client-side, one tRPC call per page.
-  // 50 per page = ~4 requests for a 200-character roster instead of 10.
-  const fetchAll = useCallback(async (sortValue: string) => {
+  // Fetch ALL characters in one request via the library endpoint
+  const fetchAll = useCallback(async (_sortValue: string) => {
     setIsLoadingAll(true);
     setAllCharacters([]);
-    const collected: ApiCharacter[] = [];
-    let cursor: string | undefined = undefined;
-    let hasMore = true;
     try {
-      while (hasMore) {
-        const result = await utils.characters.list.fetch({
-          username: USERNAME,
-          limit: LIMIT,
-          sort: sortValue,
-          cursor,
-        });
-        collected.push(...(result.characters as ApiCharacter[]));
-        // Update state incrementally so cards appear as pages arrive
-        setAllCharacters([...collected]);
-        hasMore = result.has_more && !!result.next_cursor;
-        cursor = result.next_cursor ?? undefined;
-      }
+      const result = await utils.characters.library.fetch();
+      // Map library shape to ApiCharacter
+      const mapped: ApiCharacter[] = result.map(c => ({
+        external_id: c.external_id,
+        name: c.name,
+        backstory: c.backstory,
+        description: c.description,
+        headshot_url: c.headshot_url,
+        display_headshot_url: c.display_headshot_url,
+        is_persona: false,
+        owner: { username: c.creator_username, display_name: c.creator_username },
+        privacy_status: c.privacy_status,
+        is_saved: c.is_saved,
+        tags: c.tags,
+        creator_username: c.creator_username,
+        created_at: c.created_at,
+        is_yours: c.is_yours,
+      }));
+      setAllCharacters(mapped);
+      // Seed saved state from the API response
+      const savedFromApi = mapped
+        .filter(c => c.is_saved)
+        .map(c => c.external_id);
+      initFromApi(savedFromApi);
     } catch (err) {
       toast.error('Failed to load characters. Please refresh.');
     } finally {
@@ -114,7 +127,7 @@ export default function Home() {
     // useEffect above will trigger fetchAll(newSort)
   };
 
-  const { isSaved, toggleSave } = useSavedCharacters();
+  const { isSaved, toggleSave, initFromApi } = useSavedCharacters();
 
   const handleAddCharacter = () => setShowCreateModal(true);
 

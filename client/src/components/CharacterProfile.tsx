@@ -154,7 +154,8 @@ export default function CharacterProfile({ character, onClose, onUpdated }: Char
   const imageUrl = fullCharacter?.display_headshot_url ?? fullCharacter?.headshot_url
     ?? displayCharacter.display_headshot_url ?? displayCharacter.headshot_url ?? FALLBACK_IMAGE;
   const backstory = fullCharacter?.backstory ?? displayCharacter.backstory;
-  const appearance = fullCharacter?.appearance ?? null;
+  // description from library endpoint = appearance; fall back to full character fetch
+  const appearance = (displayCharacter.description) ?? fullCharacter?.appearance ?? null;
 
   return (
     <>
