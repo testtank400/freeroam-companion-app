@@ -5,8 +5,10 @@
 
 import CharacterCard from '@/components/CharacterCard';
 import CharacterProfile from '@/components/CharacterProfile';
+import CollectionsStrip from '@/components/CollectionsStrip';
 import CreateCharacterModal from '@/components/CreateCharacterModal';
 import DeleteConfirmDialog from '@/components/DeleteConfirmDialog';
+import { useCollections } from '@/hooks/useCollections';
 import { useSavedCharacters } from '@/hooks/useSavedCharacters';
 import { trpc } from '@/lib/trpc';
 import { ArrowDownUp, ChevronDown, Plus, RefreshCw, Search, X as XIcon } from 'lucide-react';
@@ -130,6 +132,8 @@ export default function Home() {
   };
 
   const { isSaved, toggleSave, initFromApi } = useSavedCharacters();
+  const { collections, createCollection, renameCollection, deleteCollection, toggleInCollection, isInCollection } = useCollections();
+  const [activeCollectionId, setActiveCollectionId] = useState<string | null>(null);
 
   const handleAddCharacter = () => setShowCreateModal(true);
 
@@ -363,6 +367,17 @@ export default function Home() {
 
       {/* Main content */}
       <main className="container py-8">
+          {/* Collections strip */}
+          <CollectionsStrip
+            collections={collections}
+            allCharacters={allCharacters}
+            activeCollectionId={activeCollectionId}
+            onSelect={setActiveCollectionId}
+            onCreate={createCollection}
+            onRename={renameCollection}
+            onDelete={deleteCollection}
+          />
+
         {/* Section label + filter chips */}
         <div className="flex flex-wrap items-center gap-3 mb-6">
           <div className="h-px flex-1 hidden sm:block" style={{ background: 'oklch(1 0 0 / 0.06)' }} />
@@ -521,15 +536,17 @@ export default function Home() {
           </div>
         )}
 
-        {/* Derive filtered list — applies search, privacy, persona, and favorites filters */}
+        {/* Derive filtered list — applies search, privacy, persona, favorites, and collection filters */}
         {(() => {
           const q = searchQuery.trim().toLowerCase();
+          const activeCol = activeCollectionId ? collections.find(c => c.id === activeCollectionId) : null;
           const visibleCharacters = allCharacters.filter(c => {
             const matchesPrivacy = !privacyFilter || c.privacy_status === privacyFilter;
             const matchesSearch = !q || c.name.toLowerCase().includes(q);
             const matchesPersona = personaFilter === null || c.is_persona === personaFilter;
             const matchesFavorites = !favoritesOnly || isSaved(c.external_id);
-            return matchesPrivacy && matchesSearch && matchesPersona && matchesFavorites;
+            const matchesCollection = !activeCol || activeCol.characterIds.includes(c.external_id);
+            return matchesPrivacy && matchesSearch && matchesPersona && matchesFavorites && matchesCollection;
           });
 
           const filteredEmpty = !isLoading && !isError && allCharacters.length > 0 && visibleCharacters.length === 0;
@@ -544,16 +561,18 @@ export default function Home() {
                   </p>
                   <p style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '12px', color: 'oklch(0.35 0.01 264)' }}>
                     {searchQuery
-                      ? `No characters match "${searchQuery}"${privacyFilter ? ` with ${privacyFilter} visibility` : ''}${personaFilter ? ' (personas only)' : ''}${favoritesOnly ? ' in favorites' : ''}.`
-                      : favoritesOnly
-                        ? "You haven't saved any characters yet."
-                        : personaFilter
-                          ? 'No personas found in your roster.'
-                          : `None of your characters have ${privacyFilter} visibility.`}
+                      ? `No characters match "${searchQuery}"${privacyFilter ? ` with ${privacyFilter} visibility` : ''}${personaFilter ? ' (personas only)' : ''}${favoritesOnly ? ' in favorites' : ''}${activeCollectionId ? ' in this collection' : ''}.`
+                      : activeCollectionId
+                        ? 'This collection is empty. Add characters from their profile.'
+                        : favoritesOnly
+                          ? "You haven't saved any characters yet."
+                          : personaFilter
+                            ? 'No personas found in your roster.'
+                            : `None of your characters have ${privacyFilter} visibility.`}
 
                   </p>
                   <button
-                    onClick={() => { setPrivacyFilter(null); setPersonaFilter(null); setFavoritesOnly(false); setSearchQuery(''); }}
+                    onClick={() => { setPrivacyFilter(null); setPersonaFilter(null); setFavoritesOnly(false); setActiveCollectionId(null); setSearchQuery(''); }}
                     className="mt-1 px-3 py-1.5 rounded-sm text-[11px] font-semibold tracking-wider uppercase transition-all"
                     style={{
                       fontFamily: 'Rajdhani, sans-serif',
@@ -575,11 +594,13 @@ export default function Home() {
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
             {allCharacters.filter(c => {
               const q = searchQuery.trim().toLowerCase();
+              const activeCol = activeCollectionId ? collections.find(col => col.id === activeCollectionId) : null;
               const matchesPrivacy = !privacyFilter || c.privacy_status === privacyFilter;
               const matchesSearch = !q || c.name.toLowerCase().includes(q);
               const matchesPersona = personaFilter === null || c.is_persona === personaFilter;
               const matchesFavorites = !favoritesOnly || isSaved(c.external_id);
-              return matchesPrivacy && matchesSearch && matchesPersona && matchesFavorites;
+              const matchesCollection = !activeCol || activeCol.characterIds.includes(c.external_id);
+              return matchesPrivacy && matchesSearch && matchesPersona && matchesFavorites && matchesCollection;
             }).map((character) => (
               <CharacterCard
                 key={character.external_id}
@@ -618,13 +639,15 @@ export default function Home() {
           character={selectedCharacter}
           onClose={() => setSelectedCharacter(null)}
           onUpdated={(updated) => {
-            // Patch the card grid in-place
             setAllCharacters(prev =>
               prev.map(c => c.external_id === updated.external_id ? updated : c)
             );
-            // Keep the profile open with the latest data
             setSelectedCharacter(updated);
           }}
+          collections={collections}
+          isInCollection={isInCollection}
+          onToggleInCollection={toggleInCollection}
+          onCreateCollection={createCollection}
         />
       )}
 

@@ -4,10 +4,12 @@
 // Two tabs: About (backstory) and Appearance
 // Edit button in header opens CreateCharacterModal inline; on save the profile updates in place
 
+import AddToCollectionPopover from '@/components/AddToCollectionPopover';
 import CreateCharacterModal from '@/components/CreateCharacterModal';
+import { Collection } from '@/hooks/useCollections';
 import { trpc } from '@/lib/trpc';
 import { ApiCharacter } from '@/pages/Home';
-import { Copy, Globe, Link, Lock, Pencil, X } from 'lucide-react';
+import { Copy, FolderPlus, Globe, Link, Lock, Pencil, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
 interface CharacterProfileProps {
@@ -15,6 +17,11 @@ interface CharacterProfileProps {
   onClose: () => void;
   /** Called when the character is updated from inside the profile, so the card grid also updates */
   onUpdated?: (updated: ApiCharacter) => void;
+  // Collections
+  collections?: Collection[];
+  isInCollection?: (collectionId: string, characterId: string) => boolean;
+  onToggleInCollection?: (collectionId: string, characterId: string) => void;
+  onCreateCollection?: (name: string) => void;
 }
 
 type Tab = 'about' | 'appearance';
@@ -69,13 +76,14 @@ function InfoRow({ label, value }: { label: string; value: string }) {
 
 const FALLBACK_IMAGE = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjUwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iNDAwIiBoZWlnaHQ9IjUwMCIgZmlsbD0iIzFhMWEyNCIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBmb250LWZhbWlseT0ibW9ub3NwYWNlIiBmb250LXNpemU9IjE0IiBmaWxsPSIjMzMzMzQ0IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkeT0iLjNlbSI+Tk8gSU1BR0U8L3RleHQ+PC9zdmc+';
 
-export default function CharacterProfile({ character, onClose, onUpdated }: CharacterProfileProps) {
+export default function CharacterProfile({ character, onClose, onUpdated, collections = [], isInCollection, onToggleInCollection, onCreateCollection }: CharacterProfileProps) {
   const [activeTab, setActiveTab] = useState<Tab>('about');
   const [visible, setVisible] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showDuplicateModal, setShowDuplicateModal] = useState(false);
   // Pre-filled character for the duplicate form
   const [duplicateSource, setDuplicateSource] = useState<ApiCharacter | null>(null);
+  const [showCollectionPopover, setShowCollectionPopover] = useState(false);
 
   // Local override so profile reflects edits immediately without closing
   const [localCharacter, setLocalCharacter] = useState<ApiCharacter | null>(null);
@@ -199,6 +207,41 @@ export default function CharacterProfile({ character, onClose, onUpdated }: Char
 
             {/* Top-right action buttons: Duplicate + Edit + Close */}
             <div className="absolute top-3 right-3 flex items-center gap-2">
+              {/* Add to Collection button */}
+              {onToggleInCollection && (
+                <div className="relative">
+                  <button
+                    onClick={() => setShowCollectionPopover(v => !v)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-sm transition-all hover:brightness-110"
+                    style={{
+                      background: showCollectionPopover ? 'oklch(0.22 0.01 264)' : 'oklch(0.18 0.01 264 / 0.85)',
+                      border: '1px solid oklch(1 0 0 / 0.15)',
+                      color: 'oklch(0.65 0.01 264)',
+                      backdropFilter: 'blur(4px)',
+                      fontFamily: 'Rajdhani, sans-serif',
+                      fontSize: '11px',
+                      fontWeight: 700,
+                      letterSpacing: '0.1em',
+                      textTransform: 'uppercase',
+                    }}
+                    title="Add to collection"
+                  >
+                    <FolderPlus size={12} strokeWidth={2.5} />
+                    Collect
+                  </button>
+                  {showCollectionPopover && displayCharacter && (
+                    <AddToCollectionPopover
+                      characterId={displayCharacter.external_id}
+                      collections={collections}
+                      isInCollection={isInCollection ?? (() => false)}
+                      onToggle={(colId, charId) => onToggleInCollection(colId, charId)}
+                      onCreate={(name) => { onCreateCollection?.(name); }}
+                      onClose={() => setShowCollectionPopover(false)}
+                    />
+                  )}
+                </div>
+              )}
+
               {/* Duplicate button */}
               <button
                 onClick={handleDuplicate}
