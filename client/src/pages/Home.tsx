@@ -651,13 +651,19 @@ export default function Home() {
         {(() => {
           const q = searchQuery.trim().toLowerCase();
           const activeCol = activeCollectionId ? collections.find(c => c.id === activeCollectionId) : null;
+          // IDs of characters that belong to ANY collection
+          const allCollectionIds = new Set(collections.flatMap(col => col.characterIds));
           const visibleCharacters = allCharacters.filter(c => {
             const matchesPrivacy = !privacyFilter || c.privacy_status === privacyFilter;
             const matchesSearch = !q || c.name.toLowerCase().includes(q);
             const matchesPersona = personaFilter === null || c.is_persona === personaFilter;
             const matchesFavorites = !favoritesOnly || isSaved(c.external_id);
             const matchesCollection = !activeCol || activeCol.characterIds.includes(c.external_id);
-            return matchesPrivacy && matchesSearch && matchesPersona && matchesFavorites && matchesCollection;
+            // Hide characters that belong to any collection when not in a collection view
+            const notInOtherCollection = activeCol
+              ? activeCol.characterIds.includes(c.external_id)
+              : !allCollectionIds.has(c.external_id);
+            return matchesPrivacy && matchesSearch && matchesPersona && matchesFavorites && matchesCollection && notInOtherCollection;
           });
 
           const filteredEmpty = !isLoading && !isError && allCharacters.length > 0 && visibleCharacters.length === 0;
@@ -710,12 +716,16 @@ export default function Home() {
             {allCharacters.filter(c => {
               const q = searchQuery.trim().toLowerCase();
               const activeCol = activeCollectionId ? collections.find(col => col.id === activeCollectionId) : null;
+              const allCollectionIds = new Set(collections.flatMap(col => col.characterIds));
               const matchesPrivacy = !privacyFilter || c.privacy_status === privacyFilter;
               const matchesSearch = !q || c.name.toLowerCase().includes(q);
               const matchesPersona = personaFilter === null || c.is_persona === personaFilter;
               const matchesFavorites = !favoritesOnly || isSaved(c.external_id);
               const matchesCollection = !activeCol || activeCol.characterIds.includes(c.external_id);
-              return matchesPrivacy && matchesSearch && matchesPersona && matchesFavorites && matchesCollection;
+              const notInOtherCollection = activeCol
+                ? activeCol.characterIds.includes(c.external_id)
+                : !allCollectionIds.has(c.external_id);
+              return matchesPrivacy && matchesSearch && matchesPersona && matchesFavorites && matchesCollection && notInOtherCollection;
             }).map((character) => (
               <CharacterCard
                 key={character.external_id}
@@ -734,11 +744,14 @@ export default function Home() {
                     const visibleList = allCharacters.filter(c => {
                       const q = searchQuery.trim().toLowerCase();
                       const activeCol = activeCollectionId ? collections.find(col => col.id === activeCollectionId) : null;
+                      const allColIds = new Set(collections.flatMap(col => col.characterIds));
+                      const notInOther = activeCol ? activeCol.characterIds.includes(c.external_id) : !allColIds.has(c.external_id);
                       return (!privacyFilter || c.privacy_status === privacyFilter)
                         && (!q || c.name.toLowerCase().includes(q))
                         && (personaFilter === null || c.is_persona === personaFilter)
                         && (!favoritesOnly || isSaved(c.external_id))
-                        && (!activeCol || activeCol.characterIds.includes(c.external_id));
+                        && (!activeCol || activeCol.characterIds.includes(c.external_id))
+                        && notInOther;
                     });
                     lastSelectedIndexRef.current = visibleList.findIndex(c => c.external_id === char.external_id);
                     return;
@@ -749,11 +762,14 @@ export default function Home() {
                     const visibleList = allCharacters.filter(c => {
                       const q = searchQuery.trim().toLowerCase();
                       const activeCol = activeCollectionId ? collections.find(col => col.id === activeCollectionId) : null;
+                      const allColIds = new Set(collections.flatMap(col => col.characterIds));
+                      const notInOther = activeCol ? activeCol.characterIds.includes(c.external_id) : !allColIds.has(c.external_id);
                       return (!privacyFilter || c.privacy_status === privacyFilter)
                         && (!q || c.name.toLowerCase().includes(q))
                         && (personaFilter === null || c.is_persona === personaFilter)
                         && (!favoritesOnly || isSaved(c.external_id))
-                        && (!activeCol || activeCol.characterIds.includes(c.external_id));
+                        && (!activeCol || activeCol.characterIds.includes(c.external_id))
+                        && notInOther;
                     });
                     const currentIdx = visibleList.findIndex(c => c.external_id === char.external_id);
                     const [from, to] = [Math.min(lastSelectedIndexRef.current, currentIdx), Math.max(lastSelectedIndexRef.current, currentIdx)];
