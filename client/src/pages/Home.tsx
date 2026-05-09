@@ -119,12 +119,16 @@ export default function Home() {
     }
   };
 
-  const handleCharacterCreated = () => {
-    // Reset and re-fetch from the top
-    setAllCharacters([]);
-    setCursor(undefined);
-    setHasMore(true);
-    refetch();
+  const handleCharacterSaved = (character: ApiCharacter, mode: 'create' | 'edit') => {
+    if (mode === 'edit') {
+      // Patch the existing card in-place — no roster reload needed
+      setAllCharacters(prev =>
+        prev.map(c => c.external_id === character.external_id ? character : c)
+      );
+    } else {
+      // New character: prepend to the top of the list
+      setAllCharacters(prev => [character, ...prev]);
+    }
   };
 
   return (
@@ -347,7 +351,7 @@ export default function Home() {
       <CreateCharacterModal
         open={showCreateModal || !!editCharacter}
         onClose={() => { setShowCreateModal(false); setEditCharacter(null); }}
-        onSaved={handleCharacterCreated}
+        onSaved={handleCharacterSaved}
         editCharacter={editCharacter}
       />
     </div>

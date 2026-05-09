@@ -14,7 +14,8 @@ type PrivacyStatus = 'private' | 'public' | 'linked';
 interface CreateCharacterModalProps {
   open: boolean;
   onClose: () => void;
-  onSaved: () => void;
+  /** Called after a successful save. Receives the updated/created character from the API response. */
+  onSaved: (character: ApiCharacter, mode: 'create' | 'edit') => void;
   /** When provided, the modal operates in edit mode pre-filled with this character's data */
   editCharacter?: ApiCharacter | null;
 }
@@ -182,7 +183,7 @@ export default function CreateCharacterModal({
 
     try {
       if (isEditMode && editCharacter) {
-        await updateMutation.mutateAsync({
+        const updated = await updateMutation.mutateAsync({
           characterId: editCharacter.external_id,
           name: name.trim(),
           backstory: backstory.trim() || undefined,
@@ -191,8 +192,25 @@ export default function CreateCharacterModal({
           privacy_status: privacy,
         });
         toast.success(`${name} updated successfully!`);
+        handleClose();
+        // Convert SingleCharacter response back to ApiCharacter shape for the list
+        const updatedAsApiChar: ApiCharacter = {
+          external_id: updated.external_id,
+          name: updated.name,
+          backstory: updated.backstory,
+          description: updated.description,
+          headshot_url: updated.headshot_url,
+          display_headshot_url: updated.display_headshot_url,
+          is_persona: editCharacter.is_persona,
+          owner: {
+            username: updated.owner.username,
+            display_name: updated.owner.display_name ?? updated.owner.username,
+          },
+          privacy_status: updated.privacy_status,
+        };
+        onSaved(updatedAsApiChar, 'edit');
       } else {
-        await createMutation.mutateAsync({
+        const created = await createMutation.mutateAsync({
           name: name.trim(),
           backstory: backstory.trim() || undefined,
           appearance: appearance.trim() || undefined,
@@ -200,9 +218,23 @@ export default function CreateCharacterModal({
           privacy_status: privacy,
         });
         toast.success(`${name} created successfully!`);
+        handleClose();
+        const createdAsApiChar: ApiCharacter = {
+          external_id: created.external_id,
+          name: created.name,
+          backstory: created.backstory,
+          description: created.description,
+          headshot_url: created.headshot_url,
+          display_headshot_url: created.display_headshot_url,
+          is_persona: false,
+          owner: {
+            username: created.owner.username,
+            display_name: created.owner.display_name ?? created.owner.username,
+          },
+          privacy_status: created.privacy_status,
+        };
+        onSaved(createdAsApiChar, 'create');
       }
-      handleClose();
-      onSaved();
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : `Failed to ${isEditMode ? 'update' : 'create'} character`);
     }
