@@ -326,6 +326,35 @@ export default function CharacterProfile({ character, onClose, onUpdated }: Char
                   value={displayPrivacy.charAt(0).toUpperCase() + displayPrivacy.slice(1)}
                 />
                 <InfoRow label="Type" value={displayCharacter.is_persona ? 'Persona' : 'Character'} />
+
+                {/* Tags */}
+                {displayCharacter.tags && displayCharacter.tags.length > 0 && (
+                  <div className="py-3" style={{ borderBottom: '1px solid oklch(1 0 0 / 0.07)' }}>
+                    <span
+                      className="text-[10px] uppercase tracking-widest block mb-2"
+                      style={{ fontFamily: 'Rajdhani, sans-serif', color: 'oklch(0.769 0.188 70.08)', fontWeight: 600 }}
+                    >
+                      Tags
+                    </span>
+                    <div className="flex flex-wrap gap-1.5">
+                      {displayCharacter.tags.map(tag => (
+                        <span
+                          key={tag}
+                          className="inline-flex items-center px-2 py-0.5 rounded-sm text-[10px] font-medium tracking-wide"
+                          style={{
+                            fontFamily: 'JetBrains Mono, monospace',
+                            background: 'oklch(0.769 0.188 70.08 / 0.1)',
+                            border: '1px solid oklch(0.769 0.188 70.08 / 0.25)',
+                            color: 'oklch(0.769 0.188 70.08 / 0.85)',
+                          }}
+                        >
+                          {tag}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 <div className="py-4">
                   <SectionLabel label="Backstory" />
                   <p
