@@ -9,7 +9,7 @@ import { Globe, ImagePlus, Link, Lock, Upload, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
-type PrivacyStatus = 'private' | 'public' | 'linked';
+type PrivacyStatus = 'private' | 'public' | 'unlisted';
 
 interface CreateCharacterModalProps {
   open: boolean;
@@ -23,7 +23,7 @@ interface CreateCharacterModalProps {
 const PRIVACY_OPTIONS: { value: PrivacyStatus; label: string; icon: React.ReactNode }[] = [
   { value: 'private', label: 'Private', icon: <Lock size={13} strokeWidth={2.5} /> },
   { value: 'public',  label: 'Public',  icon: <Globe size={13} strokeWidth={2.5} /> },
-  { value: 'linked',  label: 'Linked',  icon: <Link size={13} strokeWidth={2.5} /> },
+  { value: 'unlisted', label: 'Unlisted', icon: <Link size={13} strokeWidth={2.5} /> },
 ];
 
 const FIELD_STYLE = {

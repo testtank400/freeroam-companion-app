@@ -18,13 +18,13 @@ interface CharacterProfileProps {
 }
 
 type Tab = 'about' | 'appearance';
-type PrivacyStatus = 'private' | 'public' | 'linked';
+type PrivacyStatus = 'private' | 'public' | 'unlisted';
 
 function PrivacyBadgeLarge({ status }: { status: PrivacyStatus }) {
   const config = {
     private: { label: 'Private', icon: <Lock size={13} strokeWidth={2.5} />, className: 'badge-private' },
     public:  { label: 'Public',  icon: <Globe size={13} strokeWidth={2.5} />, className: 'badge-public' },
-    linked:  { label: 'Linked',  icon: <Link size={13} strokeWidth={2.5} />,  className: 'badge-linked' },
+    unlisted: { label: 'Unlisted', icon: <Link size={13} strokeWidth={2.5} />, className: 'badge-linked' },
   };
   const { label, icon, className } = config[status];
   return (

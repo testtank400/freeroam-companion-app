@@ -12,7 +12,7 @@ import { ArrowDownUp, ChevronDown, Plus, RefreshCw, Search, X as XIcon } from 'l
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
-export type PrivacyStatus = 'private' | 'public' | 'linked';
+export type PrivacyStatus = 'private' | 'public' | 'unlisted';
 
 export interface ApiCharacter {
   external_id: string;
@@ -389,16 +389,16 @@ export default function Home() {
 
             {/* Linked chip */}
             <button
-              onClick={() => setPrivacyFilter(privacyFilter === 'linked' ? null : 'linked')}
+              onClick={() => setPrivacyFilter(privacyFilter === 'unlisted' ? null : 'unlisted')}
               className="flex items-center gap-1.5 px-3 py-1 rounded-sm text-[11px] font-semibold tracking-wider uppercase transition-all"
               style={{
                 fontFamily: 'Rajdhani, sans-serif',
-                background: privacyFilter === 'linked' ? 'oklch(0.22 0.08 220 / 0.4)' : 'oklch(0.15 0.01 264)',
-                border: privacyFilter === 'linked' ? '1px solid oklch(0.55 0.15 220 / 0.6)' : '1px solid oklch(1 0 0 / 0.08)',
-                color: privacyFilter === 'linked' ? 'oklch(0.75 0.15 220)' : 'oklch(0.45 0.01 264)',
+                background: privacyFilter === 'unlisted' ? 'oklch(0.22 0.08 220 / 0.4)' : 'oklch(0.15 0.01 264)',
+                border: privacyFilter === 'unlisted' ? '1px solid oklch(0.55 0.15 220 / 0.6)' : '1px solid oklch(1 0 0 / 0.08)',
+                color: privacyFilter === 'unlisted' ? 'oklch(0.75 0.15 220)' : 'oklch(0.45 0.01 264)',
               }}
             >
-              🔗 Linked
+              🔗 Unlisted
             </button>
           </div>
 
@@ -485,6 +485,7 @@ export default function Home() {
                     {searchQuery
                       ? `No characters match "${searchQuery}"${privacyFilter ? ` with ${privacyFilter} visibility` : ''}.`
                       : `None of your characters have ${privacyFilter} visibility.`}
+
                   </p>
                   <button
                     onClick={() => { setPrivacyFilter(null); setSearchQuery(''); }}

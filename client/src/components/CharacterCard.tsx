@@ -7,7 +7,7 @@ import { ApiCharacter } from '@/pages/Home';
 import { Globe, Link, Lock, Pencil, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 
-type PrivacyStatus = 'private' | 'public' | 'linked';
+type PrivacyStatus = 'private' | 'public' | 'unlisted';
 
 interface CharacterCardProps {
   character: ApiCharacter;
@@ -28,8 +28,8 @@ function PrivacyBadge({ status }: { status: PrivacyStatus }) {
       icon: <Globe size={11} strokeWidth={2.5} />,
       className: 'badge-public',
     },
-    linked: {
-      label: 'Linked',
+    unlisted: {
+      label: 'Unlisted',
       icon: <Link size={11} strokeWidth={2.5} />,
       className: 'badge-linked',
     },

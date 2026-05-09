@@ -4,6 +4,16 @@ import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, router } from "./_core/trpc";
 import { z } from "zod";
 
+// Coerce any unknown privacy_status value to 'private' so unexpected API values never crash the app
+// Valid values: private, public, unlisted
+const privacyStatusSchema = z
+  .string()
+  .transform((val) =>
+    ["private", "public", "unlisted"].includes(val)
+      ? (val as "private" | "public" | "unlisted")
+      : "private" as const
+  );
+
 // Shape of a character returned by the getfreeroam API
 const CharacterSchema = z.object({
   external_id: z.string(),
@@ -17,7 +27,7 @@ const CharacterSchema = z.object({
     username: z.string(),
     display_name: z.string(),
   }),
-  privacy_status: z.enum(["private", "public", "linked"]),
+  privacy_status: privacyStatusSchema,
 });
 
 // Single character response — includes the `appearance` field not in the list endpoint
@@ -29,7 +39,7 @@ const SingleCharacterSchema = z.object({
   appearance: z.string().nullable(),
   headshot_url: z.string().nullable(),
   display_headshot_url: z.string().nullable(),
-  privacy_status: z.enum(["private", "public", "linked"]),
+  privacy_status: privacyStatusSchema,
   owner: z.object({
     username: z.string(),
     display_name: z.string().optional(),
@@ -151,7 +161,7 @@ export const appRouter = router({
           backstory: z.string().optional(),
           appearance: z.string().optional(),
           headshot_url: z.string().optional(),
-          privacy_status: z.enum(["private", "public", "linked"]).default("private"),
+          privacy_status: z.enum(["private", "public", "unlisted"]).default("private"),
         })
       )
       .mutation(async ({ input }) => {
@@ -198,7 +208,7 @@ export const appRouter = router({
           backstory: z.string().optional(),
           appearance: z.string().optional(),
           headshot_url: z.string().optional(),
-          privacy_status: z.enum(["private", "public", "linked"]).default("private"),
+          privacy_status: z.enum(["private", "public", "unlisted"]).default("private"),
         })
       )
       .mutation(async ({ input }) => {
