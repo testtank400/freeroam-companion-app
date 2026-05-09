@@ -13,7 +13,7 @@ import EditCollectionModal from '@/components/EditCollectionModal';
 import { Collection, useCollections } from '@/hooks/useCollections';
 import { useSavedCharacters } from '@/hooks/useSavedCharacters';
 import { trpc } from '@/lib/trpc';
-import { ArrowDownUp, ArrowLeft, ChevronDown, Plus, RefreshCw, Search, X as XIcon } from 'lucide-react';
+import { ArrowDownUp, ArrowLeft, ChevronDown, FolderPlus, Plus, RefreshCw, Search, UserPlus, X as XIcon } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
@@ -138,6 +138,17 @@ export default function Home() {
   const [activeCollectionId, setActiveCollectionId] = useState<string | null>(null);
   const [editingCollection, setEditingCollection] = useState<Collection | null>(null);
   const [showNewCollectionModal, setShowNewCollectionModal] = useState(false);
+  const [addOpen, setAddOpen] = useState(false);
+  const addRef = useRef<HTMLDivElement>(null);
+
+  // Close + Add dropdown on outside click
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (addRef.current && !addRef.current.contains(e.target as Node)) setAddOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
 
   const activeCollection = activeCollectionId ? collections.find(c => c.id === activeCollectionId) ?? null : null;
 
@@ -425,20 +436,58 @@ export default function Home() {
             <RefreshCw size={13} strokeWidth={2} className={isFetching ? 'animate-spin' : ''} />
           </button>
 
-          {/* Add character button */}
-          <button
-            onClick={handleAddCharacter}
-            className="flex items-center gap-2 px-3 py-1.5 rounded-sm text-xs font-semibold tracking-wider uppercase transition-all hover:brightness-110"
-            style={{
-              fontFamily: 'Rajdhani, sans-serif',
-              background: 'oklch(0.769 0.188 70.08 / 0.12)',
-              border: '1px solid oklch(0.769 0.188 70.08 / 0.35)',
-              color: 'oklch(0.769 0.188 70.08)',
-            }}
-          >
-            <Plus size={14} strokeWidth={2.5} />
-            Add Character
-          </button>
+          {/* + Add dropdown */}
+          <div ref={addRef} className="relative">
+                <button
+                  onClick={() => setAddOpen(o => !o)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-sm text-xs font-semibold tracking-wider uppercase transition-all hover:brightness-110"
+                  style={{
+                    fontFamily: 'Rajdhani, sans-serif',
+                    background: 'oklch(0.769 0.188 70.08 / 0.12)',
+                    border: `1px solid ${addOpen ? 'oklch(0.769 0.188 70.08 / 0.6)' : 'oklch(0.769 0.188 70.08 / 0.35)'}`,
+                    color: 'oklch(0.769 0.188 70.08)',
+                  }}
+                >
+                  <Plus size={14} strokeWidth={2.5} />
+                  Add
+                  <ChevronDown size={11} strokeWidth={2.5} style={{ transform: addOpen ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.15s ease' }} />
+                </button>
+
+                {addOpen && (
+                  <div
+                    className="absolute right-0 mt-1 rounded-sm overflow-hidden"
+                    style={{
+                      background: 'oklch(0.15 0.01 264)',
+                      border: '1px solid oklch(1 0 0 / 0.12)',
+                      boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
+                      zIndex: 50,
+                      minWidth: 160,
+                    }}
+                  >
+                    <button
+                      onClick={() => { setAddOpen(false); handleAddCharacter(); }}
+                      className="w-full flex items-center gap-2.5 px-3 py-2.5 text-left transition-colors hover:bg-white/5"
+                      style={{ borderBottom: '1px solid oklch(1 0 0 / 0.06)' }}
+                    >
+                      <UserPlus size={13} strokeWidth={2} style={{ color: 'oklch(0.769 0.188 70.08)' }} />
+                      <div>
+                        <p className="text-[11px] font-semibold tracking-wide uppercase" style={{ fontFamily: 'Rajdhani, sans-serif', color: 'oklch(0.88 0.005 65)' }}>Character</p>
+                        <p className="text-[9px]" style={{ fontFamily: 'JetBrains Mono, monospace', color: 'oklch(0.45 0.01 264)' }}>Add a new character</p>
+                      </div>
+                    </button>
+                    <button
+                      onClick={() => { setAddOpen(false); setShowNewCollectionModal(true); }}
+                      className="w-full flex items-center gap-2.5 px-3 py-2.5 text-left transition-colors hover:bg-white/5"
+                    >
+                      <FolderPlus size={13} strokeWidth={2} style={{ color: 'oklch(0.769 0.188 70.08)' }} />
+                      <div>
+                        <p className="text-[11px] font-semibold tracking-wide uppercase" style={{ fontFamily: 'Rajdhani, sans-serif', color: 'oklch(0.88 0.005 65)' }}>Collection</p>
+                        <p className="text-[9px]" style={{ fontFamily: 'JetBrains Mono, monospace', color: 'oklch(0.45 0.01 264)' }}>Group characters together</p>
+                      </div>
+                    </button>
+                  </div>
+                )}
+          </div>
         </div>
       </header>
 
