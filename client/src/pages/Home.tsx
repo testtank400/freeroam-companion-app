@@ -336,6 +336,14 @@ export default function Home() {
         <CharacterProfile
           character={selectedCharacter}
           onClose={() => setSelectedCharacter(null)}
+          onUpdated={(updated) => {
+            // Patch the card grid in-place
+            setAllCharacters(prev =>
+              prev.map(c => c.external_id === updated.external_id ? updated : c)
+            );
+            // Keep the profile open with the latest data
+            setSelectedCharacter(updated);
+          }}
         />
       )}
 

@@ -2,15 +2,19 @@
 // Design: Tactical Dark Ops — full-screen modal overlay
 // Fetches full character data (including `appearance`) via tRPC on open
 // Two tabs: About (backstory) and Appearance
+// Edit button in header opens CreateCharacterModal inline; on save the profile updates in place
 
+import CreateCharacterModal from '@/components/CreateCharacterModal';
 import { trpc } from '@/lib/trpc';
 import { ApiCharacter } from '@/pages/Home';
-import { Globe, Link, Lock, X } from 'lucide-react';
+import { Globe, Link, Lock, Pencil, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
 interface CharacterProfileProps {
   character: ApiCharacter | null;
   onClose: () => void;
+  /** Called when the character is updated from inside the profile, so the card grid also updates */
+  onUpdated?: (updated: ApiCharacter) => void;
 }
 
 type Tab = 'about' | 'appearance';
@@ -65,19 +69,27 @@ function InfoRow({ label, value }: { label: string; value: string }) {
 
 const FALLBACK_IMAGE = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjUwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iNDAwIiBoZWlnaHQ9IjUwMCIgZmlsbD0iIzFhMWEyNCIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBmb250LWZhbWlseT0ibW9ub3NwYWNlIiBmb250LXNpemU9IjE0IiBmaWxsPSIjMzMzMzQ0IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkeT0iLjNlbSI+Tk8gSU1BR0U8L3RleHQ+PC9zdmc+';
 
-export default function CharacterProfile({ character, onClose }: CharacterProfileProps) {
+export default function CharacterProfile({ character, onClose, onUpdated }: CharacterProfileProps) {
   const [activeTab, setActiveTab] = useState<Tab>('about');
   const [visible, setVisible] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
+
+  // Local override so profile reflects edits immediately without closing
+  const [localCharacter, setLocalCharacter] = useState<ApiCharacter | null>(null);
+
+  // The character we actually display — prefer local override
+  const displayCharacter = localCharacter ?? character;
 
   // Fetch full character data (with appearance) when a character is selected
-  const { data: fullCharacter, isLoading: isLoadingFull } = trpc.characters.get.useQuery(
-    { characterId: character?.external_id ?? '' },
-    { enabled: !!character?.external_id, staleTime: 5 * 60_000 }
+  const { data: fullCharacter, isLoading: isLoadingFull, refetch: refetchFull } = trpc.characters.get.useQuery(
+    { characterId: displayCharacter?.external_id ?? '' },
+    { enabled: !!displayCharacter?.external_id, staleTime: 5 * 60_000 }
   );
 
   useEffect(() => {
     if (character) {
       setActiveTab('about');
+      setLocalCharacter(null); // reset override when a new character opens
       requestAnimationFrame(() => setVisible(true));
     } else {
       setVisible(false);
@@ -86,193 +98,260 @@ export default function CharacterProfile({ character, onClose }: CharacterProfil
 
   const handleClose = () => {
     setVisible(false);
-    setTimeout(onClose, 250);
+    setTimeout(() => {
+      setLocalCharacter(null);
+      onClose();
+    }, 250);
   };
 
   const handleBackdropClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (e.target === e.currentTarget) handleClose();
+    if (e.target === e.currentTarget && !showEditModal) handleClose();
   };
 
   useEffect(() => {
-    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') handleClose(); };
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !showEditModal) handleClose();
+    };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, []);
+  }, [showEditModal]);
 
-  if (!character) return null;
+  // Called when the edit modal saves successfully
+  const handleEditSaved = (updated: ApiCharacter, mode: 'create' | 'edit') => {
+    if (mode !== 'edit') return;
+    // Update local display immediately
+    setLocalCharacter(updated);
+    // Invalidate the full-character cache so appearance refreshes too
+    refetchFull();
+    // Bubble up to the card grid
+    onUpdated?.(updated);
+  };
 
-  // Use full data if available, fall back to list data while loading
-  const displayName = fullCharacter?.name ?? character.name;
-  const displayOwner = fullCharacter?.owner.display_name ?? fullCharacter?.owner.username ?? character.owner.display_name;
-  const displayPrivacy = fullCharacter?.privacy_status ?? character.privacy_status;
+  if (!displayCharacter) return null;
+
+  // Derive display values — prefer local override, then full fetch, then list data
+  const displayName = fullCharacter?.name ?? displayCharacter.name;
+  const displayOwner = fullCharacter?.owner.display_name ?? fullCharacter?.owner.username ?? displayCharacter.owner.display_name;
+  const displayPrivacy = fullCharacter?.privacy_status ?? displayCharacter.privacy_status;
   const imageUrl = fullCharacter?.display_headshot_url ?? fullCharacter?.headshot_url
-    ?? character.display_headshot_url ?? character.headshot_url ?? FALLBACK_IMAGE;
-  const backstory = fullCharacter?.backstory ?? character.backstory;
+    ?? displayCharacter.display_headshot_url ?? displayCharacter.headshot_url ?? FALLBACK_IMAGE;
+  const backstory = fullCharacter?.backstory ?? displayCharacter.backstory;
   const appearance = fullCharacter?.appearance ?? null;
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4"
-      style={{
-        background: `rgba(0,0,0,${visible ? '0.75' : '0'})`,
-        backdropFilter: visible ? 'blur(6px)' : 'blur(0px)',
-        transition: 'background 0.25s ease, backdrop-filter 0.25s ease',
-      }}
-      onClick={handleBackdropClick}
-    >
+    <>
       <div
-        className="relative w-full sm:max-w-4xl sm:rounded-sm overflow-hidden flex flex-col"
+        className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4"
         style={{
-          background: 'oklch(0.11 0.009 264)',
-          border: '1px solid oklch(1 0 0 / 0.1)',
-          maxHeight: '92vh',
-          transform: visible ? 'translateY(0) scale(1)' : 'translateY(40px) scale(0.97)',
-          opacity: visible ? 1 : 0,
-          transition: 'transform 0.25s ease, opacity 0.25s ease',
-          boxShadow: '0 0 0 1px oklch(0.769 0.188 70.08 / 0.15), 0 24px 64px rgba(0,0,0,0.6)',
+          background: `rgba(0,0,0,${visible ? '0.75' : '0'})`,
+          backdropFilter: visible ? 'blur(6px)' : 'blur(0px)',
+          transition: 'background 0.25s ease, backdrop-filter 0.25s ease',
         }}
+        onClick={handleBackdropClick}
       >
-        {/* Header image strip */}
-        <div className="relative flex-shrink-0">
-          <div className="relative h-48 sm:h-64 overflow-hidden">
-            <img
-              src={imageUrl}
-              alt={displayName}
-              className="w-full h-full object-cover object-top"
-              onError={(e) => { (e.target as HTMLImageElement).src = FALLBACK_IMAGE; }}
-            />
-            <div
-              className="absolute inset-0"
-              style={{
-                background: 'linear-gradient(to bottom, oklch(0.11 0.009 264 / 0.3) 0%, oklch(0.11 0.009 264 / 0.7) 60%, oklch(0.11 0.009 264) 100%)',
-              }}
-            />
-          </div>
-
-          {/* Close button */}
-          <button
-            onClick={handleClose}
-            className="absolute top-3 right-3 w-8 h-8 flex items-center justify-center rounded-sm transition-colors hover:bg-white/10"
-            style={{
-              background: 'oklch(0.13 0.01 264 / 0.8)',
-              border: '1px solid oklch(1 0 0 / 0.12)',
-              color: 'oklch(0.7 0.005 65)',
-              backdropFilter: 'blur(4px)',
-            }}
-            title="Close"
-          >
-            <X size={16} strokeWidth={2} />
-          </button>
-
-          {/* Name + creator + badge */}
-          <div className="absolute bottom-0 left-0 right-0 px-6 pb-4">
-            <div className="flex items-end justify-between gap-4">
-              <div>
-                <h2
-                  className="text-3xl sm:text-4xl font-bold tracking-wide leading-none"
-                  style={{ fontFamily: 'Rajdhani, sans-serif', color: 'oklch(0.97 0.005 65)' }}
-                >
-                  {displayName}
-                </h2>
-                <p
-                  className="text-xs mt-1"
-                  style={{ fontFamily: 'JetBrains Mono, monospace', color: 'oklch(0.5 0.01 264)' }}
-                >
-                  by {displayOwner}
-                </p>
-              </div>
-              <div className="flex-shrink-0 mb-1">
-                <PrivacyBadgeLarge status={displayPrivacy} />
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Tab bar */}
-        <div className="flex-shrink-0 flex" style={{ borderBottom: '1px solid oklch(1 0 0 / 0.08)' }}>
-          {(['about', 'appearance'] as Tab[]).map((tab) => (
-            <button
-              key={tab}
-              onClick={() => setActiveTab(tab)}
-              className="relative px-6 py-3 text-sm font-semibold tracking-widest uppercase transition-colors"
-              style={{
-                fontFamily: 'Rajdhani, sans-serif',
-                color: activeTab === tab ? 'oklch(0.769 0.188 70.08)' : 'oklch(0.5 0.01 264)',
-                background: 'transparent',
-                borderBottom: activeTab === tab ? '2px solid oklch(0.769 0.188 70.08)' : '2px solid transparent',
-                marginBottom: '-1px',
-              }}
-            >
-              {tab}
-            </button>
-          ))}
-        </div>
-
-        {/* Tab content — scrollable */}
-        <div className="flex-1 overflow-y-auto">
-
-          {/* Loading shimmer while fetching full data */}
-          {isLoadingFull && (
-            <div className="p-6 space-y-3 animate-pulse">
-              {Array.from({ length: 5 }).map((_, i) => (
-                <div key={i} className="py-3" style={{ borderBottom: '1px solid oklch(1 0 0 / 0.07)' }}>
-                  <div className="h-2 rounded mb-2" style={{ background: 'oklch(0.769 0.188 70.08 / 0.2)', width: '25%' }} />
-                  <div className="h-3 rounded" style={{ background: 'oklch(0.18 0.01 264)', width: `${50 + i * 10}%` }} />
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* About tab */}
-          {!isLoadingFull && activeTab === 'about' && (
-            <div className="p-6">
-              <InfoRow label="Name" value={displayName} />
-              <InfoRow label="Owner" value={displayOwner} />
-              <InfoRow
-                label="Visibility"
-                value={displayPrivacy.charAt(0).toUpperCase() + displayPrivacy.slice(1)}
+        <div
+          className="relative w-full sm:max-w-4xl sm:rounded-sm overflow-hidden flex flex-col"
+          style={{
+            background: 'oklch(0.11 0.009 264)',
+            border: '1px solid oklch(1 0 0 / 0.1)',
+            maxHeight: '92vh',
+            transform: visible ? 'translateY(0) scale(1)' : 'translateY(40px) scale(0.97)',
+            opacity: visible ? 1 : 0,
+            transition: 'transform 0.25s ease, opacity 0.25s ease',
+            boxShadow: '0 0 0 1px oklch(0.769 0.188 70.08 / 0.15), 0 24px 64px rgba(0,0,0,0.6)',
+          }}
+        >
+          {/* Header image strip */}
+          <div className="relative flex-shrink-0">
+            <div className="relative h-48 sm:h-64 overflow-hidden">
+              <img
+                src={imageUrl}
+                alt={displayName}
+                className="w-full h-full object-cover object-top"
+                onError={(e) => { (e.target as HTMLImageElement).src = FALLBACK_IMAGE; }}
               />
-              <InfoRow label="Type" value={character.is_persona ? 'Persona' : 'Character'} />
-              <div className="py-4">
-                <SectionLabel label="Backstory" />
-                <p
-                  className="leading-loose whitespace-pre-wrap"
-                  style={{ fontFamily: 'JetBrains Mono, monospace', color: 'oklch(0.72 0.008 264)', fontSize: '12px' }}
-                >
-                  {backstory || 'No backstory provided.'}
-                </p>
+              <div
+                className="absolute inset-0"
+                style={{
+                  background: 'linear-gradient(to bottom, oklch(0.11 0.009 264 / 0.3) 0%, oklch(0.11 0.009 264 / 0.7) 60%, oklch(0.11 0.009 264) 100%)',
+                }}
+              />
+            </div>
+
+            {/* Top-right action buttons: Edit + Close */}
+            <div className="absolute top-3 right-3 flex items-center gap-2">
+              {/* Edit button */}
+              <button
+                onClick={() => setShowEditModal(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-sm transition-all hover:brightness-110"
+                style={{
+                  background: 'oklch(0.769 0.188 70.08 / 0.15)',
+                  border: '1px solid oklch(0.769 0.188 70.08 / 0.4)',
+                  color: 'oklch(0.769 0.188 70.08)',
+                  backdropFilter: 'blur(4px)',
+                  fontFamily: 'Rajdhani, sans-serif',
+                  fontSize: '11px',
+                  fontWeight: 700,
+                  letterSpacing: '0.1em',
+                  textTransform: 'uppercase',
+                }}
+                title="Edit character"
+              >
+                <Pencil size={12} strokeWidth={2.5} />
+                Edit
+              </button>
+
+              {/* Close button */}
+              <button
+                onClick={handleClose}
+                className="w-8 h-8 flex items-center justify-center rounded-sm transition-colors hover:bg-white/10"
+                style={{
+                  background: 'oklch(0.13 0.01 264 / 0.8)',
+                  border: '1px solid oklch(1 0 0 / 0.12)',
+                  color: 'oklch(0.7 0.005 65)',
+                  backdropFilter: 'blur(4px)',
+                }}
+                title="Close"
+              >
+                <X size={16} strokeWidth={2} />
+              </button>
+            </div>
+
+            {/* Name + creator + badge */}
+            <div className="absolute bottom-0 left-0 right-0 px-6 pb-4">
+              <div className="flex items-end justify-between gap-4">
+                <div>
+                  <h2
+                    className="text-3xl sm:text-4xl font-bold tracking-wide leading-none"
+                    style={{ fontFamily: 'Rajdhani, sans-serif', color: 'oklch(0.97 0.005 65)' }}
+                  >
+                    {displayName}
+                  </h2>
+                  <p
+                    className="text-xs mt-1"
+                    style={{ fontFamily: 'JetBrains Mono, monospace', color: 'oklch(0.5 0.01 264)' }}
+                  >
+                    by {displayOwner}
+                  </p>
+                </div>
+                <div className="flex-shrink-0 mb-1">
+                  <PrivacyBadgeLarge status={displayPrivacy} />
+                </div>
               </div>
             </div>
-          )}
+          </div>
 
-          {/* Appearance tab */}
-          {!isLoadingFull && activeTab === 'appearance' && (
-            <div className="p-6">
-              {appearance ? (
-                <div className="py-2">
-                  <SectionLabel label="Appearance" />
+          {/* Tab bar */}
+          <div className="flex-shrink-0 flex" style={{ borderBottom: '1px solid oklch(1 0 0 / 0.08)' }}>
+            {(['about', 'appearance'] as Tab[]).map((tab) => (
+              <button
+                key={tab}
+                onClick={() => setActiveTab(tab)}
+                className="relative px-6 py-3 text-sm font-semibold tracking-widest uppercase transition-colors"
+                style={{
+                  fontFamily: 'Rajdhani, sans-serif',
+                  color: activeTab === tab ? 'oklch(0.769 0.188 70.08)' : 'oklch(0.5 0.01 264)',
+                  background: 'transparent',
+                  borderBottom: activeTab === tab ? '2px solid oklch(0.769 0.188 70.08)' : '2px solid transparent',
+                  marginBottom: '-1px',
+                }}
+              >
+                {tab}
+              </button>
+            ))}
+          </div>
+
+          {/* Tab content — scrollable */}
+          <div className="flex-1 overflow-y-auto">
+
+            {/* Loading shimmer while fetching full data */}
+            {isLoadingFull && (
+              <div className="p-6 space-y-3 animate-pulse">
+                {Array.from({ length: 5 }).map((_, i) => (
+                  <div key={i} className="py-3" style={{ borderBottom: '1px solid oklch(1 0 0 / 0.07)' }}>
+                    <div className="h-2 rounded mb-2" style={{ background: 'oklch(0.769 0.188 70.08 / 0.2)', width: '25%' }} />
+                    <div className="h-3 rounded" style={{ background: 'oklch(0.18 0.01 264)', width: `${50 + i * 10}%` }} />
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* About tab */}
+            {!isLoadingFull && activeTab === 'about' && (
+              <div className="p-6">
+                <InfoRow label="Name" value={displayName} />
+                <InfoRow label="Owner" value={displayOwner} />
+                <InfoRow
+                  label="Visibility"
+                  value={displayPrivacy.charAt(0).toUpperCase() + displayPrivacy.slice(1)}
+                />
+                <InfoRow label="Type" value={displayCharacter.is_persona ? 'Persona' : 'Character'} />
+                <div className="py-4">
+                  <SectionLabel label="Backstory" />
                   <p
                     className="leading-loose whitespace-pre-wrap"
                     style={{ fontFamily: 'JetBrains Mono, monospace', color: 'oklch(0.72 0.008 264)', fontSize: '12px' }}
                   >
-                    {appearance}
+                    {backstory || 'No backstory provided.'}
                   </p>
                 </div>
-              ) : (
-                <div className="flex flex-col items-center justify-center py-16 gap-3">
-                  <p style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: '16px', fontWeight: 700, color: 'oklch(0.35 0.01 264)' }}>
-                    NO APPEARANCE DATA
-                  </p>
-                  <p style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '11px', color: 'oklch(0.3 0.01 264)' }}>
-                    This character has no appearance description on file.
-                  </p>
-                </div>
-              )}
-            </div>
-          )}
+              </div>
+            )}
 
+            {/* Appearance tab */}
+            {!isLoadingFull && activeTab === 'appearance' && (
+              <div className="p-6">
+                {appearance ? (
+                  <div className="py-2">
+                    <SectionLabel label="Appearance" />
+                    <p
+                      className="leading-loose whitespace-pre-wrap"
+                      style={{ fontFamily: 'JetBrains Mono, monospace', color: 'oklch(0.72 0.008 264)', fontSize: '12px' }}
+                    >
+                      {appearance}
+                    </p>
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-center justify-center py-16 gap-3">
+                    <p style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: '16px', fontWeight: 700, color: 'oklch(0.35 0.01 264)' }}>
+                      NO APPEARANCE DATA
+                    </p>
+                    <p style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '11px', color: 'oklch(0.3 0.01 264)' }}>
+                      This character has no appearance description on file.
+                    </p>
+                    <button
+                      onClick={() => setShowEditModal(true)}
+                      className="mt-2 flex items-center gap-1.5 px-3 py-1.5 rounded-sm transition-all hover:brightness-110 text-xs font-semibold tracking-wider uppercase"
+                      style={{
+                        fontFamily: 'Rajdhani, sans-serif',
+                        background: 'oklch(0.769 0.188 70.08 / 0.1)',
+                        border: '1px solid oklch(0.769 0.188 70.08 / 0.3)',
+                        color: 'oklch(0.769 0.188 70.08)',
+                      }}
+                    >
+                      <Pencil size={12} strokeWidth={2.5} />
+                      Add Appearance
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
+          </div>
         </div>
       </div>
-    </div>
+
+      {/* Edit modal — rendered at z-60 so it sits above the profile modal */}
+      {showEditModal && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 60 }}>
+          <CreateCharacterModal
+            open={showEditModal}
+            onClose={() => setShowEditModal(false)}
+            onSaved={handleEditSaved}
+            editCharacter={displayCharacter}
+          />
+        </div>
+      )}
+    </>
   );
 }
