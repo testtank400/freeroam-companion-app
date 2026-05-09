@@ -343,63 +343,36 @@ export default function Home() {
         <div className="flex flex-wrap items-center gap-3 mb-6">
           <div className="h-px flex-1 hidden sm:block" style={{ background: 'oklch(1 0 0 / 0.06)' }} />
 
-          {/* Privacy filter chips */}
+          {/* Privacy filter chips with count badges */}
           <div className="flex items-center gap-2">
-            {/* All chip */}
-            <button
-              onClick={() => setPrivacyFilter(null)}
-              className="flex items-center gap-1.5 px-3 py-1 rounded-sm text-[11px] font-semibold tracking-wider uppercase transition-all"
-              style={{
-                fontFamily: 'Rajdhani, sans-serif',
-                background: privacyFilter === null ? 'oklch(0.769 0.188 70.08 / 0.15)' : 'oklch(0.15 0.01 264)',
-                border: privacyFilter === null ? '1px solid oklch(0.769 0.188 70.08 / 0.45)' : '1px solid oklch(1 0 0 / 0.08)',
-                color: privacyFilter === null ? 'oklch(0.769 0.188 70.08)' : 'oklch(0.45 0.01 264)',
-              }}
-            >
-              All
-            </button>
-
-            {/* Private chip */}
-            <button
-              onClick={() => setPrivacyFilter(privacyFilter === 'private' ? null : 'private')}
-              className="flex items-center gap-1.5 px-3 py-1 rounded-sm text-[11px] font-semibold tracking-wider uppercase transition-all"
-              style={{
-                fontFamily: 'Rajdhani, sans-serif',
-                background: privacyFilter === 'private' ? 'oklch(0.22 0.01 264)' : 'oklch(0.15 0.01 264)',
-                border: privacyFilter === 'private' ? '1px solid oklch(1 0 0 / 0.25)' : '1px solid oklch(1 0 0 / 0.08)',
-                color: privacyFilter === 'private' ? 'oklch(0.88 0.005 65)' : 'oklch(0.45 0.01 264)',
-              }}
-            >
-              🔒 Private
-            </button>
-
-            {/* Public chip */}
-            <button
-              onClick={() => setPrivacyFilter(privacyFilter === 'public' ? null : 'public')}
-              className="flex items-center gap-1.5 px-3 py-1 rounded-sm text-[11px] font-semibold tracking-wider uppercase transition-all"
-              style={{
-                fontFamily: 'Rajdhani, sans-serif',
-                background: privacyFilter === 'public' ? 'oklch(0.22 0.08 145 / 0.4)' : 'oklch(0.15 0.01 264)',
-                border: privacyFilter === 'public' ? '1px solid oklch(0.55 0.15 145 / 0.6)' : '1px solid oklch(1 0 0 / 0.08)',
-                color: privacyFilter === 'public' ? 'oklch(0.75 0.15 145)' : 'oklch(0.45 0.01 264)',
-              }}
-            >
-              🌐 Public
-            </button>
-
-            {/* Linked chip */}
-            <button
-              onClick={() => setPrivacyFilter(privacyFilter === 'unlisted' ? null : 'unlisted')}
-              className="flex items-center gap-1.5 px-3 py-1 rounded-sm text-[11px] font-semibold tracking-wider uppercase transition-all"
-              style={{
-                fontFamily: 'Rajdhani, sans-serif',
-                background: privacyFilter === 'unlisted' ? 'oklch(0.22 0.08 220 / 0.4)' : 'oklch(0.15 0.01 264)',
-                border: privacyFilter === 'unlisted' ? '1px solid oklch(0.55 0.15 220 / 0.6)' : '1px solid oklch(1 0 0 / 0.08)',
-                color: privacyFilter === 'unlisted' ? 'oklch(0.75 0.15 220)' : 'oklch(0.45 0.01 264)',
-              }}
-            >
-              🔗 Unlisted
-            </button>
+            {([
+              { value: null,        label: 'All',      emoji: null,  count: allCharacters.length,                                              bg: privacyFilter === null       ? 'oklch(0.769 0.188 70.08 / 0.15)' : 'oklch(0.15 0.01 264)', border: privacyFilter === null       ? '1px solid oklch(0.769 0.188 70.08 / 0.45)' : '1px solid oklch(1 0 0 / 0.08)', color: privacyFilter === null       ? 'oklch(0.769 0.188 70.08)' : 'oklch(0.45 0.01 264)' },
+              { value: 'private',   label: 'Private',  emoji: '🔒', count: allCharacters.filter(c => c.privacy_status === 'private').length,  bg: privacyFilter === 'private'  ? 'oklch(0.22 0.01 264)'          : 'oklch(0.15 0.01 264)', border: privacyFilter === 'private'  ? '1px solid oklch(1 0 0 / 0.25)'              : '1px solid oklch(1 0 0 / 0.08)', color: privacyFilter === 'private'  ? 'oklch(0.88 0.005 65)'      : 'oklch(0.45 0.01 264)' },
+              { value: 'public',    label: 'Public',   emoji: '🌐', count: allCharacters.filter(c => c.privacy_status === 'public').length,   bg: privacyFilter === 'public'   ? 'oklch(0.22 0.08 145 / 0.4)'    : 'oklch(0.15 0.01 264)', border: privacyFilter === 'public'   ? '1px solid oklch(0.55 0.15 145 / 0.6)'       : '1px solid oklch(1 0 0 / 0.08)', color: privacyFilter === 'public'   ? 'oklch(0.75 0.15 145)'      : 'oklch(0.45 0.01 264)' },
+              { value: 'unlisted',  label: 'Unlisted', emoji: '🔗', count: allCharacters.filter(c => c.privacy_status === 'unlisted').length, bg: privacyFilter === 'unlisted' ? 'oklch(0.22 0.08 220 / 0.4)'    : 'oklch(0.15 0.01 264)', border: privacyFilter === 'unlisted' ? '1px solid oklch(0.55 0.15 220 / 0.6)'       : '1px solid oklch(1 0 0 / 0.08)', color: privacyFilter === 'unlisted' ? 'oklch(0.75 0.15 220)'      : 'oklch(0.45 0.01 264)' },
+            ] as const).map(({ value, label, emoji, count, bg, border, color }) => (
+              <button
+                key={label}
+                onClick={() => setPrivacyFilter(value === privacyFilter ? null : (value as PrivacyStatus | null))}
+                className="flex items-center gap-1.5 px-3 py-1 rounded-sm text-[11px] font-semibold tracking-wider uppercase transition-all"
+                style={{ fontFamily: 'Rajdhani, sans-serif', background: bg, border, color }}
+              >
+                {emoji && <span>{emoji}</span>}
+                {label}
+                {!isLoading && count > 0 && (
+                  <span
+                    className="inline-flex items-center justify-center rounded-sm px-1 min-w-[18px] h-[16px] text-[9px] font-bold"
+                    style={{
+                      fontFamily: 'JetBrains Mono, monospace',
+                      background: 'oklch(1 0 0 / 0.12)',
+                      color: 'inherit',
+                    }}
+                  >
+                    {count}
+                  </span>
+                )}
+              </button>
+            ))}
           </div>
 
           <div className="h-px flex-1 hidden sm:block" style={{ background: 'oklch(1 0 0 / 0.06)' }} />
