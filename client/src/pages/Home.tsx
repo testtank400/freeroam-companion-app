@@ -8,7 +8,7 @@ import CharacterProfile from '@/components/CharacterProfile';
 import CreateCharacterModal from '@/components/CreateCharacterModal';
 import DeleteConfirmDialog from '@/components/DeleteConfirmDialog';
 import { trpc } from '@/lib/trpc';
-import { ArrowDownUp, ChevronDown, Plus, RefreshCw } from 'lucide-react';
+import { ArrowDownUp, ChevronDown, Plus, RefreshCw, Search, X as XIcon } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
@@ -49,6 +49,7 @@ export default function Home() {
   const [sortDropdownOpen, setSortDropdownOpen] = useState(false);
   // null = show all; otherwise only show matching privacy status
   const [privacyFilter, setPrivacyFilter] = useState<PrivacyStatus | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
   const sentinelRef = useRef<HTMLDivElement>(null);
   const sortDropdownRef = useRef<HTMLDivElement>(null);
   const utils = trpc.useUtils();
@@ -206,12 +207,16 @@ export default function Home() {
               {isLoading
                 ? 'Loading...'
                 : (() => {
-                    const visible = privacyFilter
-                      ? allCharacters.filter(c => c.privacy_status === privacyFilter).length
-                      : allCharacters.length;
+                    const q = searchQuery.trim().toLowerCase();
+                    const visible = allCharacters.filter(c => {
+                      const matchesPrivacy = !privacyFilter || c.privacy_status === privacyFilter;
+                      const matchesSearch = !q || c.name.toLowerCase().includes(q);
+                      return matchesPrivacy && matchesSearch;
+                    }).length;
                     const total = allCharacters.length;
                     const suffix = hasMore ? '+' : '';
-                    return privacyFilter
+                    const isFiltered = privacyFilter || q;
+                    return isFiltered
                       ? `${visible} of ${total}${suffix} unit${total !== 1 ? 's' : ''}`
                       : `${total}${suffix} unit${total !== 1 ? 's' : ''} on record`;
                   })()}
@@ -220,6 +225,42 @@ export default function Home() {
         </div>
 
         <div className="flex items-center gap-2">
+          {/* Search bar */}
+          <div className="relative flex items-center">
+            <Search
+              size={13}
+              strokeWidth={2}
+              className="absolute left-2.5 pointer-events-none"
+              style={{ color: 'oklch(0.45 0.01 264)' }}
+            />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search..."
+              className="pl-8 pr-7 py-1.5 rounded-sm text-xs w-36 sm:w-48 transition-all"
+              style={{
+                fontFamily: 'JetBrains Mono, monospace',
+                background: 'oklch(0.15 0.01 264)',
+                border: `1px solid ${searchQuery ? 'oklch(0.769 0.188 70.08 / 0.4)' : 'oklch(1 0 0 / 0.1)'}`,
+                color: 'oklch(0.88 0.005 65)',
+                outline: 'none',
+              }}
+              onFocus={(e) => (e.target.style.borderColor = 'oklch(0.769 0.188 70.08 / 0.5)')}
+              onBlur={(e) => (e.target.style.borderColor = searchQuery ? 'oklch(0.769 0.188 70.08 / 0.4)' : 'oklch(1 0 0 / 0.1)')}
+            />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                className="absolute right-2 flex items-center justify-center transition-colors hover:opacity-80"
+                style={{ color: 'oklch(0.45 0.01 264)' }}
+                title="Clear search"
+              >
+                <XIcon size={11} strokeWidth={2.5} />
+              </button>
+            )}
+          </div>
+
           {/* Sort dropdown */}
           <div ref={sortDropdownRef} className="relative">
             <button
@@ -452,27 +493,32 @@ export default function Home() {
           </div>
         )}
 
-        {/* Derive filtered list */}
+        {/* Derive filtered list — applies both search and privacy filter */}
         {(() => {
-          const visibleCharacters = privacyFilter
-            ? allCharacters.filter(c => c.privacy_status === privacyFilter)
-            : allCharacters;
+          const q = searchQuery.trim().toLowerCase();
+          const visibleCharacters = allCharacters.filter(c => {
+            const matchesPrivacy = !privacyFilter || c.privacy_status === privacyFilter;
+            const matchesSearch = !q || c.name.toLowerCase().includes(q);
+            return matchesPrivacy && matchesSearch;
+          });
 
           const filteredEmpty = !isLoading && !isError && allCharacters.length > 0 && visibleCharacters.length === 0;
 
           return (
             <>
-              {/* No results for this filter */}
+              {/* No results for current filters */}
               {filteredEmpty && (
                 <div className="flex flex-col items-center justify-center py-16 gap-3">
                   <p style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: '16px', fontWeight: 700, color: 'oklch(0.4 0.01 264)' }}>
-                    NO {privacyFilter?.toUpperCase()} CHARACTERS
+                    NO RESULTS
                   </p>
                   <p style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '12px', color: 'oklch(0.35 0.01 264)' }}>
-                    None of your characters have {privacyFilter} visibility.
+                    {searchQuery
+                      ? `No characters match "${searchQuery}"${privacyFilter ? ` with ${privacyFilter} visibility` : ''}.`
+                      : `None of your characters have ${privacyFilter} visibility.`}
                   </p>
                   <button
-                    onClick={() => setPrivacyFilter(null)}
+                    onClick={() => { setPrivacyFilter(null); setSearchQuery(''); }}
                     className="mt-1 px-3 py-1.5 rounded-sm text-[11px] font-semibold tracking-wider uppercase transition-all"
                     style={{
                       fontFamily: 'Rajdhani, sans-serif',
@@ -481,7 +527,7 @@ export default function Home() {
                       color: 'oklch(0.769 0.188 70.08)',
                     }}
                   >
-                    Show All
+                    Clear Filters
                   </button>
                 </div>
               )}
@@ -492,7 +538,12 @@ export default function Home() {
         {/* Card grid */}
         {allCharacters.length > 0 && (
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-            {(privacyFilter ? allCharacters.filter(c => c.privacy_status === privacyFilter) : allCharacters).map((character) => (
+            {allCharacters.filter(c => {
+              const q = searchQuery.trim().toLowerCase();
+              const matchesPrivacy = !privacyFilter || c.privacy_status === privacyFilter;
+              const matchesSearch = !q || c.name.toLowerCase().includes(q);
+              return matchesPrivacy && matchesSearch;
+            }).map((character) => (
               <CharacterCard
                 key={character.external_id}
                 character={character}
