@@ -8,7 +8,7 @@ import CharacterProfile from '@/components/CharacterProfile';
 import CreateCharacterModal from '@/components/CreateCharacterModal';
 import DeleteConfirmDialog from '@/components/DeleteConfirmDialog';
 import { trpc } from '@/lib/trpc';
-import { Plus, RefreshCw } from 'lucide-react';
+import { ArrowDownUp, ChevronDown, Plus, RefreshCw } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
@@ -29,6 +29,12 @@ export interface ApiCharacter {
 const USERNAME = 'Test Tank';
 const LIMIT = 20;
 
+type SortOption = { value: string; label: string; description: string };
+const SORT_OPTIONS: SortOption[] = [
+  { value: 'recent',  label: 'Most Recent', description: 'Newest first' },
+  { value: 'oldest',  label: 'Oldest First', description: 'Oldest first' },
+];
+
 export default function Home() {
   const [selectedCharacter, setSelectedCharacter] = useState<ApiCharacter | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -39,12 +45,26 @@ export default function Home() {
   const [cursor, setCursor] = useState<string | undefined>(undefined);
   const [hasMore, setHasMore] = useState(true);
   const [isFetchingMore, setIsFetchingMore] = useState(false);
+  const [sort, setSort] = useState<string>('recent');
+  const [sortDropdownOpen, setSortDropdownOpen] = useState(false);
   const sentinelRef = useRef<HTMLDivElement>(null);
+  const sortDropdownRef = useRef<HTMLDivElement>(null);
   const utils = trpc.useUtils();
+
+  // Close sort dropdown on outside click
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (sortDropdownRef.current && !sortDropdownRef.current.contains(e.target as Node)) {
+        setSortDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
 
   // Initial load
   const { data, isLoading, isError, refetch, isFetching } = trpc.characters.list.useQuery(
-    { username: USERNAME, limit: LIMIT, sort: 'recent', cursor: undefined },
+    { username: USERNAME, limit: LIMIT, sort, cursor: undefined },
     { staleTime: 60_000 }
   );
 
@@ -65,7 +85,7 @@ export default function Home() {
       const result = await utils.characters.list.fetch({
         username: USERNAME,
         limit: LIMIT,
-        sort: 'recent',
+        sort,
         cursor,
       });
       setAllCharacters(prev => [...prev, ...(result.characters as ApiCharacter[])]);
@@ -102,6 +122,17 @@ export default function Home() {
     setCursor(undefined);
     setHasMore(true);
     refetch();
+  };
+
+  // Change sort — reset list and reload
+  const handleSortChange = (newSort: string) => {
+    if (newSort === sort) { setSortDropdownOpen(false); return; }
+    setSort(newSort);
+    setAllCharacters([]);
+    setCursor(undefined);
+    setHasMore(true);
+    setSortDropdownOpen(false);
+    // The query will auto-refetch because `sort` changed
   };
 
   const handleAddCharacter = () => setShowCreateModal(true);
@@ -178,6 +209,81 @@ export default function Home() {
         </div>
 
         <div className="flex items-center gap-2">
+          {/* Sort dropdown */}
+          <div ref={sortDropdownRef} className="relative">
+            <button
+              onClick={() => setSortDropdownOpen(o => !o)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-sm text-xs font-semibold tracking-wider uppercase transition-all hover:brightness-110"
+              style={{
+                fontFamily: 'Rajdhani, sans-serif',
+                background: 'oklch(0.18 0.01 264)',
+                border: `1px solid ${sortDropdownOpen ? 'oklch(0.769 0.188 70.08 / 0.4)' : 'oklch(1 0 0 / 0.1)'}`,
+                color: sortDropdownOpen ? 'oklch(0.769 0.188 70.08)' : 'oklch(0.65 0.01 264)',
+              }}
+              title="Sort order"
+            >
+              <ArrowDownUp size={12} strokeWidth={2.5} />
+              <span className="hidden sm:inline">{SORT_OPTIONS.find(o => o.value === sort)?.label ?? 'Sort'}</span>
+              <ChevronDown
+                size={11}
+                strokeWidth={2.5}
+                style={{
+                  transform: sortDropdownOpen ? 'rotate(180deg)' : 'rotate(0deg)',
+                  transition: 'transform 0.15s ease',
+                }}
+              />
+            </button>
+
+            {/* Dropdown panel */}
+            {sortDropdownOpen && (
+              <div
+                className="absolute right-0 mt-1 w-44 rounded-sm overflow-hidden"
+                style={{
+                  background: 'oklch(0.15 0.01 264)',
+                  border: '1px solid oklch(1 0 0 / 0.12)',
+                  boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
+                  zIndex: 50,
+                }}
+              >
+                {SORT_OPTIONS.map((opt) => (
+                  <button
+                    key={opt.value}
+                    onClick={() => handleSortChange(opt.value)}
+                    className="w-full flex items-start gap-2 px-3 py-2.5 text-left transition-colors hover:bg-white/5"
+                    style={{
+                      borderBottom: '1px solid oklch(1 0 0 / 0.06)',
+                      background: sort === opt.value ? 'oklch(0.769 0.188 70.08 / 0.08)' : 'transparent',
+                    }}
+                  >
+                    <div className="flex-1 min-w-0">
+                      <p
+                        className="text-xs font-semibold tracking-wider uppercase"
+                        style={{
+                          fontFamily: 'Rajdhani, sans-serif',
+                          color: sort === opt.value ? 'oklch(0.769 0.188 70.08)' : 'oklch(0.82 0.005 65)',
+                        }}
+                      >
+                        {opt.label}
+                      </p>
+                      <p
+                        className="text-[10px] mt-0.5"
+                        style={{ fontFamily: 'JetBrains Mono, monospace', color: 'oklch(0.45 0.01 264)' }}
+                      >
+                        {opt.description}
+                      </p>
+                    </div>
+                    {sort === opt.value && (
+                      <div
+                        className="w-1.5 h-1.5 rounded-full mt-1 flex-shrink-0"
+                        style={{ background: 'oklch(0.769 0.188 70.08)', marginTop: '4px' }}
+                      />
+                    )}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
           {/* Refresh button */}
           <button
             onClick={handleRefresh}
