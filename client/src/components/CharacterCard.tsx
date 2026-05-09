@@ -12,6 +12,7 @@ type PrivacyStatus = 'private' | 'public' | 'linked';
 interface CharacterCardProps {
   character: ApiCharacter;
   onClick: (character: ApiCharacter) => void;
+  onEdit: (character: ApiCharacter) => void;
 }
 
 function PrivacyBadge({ status }: { status: PrivacyStatus }) {
@@ -49,10 +50,10 @@ function PrivacyBadge({ status }: { status: PrivacyStatus }) {
 // Fallback placeholder image for characters without a headshot
 const FALLBACK_IMAGE = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjUwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iNDAwIiBoZWlnaHQ9IjUwMCIgZmlsbD0iIzFhMWEyNCIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBmb250LWZhbWlseT0ibW9ub3NwYWNlIiBmb250LXNpemU9IjE0IiBmaWxsPSIjMzMzMzQ0IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkeT0iLjNlbSI+Tk8gSU1BR0U8L3RleHQ+PC9zdmc+';
 
-export default function CharacterCard({ character, onClick }: CharacterCardProps) {
+export default function CharacterCard({ character, onClick, onEdit }: CharacterCardProps) {
   const handleEdit = (e: React.MouseEvent) => {
     e.stopPropagation();
-    toast.info('Edit feature coming soon');
+    onEdit(character);
   };
 
   const handleDelete = (e: React.MouseEvent) => {

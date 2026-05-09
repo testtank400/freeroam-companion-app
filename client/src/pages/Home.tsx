@@ -31,6 +31,7 @@ const LIMIT = 20;
 export default function Home() {
   const [selectedCharacter, setSelectedCharacter] = useState<ApiCharacter | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [editCharacter, setEditCharacter] = useState<ApiCharacter | null>(null);
   const [allCharacters, setAllCharacters] = useState<ApiCharacter[]>([]);
   const [cursor, setCursor] = useState<string | undefined>(undefined);
   const [hasMore, setHasMore] = useState(true);
@@ -268,6 +269,7 @@ export default function Home() {
                 key={character.external_id}
                 character={character}
                 onClick={setSelectedCharacter}
+                onEdit={setEditCharacter}
               />
             ))}
 
@@ -318,9 +320,10 @@ export default function Home() {
 
       {/* Create character modal */}
       <CreateCharacterModal
-        open={showCreateModal}
-        onClose={() => setShowCreateModal(false)}
-        onCreated={handleCharacterCreated}
+        open={showCreateModal || !!editCharacter}
+        onClose={() => { setShowCreateModal(false); setEditCharacter(null); }}
+        onSaved={handleCharacterCreated}
+        editCharacter={editCharacter}
       />
     </div>
   );

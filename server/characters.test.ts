@@ -111,6 +111,56 @@ describe("characters.get", () => {
   });
 });
 
+describe("characters.update", () => {
+  beforeEach(() => {
+    vi.resetAllMocks();
+    process.env.cookie = "session=test-session-cookie";
+  });
+
+  it("sends PUT to the correct endpoint with updated body", async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        external_id: "abc-123",
+        name: "Riven Updated",
+        backstory: "Updated backstory.",
+        description: null,
+        appearance: "Updated appearance.",
+        headshot_url: "https://images.getfreeroam.com/riven.webp",
+        display_headshot_url: null,
+        privacy_status: "public",
+        owner: { username: "Test Tank" },
+      }),
+    });
+
+    const caller = appRouter.createCaller(createCtx());
+    const result = await caller.characters.update({
+      characterId: "abc-123",
+      name: "Riven Updated",
+      backstory: "Updated backstory.",
+      appearance: "Updated appearance.",
+      privacy_status: "public",
+    });
+
+    const [calledUrl, calledOptions] = mockFetch.mock.calls[0] as [string, RequestInit];
+    expect(calledUrl).toContain("getfreeroam.com/api/characters/abc-123");
+    expect(calledOptions.method).toBe("PUT");
+    const body = JSON.parse(calledOptions.body as string);
+    expect(body.name).toBe("Riven Updated");
+    expect(body.privacy_status).toBe("public");
+    expect(result.name).toBe("Riven Updated");
+  });
+
+  it("throws when API returns an error status", async () => {
+    mockFetch.mockResolvedValueOnce({ ok: false, status: 403, text: async () => "Forbidden" });
+
+    const caller = appRouter.createCaller(createCtx());
+    await expect(
+      caller.characters.update({ characterId: "abc-123", name: "X", privacy_status: "private" })
+    ).rejects.toThrow("Update failed (403)");
+  });
+});
+
 describe("characters.create", () => {
   beforeEach(() => {
     vi.resetAllMocks();

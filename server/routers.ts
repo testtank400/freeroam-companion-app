@@ -137,10 +137,58 @@ export const appRouter = router({
           throw new Error(`Upload failed (${response.status}): ${text}`);
         }
 
-        const data = await response.json() as { headshot_url?: string; url?: string };
-        const url = data.headshot_url ?? data.url;
-        if (!url) throw new Error("No headshot_url in upload response");
+        const data = await response.json() as { headshot_url?: string; image_url?: string; url?: string };
+        const url = data.image_url ?? data.headshot_url ?? data.url;
+        if (!url) throw new Error("No image_url in upload response");
         return { headshot_url: url };
+      }),
+
+    update: publicProcedure
+      .input(
+        z.object({
+          characterId: z.string(),
+          name: z.string().min(1),
+          backstory: z.string().optional(),
+          appearance: z.string().optional(),
+          headshot_url: z.string().optional(),
+          privacy_status: z.enum(["private", "public", "linked"]).default("private"),
+        })
+      )
+      .mutation(async ({ input }) => {
+        const cookie = process.env.cookie;
+        if (!cookie) throw new Error("Cookie not configured in environment");
+
+        const body: Record<string, string> = { name: input.name };
+        if (input.backstory !== undefined)   body.backstory    = input.backstory;
+        if (input.appearance !== undefined)  body.appearance   = input.appearance;
+        if (input.headshot_url !== undefined) body.headshot_url = input.headshot_url;
+        body.privacy_status = input.privacy_status;
+
+        const response = await fetch(
+          `https://getfreeroam.com/api/characters/${encodeURIComponent(input.characterId)}`,
+          {
+            method: "PUT",
+            headers: {
+              accept: "*/*",
+              "accept-language": "en-US,en;q=0.9",
+              cookie: cookie,
+              origin: "https://getfreeroam.com",
+              referer: "https://getfreeroam.com",
+              "content-type": "application/json",
+              "user-agent":
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36",
+            },
+            body: JSON.stringify(body),
+          }
+        );
+
+        if (!response.ok) {
+          const text = await response.text();
+          throw new Error(`Update failed (${response.status}): ${text}`);
+        }
+
+        const data = await response.json();
+        return SingleCharacterSchema.parse(data);
       }),
 
     create: publicProcedure
