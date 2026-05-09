@@ -62,14 +62,17 @@ export default function Home() {
     return () => document.removeEventListener('mousedown', handler);
   }, []);
 
-  // Fetch ALL pages upfront by walking the cursor chain
+  // Fetch ALL pages client-side, one tRPC call per page.
+  // Each call is a small independent request — avoids server-side loop timeouts.
   const fetchAll = useCallback(async (sortValue: string) => {
     setIsLoadingAll(true);
     setAllCharacters([]);
     const collected: ApiCharacter[] = [];
     let cursor: string | undefined = undefined;
+    let hasMore = true;
     try {
-      while (true) {
+      while (hasMore) {
+        // Each page is its own tRPC query — no long-running server loop
         const result = await utils.characters.list.fetch({
           username: USERNAME,
           limit: LIMIT,
@@ -77,12 +80,13 @@ export default function Home() {
           cursor,
         });
         collected.push(...(result.characters as ApiCharacter[]));
-        if (!result.has_more || !result.next_cursor) break;
-        cursor = result.next_cursor;
+        // Update state incrementally so cards appear as pages arrive
+        setAllCharacters([...collected]);
+        hasMore = result.has_more && !!result.next_cursor;
+        cursor = result.next_cursor ?? undefined;
       }
-      setAllCharacters(collected);
     } catch (err) {
-      toast.error('Failed to load characters');
+      toast.error('Failed to load characters. Please refresh.');
     } finally {
       setIsLoadingAll(false);
     }
@@ -93,8 +97,8 @@ export default function Home() {
     fetchAll(sort);
   }, [sort]);
 
-  const isLoading = isLoadingAll;
-  const isError = false; // errors are surfaced via toast
+  const isLoading = isLoadingAll && allCharacters.length === 0;
+  const isError = false;
   const isFetching = isLoadingAll;
 
   // Full refresh
