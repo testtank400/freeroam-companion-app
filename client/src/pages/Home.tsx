@@ -497,20 +497,13 @@ export default function Home() {
         {/* Collections section — only shown when NOT in collection view */}
         {!activeCollectionId && (
           <div className="mb-8">
-            <div className="flex items-center justify-between mb-3">
+            <div className="mb-3">
               <span
                 className="text-[10px] uppercase tracking-[0.2em]"
                 style={{ fontFamily: 'Rajdhani, sans-serif', color: 'oklch(0.4 0.01 264)', fontWeight: 600 }}
               >
                 Collections
               </span>
-              <button
-                onClick={() => setShowNewCollectionModal(true)}
-                className="flex items-center gap-1 text-[10px] font-semibold tracking-wider uppercase transition-all hover:brightness-110"
-                style={{ fontFamily: 'Rajdhani, sans-serif', color: 'oklch(0.769 0.188 70.08)', background: 'none', border: 'none' }}
-              >
-                <span style={{ fontSize: 14 }}>+</span> New
-              </button>
             </div>
 
             {collections.length === 0 ? (
