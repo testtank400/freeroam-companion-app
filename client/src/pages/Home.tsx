@@ -1,17 +1,16 @@
 // Home.tsx
-// Design: Tactical Dark Ops — dark background, character card grid,
-// header with title and character count, amber accent system
-// Data: fetched live from getfreeroam API via tRPC proxy
+// Design: Tactical Dark Ops — dark background, character card grid
+// Data: cursor-based infinite scroll from getfreeroam API via tRPC proxy
+// Automatically loads more when the sentinel div at the bottom enters the viewport
 
 import CharacterCard from '@/components/CharacterCard';
 import CharacterProfile from '@/components/CharacterProfile';
 import { trpc } from '@/lib/trpc';
 import { Plus, RefreshCw } from 'lucide-react';
-import { useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
-// Map API privacy_status to our display type
-type PrivacyStatus = 'private' | 'public' | 'linked';
+export type PrivacyStatus = 'private' | 'public' | 'linked';
 
 export interface ApiCharacter {
   external_id: string;
@@ -25,15 +24,79 @@ export interface ApiCharacter {
   privacy_status: PrivacyStatus;
 }
 
+const USERNAME = 'Test Tank';
+const LIMIT = 20;
+
 export default function Home() {
   const [selectedCharacter, setSelectedCharacter] = useState<ApiCharacter | null>(null);
+  const [allCharacters, setAllCharacters] = useState<ApiCharacter[]>([]);
+  const [cursor, setCursor] = useState<string | undefined>(undefined);
+  const [hasMore, setHasMore] = useState(true);
+  const [isFetchingMore, setIsFetchingMore] = useState(false);
+  const sentinelRef = useRef<HTMLDivElement>(null);
+  const utils = trpc.useUtils();
 
+  // Initial load
   const { data, isLoading, isError, refetch, isFetching } = trpc.characters.list.useQuery(
-    { username: 'Test Tank', limit: 20, sort: 'recent' },
+    { username: USERNAME, limit: LIMIT, sort: 'recent', cursor: undefined },
     { staleTime: 60_000 }
   );
 
-  const characters = data?.characters ?? [];
+  // When initial data arrives, seed the list
+  useEffect(() => {
+    if (data) {
+      setAllCharacters(data.characters as ApiCharacter[]);
+      setHasMore(data.has_more);
+      setCursor(data.next_cursor ?? undefined);
+    }
+  }, [data]);
+
+  // Fetch the next page
+  const loadMore = useCallback(async () => {
+    if (isFetchingMore || !hasMore || !cursor) return;
+    setIsFetchingMore(true);
+    try {
+      const result = await utils.characters.list.fetch({
+        username: USERNAME,
+        limit: LIMIT,
+        sort: 'recent',
+        cursor,
+      });
+      setAllCharacters(prev => [...prev, ...(result.characters as ApiCharacter[])]);
+      setHasMore(result.has_more);
+      setCursor(result.next_cursor ?? undefined);
+    } catch (err) {
+      toast.error('Failed to load more characters');
+    } finally {
+      setIsFetchingMore(false);
+    }
+  }, [isFetchingMore, hasMore, cursor, utils]);
+
+  // IntersectionObserver watching the sentinel div
+  useEffect(() => {
+    const sentinel = sentinelRef.current;
+    if (!sentinel) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting) {
+          loadMore();
+        }
+      },
+      { rootMargin: '200px' } // trigger 200px before hitting the very bottom
+    );
+
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [loadMore]);
+
+  // Full refresh — reset everything and re-fetch from the top
+  const handleRefresh = () => {
+    setAllCharacters([]);
+    setCursor(undefined);
+    setHasMore(true);
+    refetch();
+  };
 
   const handleAddCharacter = () => {
     toast.info('Add character feature coming soon');
@@ -78,7 +141,9 @@ export default function Home() {
               className="text-[10px] mt-0.5"
               style={{ fontFamily: 'JetBrains Mono, monospace', color: 'oklch(0.45 0.01 264)' }}
             >
-              {isLoading ? 'Loading...' : `${characters.length} unit${characters.length !== 1 ? 's' : ''} on record`}
+              {isLoading
+                ? 'Loading...'
+                : `${allCharacters.length} unit${allCharacters.length !== 1 ? 's' : ''} on record${hasMore ? '+' : ''}`}
             </p>
           </div>
         </div>
@@ -86,7 +151,7 @@ export default function Home() {
         <div className="flex items-center gap-2">
           {/* Refresh button */}
           <button
-            onClick={() => refetch()}
+            onClick={handleRefresh}
             disabled={isFetching}
             className="w-8 h-8 flex items-center justify-center rounded-sm transition-colors hover:brightness-110 disabled:opacity-50"
             style={{
@@ -130,7 +195,7 @@ export default function Home() {
           <div className="h-px flex-1" style={{ background: 'oklch(1 0 0 / 0.06)' }} />
         </div>
 
-        {/* Loading state */}
+        {/* Initial loading skeleton */}
         {isLoading && (
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
             {Array.from({ length: 10 }).map((_, i) => (
@@ -153,18 +218,15 @@ export default function Home() {
 
         {/* Error state */}
         {isError && !isLoading && (
-          <div
-            className="flex flex-col items-center justify-center py-20 gap-4"
-            style={{ color: 'oklch(0.65 0.22 25)' }}
-          >
-            <p style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: '18px', fontWeight: 700 }}>
+          <div className="flex flex-col items-center justify-center py-20 gap-4">
+            <p style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: '18px', fontWeight: 700, color: 'oklch(0.65 0.22 25)' }}>
               FAILED TO LOAD CHARACTERS
             </p>
             <p style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '12px', color: 'oklch(0.45 0.01 264)' }}>
               Unable to reach the API. Check your session cookie.
             </p>
             <button
-              onClick={() => refetch()}
+              onClick={handleRefresh}
               className="px-4 py-2 rounded-sm text-xs font-semibold tracking-wider uppercase"
               style={{
                 fontFamily: 'Rajdhani, sans-serif',
@@ -179,7 +241,7 @@ export default function Home() {
         )}
 
         {/* Empty state */}
-        {!isLoading && !isError && characters.length === 0 && (
+        {!isLoading && !isError && allCharacters.length === 0 && (
           <div className="flex flex-col items-center justify-center py-20 gap-3">
             <p style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: '18px', fontWeight: 700, color: 'oklch(0.4 0.01 264)' }}>
               NO CHARACTERS ON RECORD
@@ -191,15 +253,49 @@ export default function Home() {
         )}
 
         {/* Card grid */}
-        {!isLoading && characters.length > 0 && (
+        {allCharacters.length > 0 && (
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-            {characters.map((character) => (
+            {allCharacters.map((character) => (
               <CharacterCard
                 key={character.external_id}
                 character={character}
                 onClick={setSelectedCharacter}
               />
             ))}
+
+            {/* Skeleton cards appended while loading more */}
+            {isFetchingMore && Array.from({ length: 5 }).map((_, i) => (
+              <div
+                key={`skeleton-more-${i}`}
+                className="rounded-sm overflow-hidden animate-pulse"
+                style={{ background: 'oklch(0.13 0.01 264)', border: '1px solid oklch(1 0 0 / 0.07)' }}
+              >
+                <div style={{ paddingBottom: '115%', background: 'oklch(0.16 0.01 264)' }} />
+                <div className="p-3 space-y-2">
+                  <div className="h-4 rounded" style={{ background: 'oklch(0.18 0.01 264)', width: '70%' }} />
+                  <div className="h-3 rounded" style={{ background: 'oklch(0.16 0.01 264)', width: '45%' }} />
+                  <div className="h-2 rounded mt-2" style={{ background: 'oklch(0.15 0.01 264)' }} />
+                  <div className="h-2 rounded" style={{ background: 'oklch(0.15 0.01 264)', width: '80%' }} />
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Sentinel div — IntersectionObserver watches this to trigger loadMore */}
+        <div ref={sentinelRef} className="h-4 mt-4" />
+
+        {/* End of list indicator */}
+        {!isLoading && !hasMore && allCharacters.length > 0 && (
+          <div className="flex items-center gap-3 mt-6">
+            <div className="h-px flex-1" style={{ background: 'oklch(1 0 0 / 0.05)' }} />
+            <span
+              className="text-[10px] uppercase tracking-[0.2em] px-3"
+              style={{ fontFamily: 'Rajdhani, sans-serif', color: 'oklch(0.3 0.01 264)', fontWeight: 600 }}
+            >
+              End of Roster — {allCharacters.length} units
+            </span>
+            <div className="h-px flex-1" style={{ background: 'oklch(1 0 0 / 0.05)' }} />
           </div>
         )}
       </main>
