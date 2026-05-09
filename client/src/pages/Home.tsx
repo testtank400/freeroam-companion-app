@@ -47,6 +47,8 @@ export default function Home() {
   const [sortDropdownOpen, setSortDropdownOpen] = useState(false);
   // null = show all; otherwise only show matching privacy status
   const [privacyFilter, setPrivacyFilter] = useState<PrivacyStatus | null>(null);
+  // null = show all; true = personas only; false = characters only
+  const [personaFilter, setPersonaFilter] = useState<boolean | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const sortDropdownRef = useRef<HTMLDivElement>(null);
   const utils = trpc.useUtils();
@@ -348,7 +350,7 @@ export default function Home() {
           <div className="h-px flex-1 hidden sm:block" style={{ background: 'oklch(1 0 0 / 0.06)' }} />
 
           {/* Privacy filter chips with count badges */}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             {([
               { value: null,        label: 'All',      emoji: null,  count: allCharacters.length,                                              bg: privacyFilter === null       ? 'oklch(0.769 0.188 70.08 / 0.15)' : 'oklch(0.15 0.01 264)', border: privacyFilter === null       ? '1px solid oklch(0.769 0.188 70.08 / 0.45)' : '1px solid oklch(1 0 0 / 0.08)', color: privacyFilter === null       ? 'oklch(0.769 0.188 70.08)' : 'oklch(0.45 0.01 264)' },
               { value: 'private',   label: 'Private',  emoji: '🔒', count: allCharacters.filter(c => c.privacy_status === 'private').length,  bg: privacyFilter === 'private'  ? 'oklch(0.22 0.01 264)'          : 'oklch(0.15 0.01 264)', border: privacyFilter === 'private'  ? '1px solid oklch(1 0 0 / 0.25)'              : '1px solid oklch(1 0 0 / 0.08)', color: privacyFilter === 'private'  ? 'oklch(0.88 0.005 65)'      : 'oklch(0.45 0.01 264)' },
@@ -377,6 +379,36 @@ export default function Home() {
                 )}
               </button>
             ))}
+
+            {/* Persona chip — only shown when at least one persona exists in the roster */}
+            {!isLoading && allCharacters.some(c => c.is_persona) && (() => {
+              const personaCount = allCharacters.filter(c => c.is_persona).length;
+              const isActive = personaFilter === true;
+              return (
+                <button
+                  onClick={() => setPersonaFilter(isActive ? null : true)}
+                  className="flex items-center gap-1.5 px-3 py-1 rounded-sm text-[11px] font-semibold tracking-wider uppercase transition-all"
+                  style={{
+                    fontFamily: 'Rajdhani, sans-serif',
+                    background: isActive ? 'oklch(0.25 0.1 300 / 0.4)' : 'oklch(0.15 0.01 264)',
+                    border: isActive ? '1px solid oklch(0.6 0.15 300 / 0.6)' : '1px solid oklch(1 0 0 / 0.08)',
+                    color: isActive ? 'oklch(0.78 0.15 300)' : 'oklch(0.45 0.01 264)',
+                  }}
+                >
+                  👤 Personas
+                  <span
+                    className="inline-flex items-center justify-center rounded-sm px-1 min-w-[18px] h-[16px] text-[9px] font-bold"
+                    style={{
+                      fontFamily: 'JetBrains Mono, monospace',
+                      background: 'oklch(1 0 0 / 0.12)',
+                      color: 'inherit',
+                    }}
+                  >
+                    {personaCount}
+                  </span>
+                </button>
+              );
+            })()}
           </div>
 
           <div className="h-px flex-1 hidden sm:block" style={{ background: 'oklch(1 0 0 / 0.06)' }} />
@@ -439,13 +471,14 @@ export default function Home() {
           </div>
         )}
 
-        {/* Derive filtered list — applies both search and privacy filter */}
+        {/* Derive filtered list — applies search, privacy, and persona filters */}
         {(() => {
           const q = searchQuery.trim().toLowerCase();
           const visibleCharacters = allCharacters.filter(c => {
             const matchesPrivacy = !privacyFilter || c.privacy_status === privacyFilter;
             const matchesSearch = !q || c.name.toLowerCase().includes(q);
-            return matchesPrivacy && matchesSearch;
+            const matchesPersona = personaFilter === null || c.is_persona === personaFilter;
+            return matchesPrivacy && matchesSearch && matchesPersona;
           });
 
           const filteredEmpty = !isLoading && !isError && allCharacters.length > 0 && visibleCharacters.length === 0;
@@ -460,12 +493,14 @@ export default function Home() {
                   </p>
                   <p style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '12px', color: 'oklch(0.35 0.01 264)' }}>
                     {searchQuery
-                      ? `No characters match "${searchQuery}"${privacyFilter ? ` with ${privacyFilter} visibility` : ''}.`
-                      : `None of your characters have ${privacyFilter} visibility.`}
+                      ? `No characters match "${searchQuery}"${privacyFilter ? ` with ${privacyFilter} visibility` : ''}${personaFilter ? ' (personas only)' : ''}.`
+                      : personaFilter
+                        ? 'No personas found in your roster.'
+                        : `None of your characters have ${privacyFilter} visibility.`}
 
                   </p>
                   <button
-                    onClick={() => { setPrivacyFilter(null); setSearchQuery(''); }}
+                    onClick={() => { setPrivacyFilter(null); setPersonaFilter(null); setSearchQuery(''); }}
                     className="mt-1 px-3 py-1.5 rounded-sm text-[11px] font-semibold tracking-wider uppercase transition-all"
                     style={{
                       fontFamily: 'Rajdhani, sans-serif',
@@ -489,7 +524,8 @@ export default function Home() {
               const q = searchQuery.trim().toLowerCase();
               const matchesPrivacy = !privacyFilter || c.privacy_status === privacyFilter;
               const matchesSearch = !q || c.name.toLowerCase().includes(q);
-              return matchesPrivacy && matchesSearch;
+              const matchesPersona = personaFilter === null || c.is_persona === personaFilter;
+              return matchesPrivacy && matchesSearch && matchesPersona;
             }).map((character) => (
               <CharacterCard
                 key={character.external_id}
