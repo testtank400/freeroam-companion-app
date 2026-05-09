@@ -64,10 +64,8 @@ export default function CollectionsStrip({
   const [newName, setNewName] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
-  const [menuId, setMenuId] = useState<string | null>(null);
   const newInputRef = useRef<HTMLInputElement>(null);
   const editInputRef = useRef<HTMLInputElement>(null);
-  const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (isCreating) newInputRef.current?.focus();
@@ -77,16 +75,7 @@ export default function CollectionsStrip({
     if (editingId) editInputRef.current?.focus();
   }, [editingId]);
 
-  // Close menu on outside click
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        setMenuId(null);
-      }
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, []);
+
 
   const handleCreate = () => {
     if (!newName.trim()) { setIsCreating(false); return; }
@@ -99,7 +88,6 @@ export default function CollectionsStrip({
     if (!editName.trim()) { setEditingId(null); return; }
     onRename(id, editName.trim());
     setEditingId(null);
-    setMenuId(null);
   };
 
   const getCharsForCollection = (col: Collection) =>
@@ -180,10 +168,9 @@ export default function CollectionsStrip({
           const chars = getCharsForCollection(col);
           const isActive = activeCollectionId === col.id;
           const isEditing = editingId === col.id;
-          const showMenu = menuId === col.id;
 
           return (
-            <div key={col.id} className="relative flex-shrink-0" ref={showMenu ? menuRef : undefined}>
+            <div key={col.id} className="relative flex-shrink-0">
               {isEditing ? (
                 <div
                   className="flex items-center gap-1 rounded-sm overflow-hidden"
@@ -206,59 +193,52 @@ export default function CollectionsStrip({
                   </button>
                 </div>
               ) : (
-                <button
-                  onClick={() => onSelect(isActive ? null : col.id)}
-                  onContextMenu={e => { e.preventDefault(); setMenuId(showMenu ? null : col.id); }}
-                  className="flex items-center gap-2 px-3 py-1.5 rounded-sm transition-all hover:brightness-110"
+                <div
+                  className="group flex items-center gap-1 rounded-sm overflow-hidden"
                   style={{
                     background: isActive ? 'oklch(0.769 0.188 70.08 / 0.15)' : 'oklch(0.15 0.01 264)',
                     border: isActive ? '1px solid oklch(0.769 0.188 70.08 / 0.45)' : '1px solid oklch(1 0 0 / 0.08)',
                     color: isActive ? 'oklch(0.769 0.188 70.08)' : 'oklch(0.65 0.01 264)',
                   }}
                 >
-                  {chars.length > 0 && <StackedAvatars characters={chars} />}
-                  <span
-                    className="text-[11px] font-semibold tracking-wide uppercase"
-                    style={{ fontFamily: 'Rajdhani, sans-serif', maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
-                  >
-                    {col.name}
-                  </span>
-                  <span
-                    className="inline-flex items-center justify-center rounded-sm px-1 min-w-[16px] h-[14px] text-[9px] font-bold flex-shrink-0"
-                    style={{ fontFamily: 'JetBrains Mono, monospace', background: 'oklch(1 0 0 / 0.1)', color: 'inherit' }}
-                  >
-                    {chars.length}
-                  </span>
-                </button>
-              )}
-
-              {/* Context menu (rename / delete) */}
-              {showMenu && (
-                <div
-                  ref={menuRef}
-                  className="absolute top-full left-0 mt-1 rounded-sm overflow-hidden z-50"
-                  style={{
-                    background: 'oklch(0.16 0.01 264)',
-                    border: '1px solid oklch(1 0 0 / 0.12)',
-                    boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
-                    minWidth: 140,
-                  }}
-                >
+                  {/* Main clickable area */}
                   <button
-                    onClick={() => { setEditName(col.name); setEditingId(col.id); setMenuId(null); }}
-                    className="w-full flex items-center gap-2 px-3 py-2 text-left text-[11px] hover:bg-white/5 transition-colors"
-                    style={{ fontFamily: 'JetBrains Mono, monospace', color: 'oklch(0.75 0.005 65)' }}
+                    onClick={() => onSelect(isActive ? null : col.id)}
+                    className="flex items-center gap-2 pl-3 pr-2 py-1.5 transition-all hover:brightness-110"
                   >
-                    <Pencil size={11} strokeWidth={2} />
-                    Rename
+                    {chars.length > 0 && <StackedAvatars characters={chars} />}
+                    <span
+                      className="text-[11px] font-semibold tracking-wide uppercase"
+                      style={{ fontFamily: 'Rajdhani, sans-serif', maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                    >
+                      {col.name}
+                    </span>
+                    <span
+                      className="inline-flex items-center justify-center rounded-sm px-1 min-w-[16px] h-[14px] text-[9px] font-bold flex-shrink-0"
+                      style={{ fontFamily: 'JetBrains Mono, monospace', background: 'oklch(1 0 0 / 0.1)', color: 'inherit' }}
+                    >
+                      {chars.length}
+                    </span>
                   </button>
+
+                  {/* Rename button */}
                   <button
-                    onClick={() => { onDelete(col.id); setMenuId(null); if (activeCollectionId === col.id) onSelect(null); }}
-                    className="w-full flex items-center gap-2 px-3 py-2 text-left text-[11px] hover:bg-white/5 transition-colors"
-                    style={{ fontFamily: 'JetBrains Mono, monospace', color: 'oklch(0.7 0.18 25)' }}
+                    onClick={(e) => { e.stopPropagation(); setEditName(col.name); setEditingId(col.id); }}
+                    className="px-1.5 py-1.5 opacity-0 group-hover:opacity-100 transition-opacity hover:text-amber-400"
+                    style={{ color: 'oklch(0.5 0.01 264)' }}
+                    title="Rename collection"
                   >
-                    <Trash2 size={11} strokeWidth={2} />
-                    Delete
+                    <Pencil size={10} strokeWidth={2.5} />
+                  </button>
+
+                  {/* Delete button */}
+                  <button
+                    onClick={(e) => { e.stopPropagation(); onDelete(col.id); if (activeCollectionId === col.id) onSelect(null); }}
+                    className="px-1.5 py-1.5 opacity-0 group-hover:opacity-100 transition-opacity hover:text-red-400"
+                    style={{ color: 'oklch(0.5 0.01 264)', borderLeft: '1px solid oklch(1 0 0 / 0.08)' }}
+                    title="Delete collection"
+                  >
+                    <Trash2 size={10} strokeWidth={2.5} />
                   </button>
                 </div>
               )}
