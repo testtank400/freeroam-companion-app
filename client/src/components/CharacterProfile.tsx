@@ -7,7 +7,7 @@
 import CreateCharacterModal from '@/components/CreateCharacterModal';
 import { trpc } from '@/lib/trpc';
 import { ApiCharacter } from '@/pages/Home';
-import { Globe, Link, Lock, Pencil, X } from 'lucide-react';
+import { Copy, Globe, Link, Lock, Pencil, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
 interface CharacterProfileProps {
@@ -73,6 +73,9 @@ export default function CharacterProfile({ character, onClose, onUpdated }: Char
   const [activeTab, setActiveTab] = useState<Tab>('about');
   const [visible, setVisible] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
+  const [showDuplicateModal, setShowDuplicateModal] = useState(false);
+  // Pre-filled character for the duplicate form
+  const [duplicateSource, setDuplicateSource] = useState<ApiCharacter | null>(null);
 
   // Local override so profile reflects edits immediately without closing
   const [localCharacter, setLocalCharacter] = useState<ApiCharacter | null>(null);
@@ -119,12 +122,27 @@ export default function CharacterProfile({ character, onClose, onUpdated }: Char
   // Called when the edit modal saves successfully
   const handleEditSaved = (updated: ApiCharacter, mode: 'create' | 'edit') => {
     if (mode !== 'edit') return;
-    // Update local display immediately
     setLocalCharacter(updated);
-    // Invalidate the full-character cache so appearance refreshes too
     refetchFull();
-    // Bubble up to the card grid
     onUpdated?.(updated);
+  };
+
+  // Open the duplicate form pre-filled with current character data
+  const handleDuplicate = () => {
+    if (!displayCharacter) return;
+    // Build a synthetic ApiCharacter with "Copy of" prefix and the full data we have
+    const source: ApiCharacter = {
+      ...displayCharacter,
+      name: `Copy of ${displayCharacter.name}`,
+      // Use the headshot URL we have (display > regular)
+      display_headshot_url: fullCharacter?.display_headshot_url ?? displayCharacter.display_headshot_url,
+      headshot_url: fullCharacter?.headshot_url ?? displayCharacter.headshot_url,
+      // Merge in full backstory/description if available
+      backstory: fullCharacter?.backstory ?? displayCharacter.backstory,
+      description: fullCharacter?.description ?? displayCharacter.description,
+    };
+    setDuplicateSource(source);
+    setShowDuplicateModal(true);
   };
 
   if (!displayCharacter) return null;
@@ -178,8 +196,29 @@ export default function CharacterProfile({ character, onClose, onUpdated }: Char
               />
             </div>
 
-            {/* Top-right action buttons: Edit + Close */}
+            {/* Top-right action buttons: Duplicate + Edit + Close */}
             <div className="absolute top-3 right-3 flex items-center gap-2">
+              {/* Duplicate button */}
+              <button
+                onClick={handleDuplicate}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-sm transition-all hover:brightness-110"
+                style={{
+                  background: 'oklch(0.18 0.01 264 / 0.85)',
+                  border: '1px solid oklch(1 0 0 / 0.15)',
+                  color: 'oklch(0.65 0.01 264)',
+                  backdropFilter: 'blur(4px)',
+                  fontFamily: 'Rajdhani, sans-serif',
+                  fontSize: '11px',
+                  fontWeight: 700,
+                  letterSpacing: '0.1em',
+                  textTransform: 'uppercase',
+                }}
+                title="Duplicate character"
+              >
+                <Copy size={12} strokeWidth={2.5} />
+                Duplicate
+              </button>
+
               {/* Edit button */}
               <button
                 onClick={() => setShowEditModal(true)}
@@ -349,6 +388,25 @@ export default function CharacterProfile({ character, onClose, onUpdated }: Char
             onClose={() => setShowEditModal(false)}
             onSaved={handleEditSaved}
             editCharacter={displayCharacter}
+          />
+        </div>
+      )}
+
+      {/* Duplicate modal — create mode pre-filled with source character data */}
+      {showDuplicateModal && duplicateSource && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 60 }}>
+          <CreateCharacterModal
+            open={showDuplicateModal}
+            onClose={() => { setShowDuplicateModal(false); setDuplicateSource(null); }}
+            onSaved={(created, mode) => {
+              if (mode === 'create') {
+                // Bubble the new character up to the grid
+                onUpdated?.(created);
+              }
+              setShowDuplicateModal(false);
+              setDuplicateSource(null);
+            }}
+            duplicateSource={duplicateSource}
           />
         </div>
       )}

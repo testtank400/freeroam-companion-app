@@ -18,6 +18,8 @@ interface CreateCharacterModalProps {
   onSaved: (character: ApiCharacter, mode: 'create' | 'edit') => void;
   /** When provided, the modal operates in edit mode pre-filled with this character's data */
   editCharacter?: ApiCharacter | null;
+  /** When provided, the modal opens in create mode pre-filled from this source (duplicate flow) */
+  duplicateSource?: ApiCharacter | null;
 }
 
 const PRIVACY_OPTIONS: { value: PrivacyStatus; label: string; icon: React.ReactNode }[] = [
@@ -55,6 +57,7 @@ export default function CreateCharacterModal({
   onClose,
   onSaved,
   editCharacter,
+  duplicateSource,
 }: CreateCharacterModalProps) {
   const isEditMode = !!editCharacter;
   const [visible, setVisible] = useState(false);
@@ -100,6 +103,22 @@ export default function CreateCharacterModal({
       setUploadedHeadshotUrl(null);
     }
   }, [open, isEditMode, editCharacter, fullEditData]);
+
+  // Seed form when opening in duplicate mode
+  useEffect(() => {
+    if (open && !isEditMode && duplicateSource) {
+      setName(duplicateSource.name);
+      setBackstory(duplicateSource.backstory ?? '');
+      setAppearance(''); // appearance not available in list data; user can fill it in
+      setPrivacy((duplicateSource.privacy_status as PrivacyStatus) ?? 'private');
+      const url = duplicateSource.display_headshot_url ?? duplicateSource.headshot_url ?? '';
+      setHeadshotUrl(url);
+      setHeadshotMode('url');
+      setUploadedFile(null);
+      setUploadPreview(null);
+      setUploadedHeadshotUrl(null);
+    }
+  }, [open, isEditMode, duplicateSource]);
 
   useEffect(() => {
     if (open) {
@@ -276,7 +295,7 @@ export default function CreateCharacterModal({
               className="text-xl font-bold tracking-widest uppercase"
               style={{ fontFamily: 'Rajdhani, sans-serif', color: 'oklch(0.92 0.005 65)' }}
             >
-              {isEditMode ? 'Edit Character' : 'New Character'}
+              {isEditMode ? 'Edit Character' : duplicateSource ? 'Duplicate Character' : 'New Character'}
             </h2>
             {isEditMode && (
               <p className="text-[11px] mt-0.5" style={{ fontFamily: 'JetBrains Mono, monospace', color: 'oklch(0.45 0.01 264)' }}>
