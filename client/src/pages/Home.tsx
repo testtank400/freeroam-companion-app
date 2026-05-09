@@ -149,6 +149,21 @@ export default function Home() {
     return () => window.removeEventListener('keydown', handler);
   }, [selectedIds]);
 
+  // Click outside cards to deselect (only when selection is active)
+  const gridRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (selectedIds.size === 0) return;
+    const handler = (e: MouseEvent) => {
+      // If click is outside the card grid, clear selection
+      if (gridRef.current && !gridRef.current.contains(e.target as Node)) {
+        setSelectedIds(new Set());
+      }
+    };
+    // Use mousedown so it fires before click handlers
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [selectedIds]);
+
   const handleAddCharacter = () => setShowCreateModal(true);
 
   const handleConfirmDelete = async (character: ApiCharacter) => {
@@ -605,7 +620,11 @@ export default function Home() {
 
         {/* Card grid */}
         {allCharacters.length > 0 && (
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+          <div
+            ref={gridRef}
+            className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4"
+            style={selectedIds.size > 0 ? { userSelect: 'none' } : undefined}
+          >
             {allCharacters.filter(c => {
               const q = searchQuery.trim().toLowerCase();
               const activeCol = activeCollectionId ? collections.find(col => col.id === activeCollectionId) : null;
