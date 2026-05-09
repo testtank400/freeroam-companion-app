@@ -497,6 +497,7 @@ export default function Home() {
                 onClick={setSelectedCharacter}
                 onEdit={setEditCharacter}
                 onDelete={setDeleteCharacter}
+                searchQuery={searchQuery}
               />
             ))}
 

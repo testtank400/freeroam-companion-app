@@ -14,6 +14,25 @@ interface CharacterCardProps {
   onClick: (character: ApiCharacter) => void;
   onEdit: (character: ApiCharacter) => void;
   onDelete: (character: ApiCharacter) => void;
+  /** Active search query — matching portion of the name is highlighted in amber */
+  searchQuery?: string;
+}
+
+/** Splits text into segments and wraps the matching part in an amber span */
+function HighlightedText({ text, query }: { text: string; query: string }) {
+  if (!query.trim()) return <>{text}</>;
+  const idx = text.toLowerCase().indexOf(query.toLowerCase().trim());
+  if (idx === -1) return <>{text}</>;
+  const before = text.slice(0, idx);
+  const match = text.slice(idx, idx + query.trim().length);
+  const after = text.slice(idx + query.trim().length);
+  return (
+    <>
+      {before}
+      <span style={{ color: 'oklch(0.769 0.188 70.08)', fontWeight: 800 }}>{match}</span>
+      {after}
+    </>
+  );
 }
 
 function PrivacyBadge({ status }: { status: PrivacyStatus }) {
@@ -51,7 +70,7 @@ function PrivacyBadge({ status }: { status: PrivacyStatus }) {
 // Fallback placeholder image for characters without a headshot
 const FALLBACK_IMAGE = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjUwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iNDAwIiBoZWlnaHQ9IjUwMCIgZmlsbD0iIzFhMWEyNCIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBmb250LWZhbWlseT0ibW9ub3NwYWNlIiBmb250LXNpemU9IjE0IiBmaWxsPSIjMzMzMzQ0IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkeT0iLjNlbSI+Tk8gSU1BR0U8L3RleHQ+PC9zdmc+';
 
-export default function CharacterCard({ character, onClick, onEdit, onDelete }: CharacterCardProps) {
+export default function CharacterCard({ character, onClick, onEdit, onDelete, searchQuery = '' }: CharacterCardProps) {
   const handleEdit = (e: React.MouseEvent) => {
     e.stopPropagation();
     onEdit(character);
@@ -137,7 +156,7 @@ export default function CharacterCard({ character, onClick, onEdit, onDelete }: 
               textShadow: '0 1px 8px rgba(0,0,0,0.8)',
             }}
           >
-            {character.name}
+            <HighlightedText text={character.name} query={searchQuery} />
           </h3>
           <p
             className="text-xs mt-0.5"
