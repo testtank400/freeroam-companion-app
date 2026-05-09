@@ -5,6 +5,7 @@
 
 import CharacterCard from '@/components/CharacterCard';
 import CharacterProfile from '@/components/CharacterProfile';
+import CreateCharacterModal from '@/components/CreateCharacterModal';
 import { trpc } from '@/lib/trpc';
 import { Plus, RefreshCw } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -29,6 +30,7 @@ const LIMIT = 20;
 
 export default function Home() {
   const [selectedCharacter, setSelectedCharacter] = useState<ApiCharacter | null>(null);
+  const [showCreateModal, setShowCreateModal] = useState(false);
   const [allCharacters, setAllCharacters] = useState<ApiCharacter[]>([]);
   const [cursor, setCursor] = useState<string | undefined>(undefined);
   const [hasMore, setHasMore] = useState(true);
@@ -98,8 +100,14 @@ export default function Home() {
     refetch();
   };
 
-  const handleAddCharacter = () => {
-    toast.info('Add character feature coming soon');
+  const handleAddCharacter = () => setShowCreateModal(true);
+
+  const handleCharacterCreated = () => {
+    // Reset and re-fetch from the top
+    setAllCharacters([]);
+    setCursor(undefined);
+    setHasMore(true);
+    refetch();
   };
 
   return (
@@ -307,6 +315,13 @@ export default function Home() {
           onClose={() => setSelectedCharacter(null)}
         />
       )}
+
+      {/* Create character modal */}
+      <CreateCharacterModal
+        open={showCreateModal}
+        onClose={() => setShowCreateModal(false)}
+        onCreated={handleCharacterCreated}
+      />
     </div>
   );
 }

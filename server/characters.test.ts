@@ -111,6 +111,78 @@ describe("characters.get", () => {
   });
 });
 
+describe("characters.create", () => {
+  beforeEach(() => {
+    vi.resetAllMocks();
+    process.env.cookie = "session=test-session-cookie";
+  });
+
+  it("creates a character and returns the new character data", async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        external_id: "new-char-001",
+        name: "Riven",
+        backstory: "A battle-hardened rogue.",
+        description: null,
+        appearance: "Tall, athletic, auburn hair.",
+        headshot_url: "https://images.getfreeroam.com/riven.webp",
+        display_headshot_url: null,
+        privacy_status: "private",
+        owner: { username: "Test Tank" },
+      }),
+    });
+
+    const caller = appRouter.createCaller(createCtx());
+    const result = await caller.characters.create({
+      name: "Riven",
+      backstory: "A battle-hardened rogue.",
+      appearance: "Tall, athletic, auburn hair.",
+      privacy_status: "private",
+    });
+
+    expect(result.name).toBe("Riven");
+    expect(result.external_id).toBe("new-char-001");
+    expect(result.appearance).toBe("Tall, athletic, auburn hair.");
+  });
+
+  it("sends POST to the correct endpoint with JSON body", async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        external_id: "x",
+        name: "Test",
+        backstory: null,
+        description: null,
+        appearance: null,
+        headshot_url: null,
+        display_headshot_url: null,
+        privacy_status: "public",
+        owner: { username: "Test Tank" },
+      }),
+    });
+
+    const caller = appRouter.createCaller(createCtx());
+    await caller.characters.create({ name: "Test", privacy_status: "public" });
+
+    const [calledUrl, calledOptions] = mockFetch.mock.calls[0] as [string, RequestInit];
+    expect(calledUrl).toContain("getfreeroam.com/api/characters");
+    expect(calledOptions.method).toBe("POST");
+    const body = JSON.parse(calledOptions.body as string);
+    expect(body.name).toBe("Test");
+    expect(body.privacy_status).toBe("public");
+  });
+
+  it("throws when API returns an error status", async () => {
+    mockFetch.mockResolvedValueOnce({ ok: false, status: 422, text: async () => "Validation error" });
+
+    const caller = appRouter.createCaller(createCtx());
+    await expect(
+      caller.characters.create({ name: "Bad", privacy_status: "private" })
+    ).rejects.toThrow("Create failed (422)");
+  });
+});
+
 describe("characters.list", () => {
   beforeEach(() => {
     vi.resetAllMocks();

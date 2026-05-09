@@ -96,6 +96,97 @@ export const appRouter = router({
         return parsed;
       }),
 
+    // Upload a headshot image — expects multipart/form-data with a "file" field
+    // The server receives a base64-encoded file string and forwards it as multipart
+    uploadHeadshot: publicProcedure
+      .input(
+        z.object({
+          fileBase64: z.string(), // base64-encoded file content
+          mimeType: z.string(),   // e.g. "image/png"
+          fileName: z.string(),
+        })
+      )
+      .mutation(async ({ input }) => {
+        const cookie = process.env.cookie;
+        if (!cookie) throw new Error("Cookie not configured in environment");
+
+        // Decode base64 back to binary
+        const buffer = Buffer.from(input.fileBase64, "base64");
+
+        // Build multipart/form-data manually using FormData
+        const formData = new FormData();
+        const blob = new Blob([buffer], { type: input.mimeType });
+        formData.append("file", blob, input.fileName);
+
+        const response = await fetch("https://getfreeroam.com/api/upload/headshot", {
+          method: "POST",
+          headers: {
+            accept: "*/*",
+            "accept-language": "en-US,en;q=0.9",
+            cookie: cookie,
+            origin: "https://getfreeroam.com",
+            referer: "https://getfreeroam.com/user/Test%20Tank?tab=characters",
+            "user-agent":
+              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36",
+          },
+          body: formData,
+        });
+
+        if (!response.ok) {
+          const text = await response.text();
+          throw new Error(`Upload failed (${response.status}): ${text}`);
+        }
+
+        const data = await response.json() as { headshot_url?: string; url?: string };
+        const url = data.headshot_url ?? data.url;
+        if (!url) throw new Error("No headshot_url in upload response");
+        return { headshot_url: url };
+      }),
+
+    create: publicProcedure
+      .input(
+        z.object({
+          name: z.string().min(1),
+          backstory: z.string().optional(),
+          appearance: z.string().optional(),
+          headshot_url: z.string().optional(),
+          privacy_status: z.enum(["private", "public", "linked"]).default("private"),
+        })
+      )
+      .mutation(async ({ input }) => {
+        const cookie = process.env.cookie;
+        if (!cookie) throw new Error("Cookie not configured in environment");
+
+        const body: Record<string, string> = { name: input.name };
+        if (input.backstory)    body.backstory    = input.backstory;
+        if (input.appearance)   body.appearance   = input.appearance;
+        if (input.headshot_url) body.headshot_url = input.headshot_url;
+        body.privacy_status = input.privacy_status;
+
+        const response = await fetch("https://getfreeroam.com/api/characters", {
+          method: "POST",
+          headers: {
+            accept: "*/*",
+            "accept-language": "en-US,en;q=0.9",
+            cookie: cookie,
+            origin: "https://getfreeroam.com",
+            referer: "https://getfreeroam.com",
+            "content-type": "application/json",
+            "user-agent":
+              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36",
+          },
+          body: JSON.stringify(body),
+        });
+
+        if (!response.ok) {
+          const text = await response.text();
+          throw new Error(`Create failed (${response.status}): ${text}`);
+        }
+
+        const data = await response.json();
+        return SingleCharacterSchema.parse(data);
+      }),
+
     get: publicProcedure
       .input(z.object({ characterId: z.string() }))
       .query(async ({ input }) => {
