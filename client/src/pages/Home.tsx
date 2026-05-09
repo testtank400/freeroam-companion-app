@@ -64,15 +64,22 @@ export default function Home() {
 
   // Fetch ALL pages client-side, one tRPC call per page.
   // Each call is a small independent request — avoids server-side loop timeouts.
+  // A short delay between pages prevents rate-limiting and keeps the API happy.
   const fetchAll = useCallback(async (sortValue: string) => {
     setIsLoadingAll(true);
     setAllCharacters([]);
     const collected: ApiCharacter[] = [];
     let cursor: string | undefined = undefined;
     let hasMore = true;
+    let isFirstPage = true;
     try {
       while (hasMore) {
-        // Each page is its own tRPC query — no long-running server loop
+        // Small delay between pages (skip on first page for fast initial render)
+        if (!isFirstPage) {
+          await new Promise(resolve => setTimeout(resolve, 300));
+        }
+        isFirstPage = false;
+
         const result = await utils.characters.list.fetch({
           username: USERNAME,
           limit: LIMIT,
@@ -189,9 +196,10 @@ export default function Home() {
                     }).length;
                     const total = allCharacters.length;
                     const isFiltered = privacyFilter || q;
+                    const loadingSuffix = isFetching ? '...' : '';
                     return isFiltered
-                      ? `${visible} of ${total} unit${total !== 1 ? 's' : ''}`
-                      : `${total} unit${total !== 1 ? 's' : ''} on record`;
+                      ? `${visible} of ${total}${loadingSuffix} unit${total !== 1 ? 's' : ''}`
+                      : `${total}${loadingSuffix} unit${total !== 1 ? 's' : ''} on record`;
                   })()}
             </p>
           </div>
@@ -210,7 +218,7 @@ export default function Home() {
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search..."
+              placeholder={isFetching && !searchQuery ? 'Loading more...' : 'Search...'}
               className="pl-8 pr-7 py-1.5 rounded-sm text-xs w-36 sm:w-48 transition-all"
               style={{
                 fontFamily: 'JetBrains Mono, monospace',
