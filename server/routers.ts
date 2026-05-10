@@ -304,8 +304,9 @@ export const appRouter = router({
           throw new Error(`Create failed (${response.status}): ${text}`);
         }
 
-        const data = await response.json();
-        return SingleCharacterSchema.parse(data);
+        const data = await response.json() as { character?: unknown };
+        // The create endpoint wraps the result: { success: true, character: { ... } }
+        return SingleCharacterSchema.parse(data.character ?? data);
       }),
 
     save: publicProcedure
