@@ -546,7 +546,7 @@ export default function Home() {
         {/* Section label + filter chips */}
         <div className="mb-6">
           {/* Scrollable filter chip row on mobile */}
-          <div className="flex items-center gap-2 overflow-x-auto pb-1 flex-nowrap" style={{ scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch' }}>
+          <div className="flex items-center gap-2 flex-wrap">
             {([
               { value: null,        label: 'All',      emoji: null,  count: allCharacters.length,                                              bg: privacyFilter === null       ? 'oklch(0.769 0.188 70.08 / 0.15)' : 'oklch(0.15 0.01 264)', border: privacyFilter === null       ? '1px solid oklch(0.769 0.188 70.08 / 0.45)' : '1px solid oklch(1 0 0 / 0.08)', color: privacyFilter === null       ? 'oklch(0.769 0.188 70.08)' : 'oklch(0.45 0.01 264)' },
               { value: 'private',   label: 'Private',  emoji: '🔒', count: allCharacters.filter(c => c.privacy_status === 'private').length,  bg: privacyFilter === 'private'  ? 'oklch(0.22 0.01 264)'          : 'oklch(0.15 0.01 264)', border: privacyFilter === 'private'  ? '1px solid oklch(1 0 0 / 0.25)'              : '1px solid oklch(1 0 0 / 0.08)', color: privacyFilter === 'private'  ? 'oklch(0.88 0.005 65)'      : 'oklch(0.45 0.01 264)' },
