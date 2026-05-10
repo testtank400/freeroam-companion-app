@@ -100,12 +100,16 @@ export default function EditCollectionModal({ open, onClose, collection, onSave 
 
       // Upload to Manus S3 storage — extract base64 portion after the comma
       const base64 = dataUrl.split(',')[1];
+      // Sanitize filename: replace spaces and special chars with underscores
+      const safeFileName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
       const result = await uploadCoverMutation.mutateAsync({
         fileBase64: base64,
         mimeType: file.type,
-        fileName: file.name,
+        fileName: safeFileName,
       });
       setUploadedCoverUrl(result.url);
+      // Switch preview to the actual S3 URL so the image renders correctly
+      setUploadPreview(result.url);
     } catch {
       toast.error('Failed to upload image');
       setUploadPreview(null);
@@ -126,7 +130,8 @@ export default function EditCollectionModal({ open, onClose, collection, onSave 
 
   if (!open) return null;
 
-  const previewImage = coverMode === 'url' ? coverUrl : (uploadPreview ?? '');
+  // For URL mode: use the typed URL. For upload mode: use the S3 URL if available, else local preview.
+  const previewImage = coverMode === 'url' ? coverUrl : (uploadedCoverUrl ?? uploadPreview ?? '');
 
   return (
     <div
