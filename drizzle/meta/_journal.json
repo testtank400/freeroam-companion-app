@@ -8,6 +8,13 @@
       "when": 1778299305588,
       "tag": "0000_long_juggernaut",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "5",
+      "when": 1778452012663,
+      "tag": "0001_bright_bloodscream",
+      "breakpoints": true
     }
   ]
 }

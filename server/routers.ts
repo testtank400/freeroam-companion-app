@@ -3,6 +3,15 @@ import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, router } from "./_core/trpc";
 import { z } from "zod";
+import { ENV } from "./_core/env";
+import {
+  addCharacterToCollection,
+  createCollection as dbCreateCollection,
+  deleteCollection as dbDeleteCollection,
+  getCollectionsByOwner,
+  removeCharacterFromCollection,
+  updateCollection as dbUpdateCollection,
+} from "./db";
 
 // Coerce any unknown privacy_status value to 'private' so unexpected API values never crash the app
 // Valid values: private, public, unlisted
@@ -417,6 +426,65 @@ export const appRouter = router({
 
         const data = await response.json();
         return SingleCharacterSchema.parse(data);
+      }),
+  }),
+
+  // ─── Collections (DB-backed) ──────────────────────────────────────────────────────────
+  // All operations are scoped to ENV.ownerOpenId so only the site owner can
+  // manage their own collections. No auth middleware needed — the owner openId
+  // is a server-side env var, never exposed to the client.
+  collections: router({
+    list: publicProcedure.query(async () => {
+      return getCollectionsByOwner(ENV.ownerOpenId);
+    }),
+
+    create: publicProcedure
+      .input(
+        z.object({
+          name: z.string().min(1).max(255),
+          description: z.string().optional(),
+          coverImage: z.string().optional(),
+        })
+      )
+      .mutation(async ({ input }) => {
+        return dbCreateCollection(
+          ENV.ownerOpenId,
+          input.name,
+          input.description,
+          input.coverImage
+        );
+      }),
+
+    update: publicProcedure
+      .input(
+        z.object({
+          id: z.number(),
+          name: z.string().min(1).max(255).optional(),
+          description: z.string().nullable().optional(),
+          coverImage: z.string().nullable().optional(),
+        })
+      )
+      .mutation(async ({ input }) => {
+        const { id, ...updates } = input;
+        return dbUpdateCollection(id, ENV.ownerOpenId, updates);
+      }),
+
+    delete: publicProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        return dbDeleteCollection(input.id, ENV.ownerOpenId);
+      }),
+
+    addCharacter: publicProcedure
+      .input(z.object({ collectionId: z.number(), characterId: z.string() }))
+      .mutation(async ({ input }) => {
+        return addCharacterToCollection(input.collectionId, input.characterId);
+      }),
+
+    removeCharacter: publicProcedure
+      .input(z.object({ collectionId: z.number(), characterId: z.string() }))
+      .mutation(async ({ input }) => {
+        return removeCharacterFromCollection(input.collectionId, input.characterId);
       }),
   }),
 });

@@ -25,4 +25,29 @@ export const users = mysqlTable("users", {
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
 
-// TODO: Add your tables here
+// Collections — user-owned groups of characters
+export const collections = mysqlTable("collections", {
+  id: int("id").autoincrement().primaryKey(),
+  /** Owner's Manus openId — ties the collection to a specific user */
+  ownerOpenId: varchar("ownerOpenId", { length: 64 }).notNull(),
+  name: varchar("name", { length: 255 }).notNull(),
+  description: text("description"),
+  coverImage: text("coverImage"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type Collection = typeof collections.$inferSelect;
+export type InsertCollection = typeof collections.$inferInsert;
+
+// Many-to-many: characters belonging to a collection
+export const collectionMembers = mysqlTable("collection_members", {
+  id: int("id").autoincrement().primaryKey(),
+  collectionId: int("collectionId").notNull(),
+  /** External character ID from getfreeroam.com */
+  characterId: varchar("characterId", { length: 128 }).notNull(),
+  addedAt: timestamp("addedAt").defaultNow().notNull(),
+});
+
+export type CollectionMember = typeof collectionMembers.$inferSelect;
+export type InsertCollectionMember = typeof collectionMembers.$inferInsert;

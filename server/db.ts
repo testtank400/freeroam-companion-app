@@ -1,6 +1,6 @@
-import { eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { InsertUser, users } from "../drizzle/schema";
+import { collectionMembers, collections, InsertUser, users } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -89,4 +89,122 @@ export async function getUserByOpenId(openId: string) {
   return result.length > 0 ? result[0] : undefined;
 }
 
-// TODO: add feature queries here as your schema grows.
+// ─── Collections ────────────────────────────────────────────────────────────
+
+/** Return all collections owned by a given openId, with their member characterIds. */
+export async function getCollectionsByOwner(ownerOpenId: string) {
+  const db = await getDb();
+  if (!db) return [];
+
+  const cols = await db
+    .select()
+    .from(collections)
+    .where(eq(collections.ownerOpenId, ownerOpenId))
+    .orderBy(collections.createdAt);
+
+  if (cols.length === 0) return [];
+
+  const ids = cols.map(c => c.id);
+  const members = await db
+    .select()
+    .from(collectionMembers)
+    .where(inArray(collectionMembers.collectionId, ids));
+
+  return cols.map(col => ({
+    ...col,
+    characterIds: members
+      .filter(m => m.collectionId === col.id)
+      .map(m => m.characterId),
+  }));
+}
+
+/** Create a new collection and return it (with empty characterIds). */
+export async function createCollection(
+  ownerOpenId: string,
+  name: string,
+  description?: string,
+  coverImage?: string
+) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const [result] = await db
+    .insert(collections)
+    .values({ ownerOpenId, name, description: description ?? null, coverImage: coverImage ?? null });
+
+  const id = (result as { insertId: number }).insertId;
+  const rows = await db.select().from(collections).where(eq(collections.id, id)).limit(1);
+  return { ...rows[0], characterIds: [] as string[] };
+}
+
+/** Update collection metadata (name, description, coverImage). */
+export async function updateCollection(
+  id: number,
+  ownerOpenId: string,
+  updates: { name?: string; description?: string | null; coverImage?: string | null }
+) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  await db
+    .update(collections)
+    .set({ ...updates, updatedAt: new Date() })
+    .where(and(eq(collections.id, id), eq(collections.ownerOpenId, ownerOpenId)));
+
+  return true;
+}
+
+/** Delete a collection and all its members. */
+export async function deleteCollection(id: number, ownerOpenId: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  await db
+    .delete(collectionMembers)
+    .where(eq(collectionMembers.collectionId, id));
+  await db
+    .delete(collections)
+    .where(and(eq(collections.id, id), eq(collections.ownerOpenId, ownerOpenId)));
+
+  return true;
+}
+
+/** Add a character to a collection (idempotent). */
+export async function addCharacterToCollection(collectionId: number, characterId: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  // Check if already present
+  const existing = await db
+    .select()
+    .from(collectionMembers)
+    .where(
+      and(
+        eq(collectionMembers.collectionId, collectionId),
+        eq(collectionMembers.characterId, characterId)
+      )
+    )
+    .limit(1);
+
+  if (existing.length > 0) return true; // already a member
+
+  await db.insert(collectionMembers).values({ collectionId, characterId });
+  return true;
+}
+
+/** Remove a character from a collection. */
+export async function removeCharacterFromCollection(collectionId: number, characterId: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  await db
+    .delete(collectionMembers)
+    .where(
+      and(
+        eq(collectionMembers.collectionId, collectionId),
+        eq(collectionMembers.characterId, characterId)
+      )
+    );
+
+  return true;
+}

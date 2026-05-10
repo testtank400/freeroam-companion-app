@@ -1,136 +1,130 @@
 // useCollections.ts
-// Local-only collections backed by localStorage.
-// A collection is { id, name, characterIds[] }.
-// When Freeroam adds a character collections API, this can be migrated.
+// DB-backed collections via tRPC.
+// Collections are stored in the Manus database and persist across devices.
 
-import { useCallback, useEffect, useState } from 'react';
+import { trpc } from "@/lib/trpc";
+import { useCallback } from "react";
 
 export interface Collection {
-  id: string;
+  id: number; // DB integer primary key (was a string in the old localStorage version)
   name: string;
-  description?: string;
+  description?: string | null;
   characterIds: string[];
-  createdAt: number;
-  coverImage?: string; // URL of the cover image
-}
-
-const STORAGE_KEY = 'character_collections';
-
-function loadCollections(): Collection[] {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return [];
-    return JSON.parse(raw) as Collection[];
-  } catch {
-    return [];
-  }
-}
-
-function persistCollections(collections: Collection[]) {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(collections));
-  } catch {
-    // ignore storage errors
-  }
-}
-
-function generateId(): string {
-  return `col_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+  createdAt: Date;
+  coverImage?: string | null;
 }
 
 export function useCollections() {
-  const [collections, setCollections] = useState<Collection[]>(() => loadCollections());
+  const utils = trpc.useUtils();
 
-  // Persist on every change
-  useEffect(() => {
-    persistCollections(collections);
-  }, [collections]);
+  const { data: collections = [], isLoading } = trpc.collections.list.useQuery();
+
+  const createMutation = trpc.collections.create.useMutation({
+    onSuccess: () => utils.collections.list.invalidate(),
+  });
+
+  const updateMutation = trpc.collections.update.useMutation({
+    onSuccess: () => utils.collections.list.invalidate(),
+  });
+
+  const deleteMutation = trpc.collections.delete.useMutation({
+    onSuccess: () => utils.collections.list.invalidate(),
+  });
+
+  const addCharacterMutation = trpc.collections.addCharacter.useMutation({
+    onSuccess: () => utils.collections.list.invalidate(),
+  });
+
+  const removeCharacterMutation = trpc.collections.removeCharacter.useMutation({
+    onSuccess: () => utils.collections.list.invalidate(),
+  });
 
   // Create a new collection
-  const createCollection = useCallback((name: string): Collection => {
-    const newCol: Collection = {
-      id: generateId(),
-      name: name.trim(),
-      characterIds: [],
-      createdAt: Date.now(),
-    };
-    setCollections(prev => [newCol, ...prev]);
-    return newCol;
-  }, []);
+  const createCollection = useCallback(
+    async (name: string): Promise<Collection> => {
+      const result = await createMutation.mutateAsync({ name });
+      return result as Collection;
+    },
+    [createMutation]
+  );
 
   // Rename a collection
-  const renameCollection = useCallback((id: string, name: string) => {
-    setCollections(prev =>
-      prev.map(c => c.id === id ? { ...c, name: name.trim() } : c)
-    );
-  }, []);
+  const renameCollection = useCallback(
+    (id: number, name: string) => {
+      updateMutation.mutate({ id, name });
+    },
+    [updateMutation]
+  );
 
-  // Update collection metadata (name, coverImage)
-  const updateCollection = useCallback((id: string, updates: Partial<Pick<Collection, 'name' | 'coverImage' | 'description'>>) => {
-    setCollections(prev =>
-      prev.map(c => c.id === id ? { ...c, ...updates } : c)
-    );
-  }, []);
+  // Update collection metadata (name, coverImage, description)
+  const updateCollection = useCallback(
+    (id: number, updates: Partial<Pick<Collection, "name" | "coverImage" | "description">>) => {
+      updateMutation.mutate({
+        id,
+        name: updates.name,
+        coverImage: updates.coverImage ?? null,
+        description: updates.description ?? null,
+      });
+    },
+    [updateMutation]
+  );
 
   // Delete a collection
-  const deleteCollection = useCallback((id: string) => {
-    setCollections(prev => prev.filter(c => c.id !== id));
-  }, []);
+  const deleteCollection = useCallback(
+    (id: number) => {
+      deleteMutation.mutate({ id });
+    },
+    [deleteMutation]
+  );
 
-  // Add a character to a collection (no-op if already present)
-  const addToCollection = useCallback((collectionId: string, characterId: string) => {
-    setCollections(prev =>
-      prev.map(c =>
-        c.id === collectionId && !c.characterIds.includes(characterId)
-          ? { ...c, characterIds: [...c.characterIds, characterId] }
-          : c
-      )
-    );
-  }, []);
+  // Add a character to a collection (no-op if already present — server handles idempotency)
+  const addToCollection = useCallback(
+    (collectionId: number, characterId: string) => {
+      addCharacterMutation.mutate({ collectionId, characterId });
+    },
+    [addCharacterMutation]
+  );
 
   // Remove a character from a collection
-  const removeFromCollection = useCallback((collectionId: string, characterId: string) => {
-    setCollections(prev =>
-      prev.map(c =>
-        c.id === collectionId
-          ? { ...c, characterIds: c.characterIds.filter(id => id !== characterId) }
-          : c
-      )
-    );
-  }, []);
+  const removeFromCollection = useCallback(
+    (collectionId: number, characterId: string) => {
+      removeCharacterMutation.mutate({ collectionId, characterId });
+    },
+    [removeCharacterMutation]
+  );
 
   // Toggle a character's membership in a collection
-  const toggleInCollection = useCallback((collectionId: string, characterId: string) => {
-    setCollections(prev =>
-      prev.map(c => {
-        if (c.id !== collectionId) return c;
-        const has = c.characterIds.includes(characterId);
-        return {
-          ...c,
-          characterIds: has
-            ? c.characterIds.filter(id => id !== characterId)
-            : [...c.characterIds, characterId],
-        };
-      })
-    );
-  }, []);
+  const toggleInCollection = useCallback(
+    (collectionId: number, characterId: string) => {
+      const col = collections.find((c) => c.id === collectionId);
+      if (!col) return;
+      const has = col.characterIds.includes(characterId);
+      if (has) {
+        removeCharacterMutation.mutate({ collectionId, characterId });
+      } else {
+        addCharacterMutation.mutate({ collectionId, characterId });
+      }
+    },
+    [collections, addCharacterMutation, removeCharacterMutation]
+  );
 
   // Check if a character is in a specific collection
   const isInCollection = useCallback(
-    (collectionId: string, characterId: string) =>
-      collections.find(c => c.id === collectionId)?.characterIds.includes(characterId) ?? false,
+    (collectionId: number, characterId: string) =>
+      collections.find((c) => c.id === collectionId)?.characterIds.includes(characterId) ?? false,
     [collections]
   );
 
   // Get all collection IDs a character belongs to
   const getCharacterCollections = useCallback(
     (characterId: string) =>
-      collections.filter(c => c.characterIds.includes(characterId)).map(c => c.id),
+      collections.filter((c) => c.characterIds.includes(characterId)).map((c) => c.id),
     [collections]
   );
 
   return {
-    collections,
+    collections: collections as Collection[],
+    isLoading,
     createCollection,
     renameCollection,
     updateCollection,

@@ -135,7 +135,7 @@ export default function Home() {
 
   const { isSaved, toggleSave, initFromApi } = useSavedCharacters();
   const { collections, createCollection, renameCollection, updateCollection, deleteCollection, toggleInCollection, isInCollection } = useCollections();
-  const [activeCollectionId, setActiveCollectionId] = useState<string | null>(null);
+  const [activeCollectionId, setActiveCollectionId] = useState<number | null>(null);
   const [editingCollection, setEditingCollection] = useState<Collection | null>(null);
   const [showNewCollectionModal, setShowNewCollectionModal] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
@@ -150,7 +150,7 @@ export default function Home() {
     return () => document.removeEventListener('mousedown', handler);
   }, []);
 
-  const activeCollection = activeCollectionId ? collections.find(c => c.id === activeCollectionId) ?? null : null;
+  const activeCollection = activeCollectionId != null ? collections.find(c => c.id === activeCollectionId) ?? null : null;
 
   // Multi-select state
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -217,14 +217,16 @@ export default function Home() {
     >
       {/* Top header bar */}
       <header
-        className="sticky top-0 z-40 flex items-center justify-between px-6 py-3"
+        className="sticky top-0 z-40 px-3 sm:px-6 py-2 sm:py-3"
         style={{
           background: 'oklch(0.098 0.008 264 / 0.95)',
           backdropFilter: 'blur(8px)',
           borderBottom: '1px solid oklch(1 0 0 / 0.07)',
         }}
       >
-        <div className="flex items-center gap-3">
+        {/* On mobile: two rows (title + controls). On sm+: single row */}
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1.5 sm:gap-2">
+        <div className="flex items-center gap-2 min-w-0">
           {/* Back button when in collection view */}
           {activeCollection ? (
             <button
@@ -309,9 +311,9 @@ export default function Home() {
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5 sm:gap-2 flex-shrink-0 sm:ml-auto">
           {/* Search bar */}
-          <div className="relative flex items-center">
+          <div className="relative flex items-center flex-1 sm:flex-none">
             <Search
               size={13}
               strokeWidth={2}
@@ -323,7 +325,7 @@ export default function Home() {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder={isFetching && !searchQuery ? 'Loading more...' : 'Search...'}
-              className="pl-8 pr-7 py-1.5 rounded-sm text-xs w-36 sm:w-48 transition-all"
+              className="pl-8 pr-7 py-1.5 rounded-sm text-xs flex-1 sm:flex-none sm:w-48 transition-all min-w-0"
               style={{
                 fontFamily: 'JetBrains Mono, monospace',
                 background: 'oklch(0.15 0.01 264)',
@@ -489,10 +491,11 @@ export default function Home() {
                 )}
           </div>
         </div>
+        </div>
       </header>
 
       {/* Main content */}
-      <main className="container py-8">
+      <main className="container py-4 sm:py-8">
 
         {/* Collections section — only shown when NOT in collection view */}
         {!activeCollectionId && (
@@ -522,13 +525,13 @@ export default function Home() {
                 No collections yet — click to create one
               </button>
             ) : (
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+              <div className="grid grid-cols-1 min-[400px]:grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-4">
                 {collections.map(col => (
                   <CollectionCard
                     key={col.id}
                     collection={col}
                     characters={allCharacters.filter(c => col.characterIds.includes(c.external_id))}
-                    onClick={(c) => setActiveCollectionId(c.id)}
+                    onClick={(c) => setActiveCollectionId(c.id as number)}
                     onEdit={(c) => setEditingCollection(c)}
                     onDelete={(c) => { deleteCollection(c.id); }}
                   />
@@ -539,12 +542,11 @@ export default function Home() {
         )}
 
 
-        {/* Section label + filter chips */}
-        <div className="flex flex-wrap items-center gap-3 mb-6">
-          <div className="h-px flex-1 hidden sm:block" style={{ background: 'oklch(1 0 0 / 0.06)' }} />
 
-          {/* Privacy filter chips with count badges */}
-          <div className="flex items-center gap-2 flex-wrap">
+        {/* Section label + filter chips */}
+        <div className="mb-6">
+          {/* Scrollable filter chip row on mobile */}
+          <div className="flex items-center gap-2 overflow-x-auto pb-1 flex-nowrap" style={{ scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch' }}>
             {([
               { value: null,        label: 'All',      emoji: null,  count: allCharacters.length,                                              bg: privacyFilter === null       ? 'oklch(0.769 0.188 70.08 / 0.15)' : 'oklch(0.15 0.01 264)', border: privacyFilter === null       ? '1px solid oklch(0.769 0.188 70.08 / 0.45)' : '1px solid oklch(1 0 0 / 0.08)', color: privacyFilter === null       ? 'oklch(0.769 0.188 70.08)' : 'oklch(0.45 0.01 264)' },
               { value: 'private',   label: 'Private',  emoji: '🔒', count: allCharacters.filter(c => c.privacy_status === 'private').length,  bg: privacyFilter === 'private'  ? 'oklch(0.22 0.01 264)'          : 'oklch(0.15 0.01 264)', border: privacyFilter === 'private'  ? '1px solid oklch(1 0 0 / 0.25)'              : '1px solid oklch(1 0 0 / 0.08)', color: privacyFilter === 'private'  ? 'oklch(0.88 0.005 65)'      : 'oklch(0.45 0.01 264)' },
@@ -554,7 +556,7 @@ export default function Home() {
               <button
                 key={label}
                 onClick={() => setPrivacyFilter(value === privacyFilter ? null : (value as PrivacyStatus | null))}
-                className="flex items-center gap-1.5 px-3 py-1 rounded-sm text-[11px] font-semibold tracking-wider uppercase transition-all"
+                className="flex items-center gap-1.5 px-3 py-1 rounded-sm text-[11px] font-semibold tracking-wider uppercase transition-all flex-shrink-0"
                 style={{ fontFamily: 'Rajdhani, sans-serif', background: bg, border, color }}
               >
                 {emoji && <span>{emoji}</span>}
@@ -581,7 +583,7 @@ export default function Home() {
               return (
                 <button
                   onClick={() => setFavoritesOnly(v => !v)}
-                  className="flex items-center gap-1.5 px-3 py-1 rounded-sm text-[11px] font-semibold tracking-wider uppercase transition-all"
+                  className="flex items-center gap-1.5 px-3 py-1 rounded-sm text-[11px] font-semibold tracking-wider uppercase transition-all flex-shrink-0"
                   style={{
                     fontFamily: 'Rajdhani, sans-serif',
                     background: isActive ? 'oklch(0.65 0.22 25 / 0.2)' : 'oklch(0.15 0.01 264)',
@@ -613,7 +615,7 @@ export default function Home() {
               return (
                 <button
                   onClick={() => setPersonaFilter(isActive ? null : true)}
-                  className="flex items-center gap-1.5 px-3 py-1 rounded-sm text-[11px] font-semibold tracking-wider uppercase transition-all"
+                  className="flex items-center gap-1.5 px-3 py-1 rounded-sm text-[11px] font-semibold tracking-wider uppercase transition-all flex-shrink-0"
                   style={{
                     fontFamily: 'Rajdhani, sans-serif',
                     background: isActive ? 'oklch(0.25 0.1 300 / 0.4)' : 'oklch(0.15 0.01 264)',
@@ -636,13 +638,11 @@ export default function Home() {
               );
             })()}
           </div>
-
-          <div className="h-px flex-1 hidden sm:block" style={{ background: 'oklch(1 0 0 / 0.06)' }} />
         </div>
 
         {/* Initial loading skeleton */}
         {isLoading && (
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+          <div className="grid grid-cols-1 min-[400px]:grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-4">
             {Array.from({ length: 10 }).map((_, i) => (
               <div
                 key={i}
@@ -700,7 +700,7 @@ export default function Home() {
         {/* Derive filtered list — applies search, privacy, persona, favorites, and collection filters */}
         {(() => {
           const q = searchQuery.trim().toLowerCase();
-          const activeCol = activeCollectionId ? collections.find(c => c.id === activeCollectionId) : null;
+          const activeCol = activeCollectionId != null ? collections.find(c => c.id === activeCollectionId) : null;
           // IDs of characters that belong to ANY collection
           const allCollectionIds = new Set(collections.flatMap(col => col.characterIds));
           const visibleCharacters = allCharacters.filter(c => {
@@ -760,23 +760,23 @@ export default function Home() {
         {allCharacters.length > 0 && (
           <div
             ref={gridRef}
-            className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4"
+            className="grid grid-cols-1 min-[400px]:grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-4"
             style={selectedIds.size > 0 ? { userSelect: 'none' } : undefined}
           >
             {allCharacters.filter(c => {
-              const q = searchQuery.trim().toLowerCase();
-              const activeCol = activeCollectionId ? collections.find(col => col.id === activeCollectionId) : null;
-              const allCollectionIds = new Set(collections.flatMap(col => col.characterIds));
-              const matchesPrivacy = !privacyFilter || c.privacy_status === privacyFilter;
-              const matchesSearch = !q || c.name.toLowerCase().includes(q);
-              const matchesPersona = personaFilter === null || c.is_persona === personaFilter;
-              const matchesFavorites = !favoritesOnly || isSaved(c.external_id);
-              const matchesCollection = !activeCol || activeCol.characterIds.includes(c.external_id);
-              const notInOtherCollection = activeCol
-                ? activeCol.characterIds.includes(c.external_id)
-                : !allCollectionIds.has(c.external_id);
-              return matchesPrivacy && matchesSearch && matchesPersona && matchesFavorites && matchesCollection && notInOtherCollection;
-            }).map((character) => (
+          const q = searchQuery.trim().toLowerCase();
+          const activeCol = activeCollectionId != null ? collections.find(col => col.id === activeCollectionId) : null;
+          const allCollectionIds = new Set(collections.flatMap(col => col.characterIds));
+          const matchesPrivacy = !privacyFilter || c.privacy_status === privacyFilter;
+          const matchesSearch = !q || c.name.toLowerCase().includes(q);
+          const matchesPersona = personaFilter === null || c.is_persona === personaFilter;
+          const matchesFavorites = !favoritesOnly || isSaved(c.external_id);
+          const matchesCollection = !activeCol || activeCol.characterIds.includes(c.external_id);
+          const notInOtherCollection = activeCol
+            ? activeCol.characterIds.includes(c.external_id)
+            : !allCollectionIds.has(c.external_id);
+          return matchesPrivacy && matchesSearch && matchesPersona && matchesFavorites && matchesCollection && notInOtherCollection;
+        }).map((character) => (
               <CharacterCard
                 key={character.external_id}
                 character={character}
@@ -793,7 +793,7 @@ export default function Home() {
                     // Track index for shift-range
                     const visibleList = allCharacters.filter(c => {
                       const q = searchQuery.trim().toLowerCase();
-                      const activeCol = activeCollectionId ? collections.find(col => col.id === activeCollectionId) : null;
+                      const activeCol = activeCollectionId != null ? collections.find(col => col.id === activeCollectionId) : null;
                       const allColIds = new Set(collections.flatMap(col => col.characterIds));
                       const notInOther = activeCol ? activeCol.characterIds.includes(c.external_id) : !allColIds.has(c.external_id);
                       return (!privacyFilter || c.privacy_status === privacyFilter)
@@ -811,7 +811,7 @@ export default function Home() {
                     e.preventDefault();
                     const visibleList = allCharacters.filter(c => {
                       const q = searchQuery.trim().toLowerCase();
-                      const activeCol = activeCollectionId ? collections.find(col => col.id === activeCollectionId) : null;
+                      const activeCol = activeCollectionId != null ? collections.find(col => col.id === activeCollectionId) : null;
                       const allColIds = new Set(collections.flatMap(col => col.characterIds));
                       const notInOther = activeCol ? activeCol.characterIds.includes(c.external_id) : !allColIds.has(c.external_id);
                       return (!privacyFilter || c.privacy_status === privacyFilter)
@@ -888,11 +888,11 @@ export default function Home() {
         open={showNewCollectionModal || !!editingCollection}
         onClose={() => { setShowNewCollectionModal(false); setEditingCollection(null); }}
         collection={editingCollection}
-        onSave={(name, coverImage, description) => {
+        onSave={async (name, coverImage, description) => {
           if (editingCollection) {
-            updateCollection(editingCollection.id, { name, coverImage, description });
+            updateCollection(editingCollection.id as number, { name, coverImage, description });
           } else {
-            const newCol = createCollection(name);
+            const newCol = await createCollection(name);
             if (coverImage || description) updateCollection(newCol.id, { coverImage, description });
           }
         }}

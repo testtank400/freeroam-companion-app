@@ -10,8 +10,8 @@ import { useEffect, useRef, useState } from 'react';
 interface AddToCollectionPopoverProps {
   characterId: string;
   collections: Collection[];
-  isInCollection: (collectionId: string, characterId: string) => boolean;
-  onToggle: (collectionId: string, characterId: string) => void;
+  isInCollection: (collectionId: number, characterId: string) => boolean;
+  onToggle: (collectionId: number, characterId: string) => void;
   onCreate: (name: string) => void;
   onClose: () => void;
 }
@@ -89,11 +89,11 @@ export default function AddToCollectionPopover({
           </div>
         )}
         {collections.map(col => {
-          const active = isInCollection(col.id, characterId);
+          const active = isInCollection(col.id as number, characterId);
           return (
             <button
               key={col.id}
-              onClick={() => onToggle(col.id, characterId)}
+              onClick={() => onToggle(col.id as number, characterId)}
               className="w-full flex items-center gap-2.5 px-3 py-2 text-left transition-colors hover:bg-white/5"
               style={{ borderBottom: '1px solid oklch(1 0 0 / 0.05)' }}
             >

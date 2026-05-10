@@ -40,6 +40,7 @@ function HeadshotGrid({ characters }: { characters: ApiCharacter[] }) {
 
 export default function CollectionCard({ collection, characters, onClick, onEdit, onDelete }: CollectionCardProps) {
   const hasCover = !!collection.coverImage;
+  const coverImageSrc = collection.coverImage ?? undefined;
 
   return (
     <div
@@ -54,7 +55,7 @@ export default function CollectionCard({ collection, characters, onClick, onEdit
       <div className="relative w-full" style={{ paddingBottom: '115%' }}>
         {hasCover ? (
           <img
-            src={collection.coverImage}
+            src={coverImageSrc}
             alt={collection.name}
             className="absolute inset-0 w-full h-full object-cover object-top"
             onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}

@@ -19,8 +19,8 @@ interface CharacterProfileProps {
   onUpdated?: (updated: ApiCharacter) => void;
   // Collections
   collections?: Collection[];
-  isInCollection?: (collectionId: string, characterId: string) => boolean;
-  onToggleInCollection?: (collectionId: string, characterId: string) => void;
+  isInCollection?: (collectionId: number, characterId: string) => boolean;
+  onToggleInCollection?: (collectionId: number, characterId: string) => void;
   onCreateCollection?: (name: string) => void;
   // Favorites
   isSaved?: boolean;

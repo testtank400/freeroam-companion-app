@@ -13,11 +13,11 @@ import { useEffect, useRef, useState } from 'react';
 interface CollectionsStripProps {
   collections: Collection[];
   allCharacters: ApiCharacter[];
-  activeCollectionId: string | null;
-  onSelect: (id: string | null) => void;
+  activeCollectionId: number | null;
+  onSelect: (id: number | null) => void;
   onCreate: (name: string) => void;
-  onRename: (id: string, name: string) => void;
-  onDelete: (id: string) => void;
+  onRename: (id: number, name: string) => void;
+  onDelete: (id: number) => void;
 }
 
 const FALLBACK = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjUwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iNDAwIiBoZWlnaHQ9IjUwMCIgZmlsbD0iIzFhMWEyNCIvPjwvc3ZnPg==';
@@ -62,7 +62,7 @@ export default function CollectionsStrip({
 }: CollectionsStripProps) {
   const [isCreating, setIsCreating] = useState(false);
   const [newName, setNewName] = useState('');
-  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<number | null>(null);
   const [editName, setEditName] = useState('');
   const newInputRef = useRef<HTMLInputElement>(null);
   const editInputRef = useRef<HTMLInputElement>(null);
@@ -84,7 +84,7 @@ export default function CollectionsStrip({
     setIsCreating(false);
   };
 
-  const handleRename = (id: string) => {
+  const handleRename = (id: number) => {
     if (!editName.trim()) { setEditingId(null); return; }
     onRename(id, editName.trim());
     setEditingId(null);
@@ -181,11 +181,11 @@ export default function CollectionsStrip({
                     type="text"
                     value={editName}
                     onChange={e => setEditName(e.target.value)}
-                    onKeyDown={e => { if (e.key === 'Enter') handleRename(col.id); if (e.key === 'Escape') setEditingId(null); }}
+                    onKeyDown={e => { if (e.key === 'Enter') handleRename(col.id as number); if (e.key === 'Escape') setEditingId(null); }}
                     className="px-2 py-1.5 text-[11px] bg-transparent outline-none"
                     style={{ fontFamily: 'JetBrains Mono, monospace', color: 'oklch(0.88 0.005 65)', width: 130 }}
                   />
-                  <button onClick={() => handleRename(col.id)} className="px-1.5 py-1.5 hover:opacity-80" style={{ color: 'oklch(0.769 0.188 70.08)' }}>
+                  <button onClick={() => handleRename(col.id as number)} className="px-1.5 py-1.5 hover:opacity-80" style={{ color: 'oklch(0.769 0.188 70.08)' }}>
                     <Check size={12} strokeWidth={2.5} />
                   </button>
                   <button onClick={() => setEditingId(null)} className="px-1.5 py-1.5 hover:opacity-80" style={{ color: 'oklch(0.5 0.01 264)' }}>

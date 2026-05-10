@@ -15,8 +15,8 @@ interface BulkActionBarProps {
   onBulkFavorite: (ids: string[]) => void;
   allSaved: (ids: string[]) => boolean;
   collections: Collection[];
-  isInCollection: (collectionId: string, characterId: string) => boolean;
-  onToggleInCollection: (collectionId: string, characterId: string) => void;
+  isInCollection: (collectionId: number, characterId: string) => boolean;
+  onToggleInCollection: (collectionId: number, characterId: string) => void;
   onCreateCollection: (name: string) => void;
 }
 
@@ -42,7 +42,7 @@ const BulkActionBar = forwardRef<HTMLDivElement, BulkActionBarProps>(
 
     if (selectedCount === 0) return null;
 
-    const handleCollectionToggle = (collectionId: string, _charId: string) => {
+    const handleCollectionToggle = (collectionId: number, _charId: string) => {
       const anyMissing = selectedIds.some(id => !isInCollection(collectionId, id));
       selectedIds.forEach(id => {
         const inCol = isInCollection(collectionId, id);
@@ -51,7 +51,7 @@ const BulkActionBar = forwardRef<HTMLDivElement, BulkActionBarProps>(
       });
     };
 
-    const bulkIsInCollection = (collectionId: string, _charId: string) =>
+    const bulkIsInCollection = (collectionId: number, _charId: string) =>
       selectedIds.length > 0 && selectedIds.every(id => isInCollection(collectionId, id));
 
     return (

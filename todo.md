@@ -19,6 +19,11 @@
 - [x] Enlarged scrollbar (14px width, easier to grab, tactical amber styling)
 
 ## Pending Features
+- [x] Migrate collections from localStorage to Manus database (persist across devices)
+- [x] Fix mobile responsiveness: header layout on small screens
+- [x] Fix mobile responsiveness: filter chips row (overflow/wrapping)
+- [x] Fix mobile responsiveness: character grid columns on mobile
+- [x] Fix mobile responsiveness: collections strip on mobile
 - [ ] Headshot upload/linking for characters
 - [ ] Cover image upload/linking for collections (partially done - URL input works)
 - [ ] Advanced filtering options
