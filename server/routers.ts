@@ -261,8 +261,19 @@ export const appRouter = router({
           throw new Error(`Update failed (${response.status}): ${text}`);
         }
 
-        const data = await response.json();
-        return SingleCharacterSchema.parse(data);
+        // The update endpoint returns { message, character_external_id } — not a full character.
+        // Return a reconstructed object from the input so the client can update its local state.
+        return {
+          external_id: input.characterId,
+          name: input.name,
+          backstory: input.backstory ?? null,
+          description: null as string | null,
+          appearance: input.appearance ?? null,
+          headshot_url: input.headshot_url ?? null,
+          display_headshot_url: null as string | null,
+          privacy_status: input.privacy_status,
+          owner: undefined as { username: string; display_name?: string } | undefined,
+        };
       }),
 
     create: publicProcedure
