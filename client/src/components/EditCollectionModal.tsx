@@ -3,6 +3,7 @@
 // Cover image: paste a URL or upload a file (same pattern as character creation).
 
 import { Collection } from '@/hooks/useCollections';
+import { trpc } from '@/lib/trpc';
 import { ImagePlus, Upload, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
@@ -46,8 +47,10 @@ export default function EditCollectionModal({ open, onClose, collection, onSave 
   const [description, setDescription] = useState('');
   const [coverMode, setCoverMode] = useState<'url' | 'upload'>('url');
   const [uploadPreview, setUploadPreview] = useState<string | null>(null);
+  const [uploadedCoverUrl, setUploadedCoverUrl] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const uploadCoverMutation = trpc.collections.uploadCoverImage.useMutation();
 
   useEffect(() => {
     if (open) {
@@ -56,6 +59,7 @@ export default function EditCollectionModal({ open, onClose, collection, onSave 
       setCoverUrl(collection?.coverImage ?? '');
       setCoverMode('url');
       setUploadPreview(null);
+      setUploadedCoverUrl(null);
       requestAnimationFrame(() => setVisible(true));
     } else {
       setVisible(false);
@@ -83,23 +87,39 @@ export default function EditCollectionModal({ open, onClose, collection, onSave 
     if (!file.type.startsWith('image/')) { toast.error('Please select an image file'); return; }
     if (file.size > 10 * 1024 * 1024) { toast.error('Image must be under 10MB'); return; }
 
-    // Show local preview — for collections we just use the data URL directly
     setIsUploading(true);
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      const dataUrl = ev.target?.result as string;
+    try {
+      // Show local preview immediately
+      const reader = new FileReader();
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        reader.onload = (ev) => resolve(ev.target?.result as string);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
       setUploadPreview(dataUrl);
-      setCoverUrl(dataUrl); // store data URL as cover
+
+      // Upload to Manus S3 storage — extract base64 portion after the comma
+      const base64 = dataUrl.split(',')[1];
+      const result = await uploadCoverMutation.mutateAsync({
+        fileBase64: base64,
+        mimeType: file.type,
+        fileName: file.name,
+      });
+      setUploadedCoverUrl(result.url);
+    } catch {
+      toast.error('Failed to upload image');
+      setUploadPreview(null);
+      setUploadedCoverUrl(null);
+    } finally {
       setIsUploading(false);
-    };
-    reader.onerror = () => { toast.error('Failed to read file'); setIsUploading(false); };
-    reader.readAsDataURL(file);
+    }
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) { toast.error('Collection name is required'); return; }
-    const finalCover = coverMode === 'url' ? coverUrl.trim() || undefined : (uploadPreview ?? undefined);
+    // Use the S3 URL for uploaded files, or the pasted URL for URL mode
+    const finalCover = coverMode === 'url' ? coverUrl.trim() || undefined : (uploadedCoverUrl ?? undefined);
     onSave(name.trim(), finalCover, description.trim() || undefined);
     handleClose();
   };
@@ -256,11 +276,11 @@ export default function EditCollectionModal({ open, onClose, collection, onSave 
                         }}
                       >
                         <Upload size={13} strokeWidth={2} />
-                        {isUploading ? 'Loading...' : uploadPreview ? 'Change Image' : 'Choose Image'}
+                        {isUploading ? 'Uploading...' : uploadedCoverUrl ? 'Change Image' : 'Choose Image'}
                       </button>
                       {uploadPreview && !isUploading && (
-                        <p className="mt-2 text-[11px]" style={{ fontFamily: 'JetBrains Mono, monospace', color: 'oklch(0.65 0.15 145)' }}>
-                          ✓ Image loaded
+                        <p className="mt-2 text-[11px]" style={{ fontFamily: 'JetBrains Mono, monospace', color: uploadedCoverUrl ? 'oklch(0.65 0.15 145)' : 'oklch(0.65 0.15 25)' }}>
+                          {uploadedCoverUrl ? '✓ Image uploaded' : '⏳ Uploading...'}
                         </p>
                       )}
                     </div>

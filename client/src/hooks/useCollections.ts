@@ -23,6 +23,7 @@ export function useCollections() {
     onSuccess: () => utils.collections.list.invalidate(),
   });
 
+
   const updateMutation = trpc.collections.update.useMutation({
     onSuccess: () => utils.collections.list.invalidate(),
   });
@@ -39,10 +40,14 @@ export function useCollections() {
     onSuccess: () => utils.collections.list.invalidate(),
   });
 
-  // Create a new collection
+  // Create a new collection (with optional cover image and description)
   const createCollection = useCallback(
-    async (name: string): Promise<Collection> => {
-      const result = await createMutation.mutateAsync({ name });
+    async (name: string, coverImage?: string, description?: string): Promise<Collection> => {
+      const result = await createMutation.mutateAsync({
+        name,
+        coverImage: coverImage ?? undefined,
+        description: description ?? undefined,
+      });
       return result as Collection;
     },
     [createMutation]

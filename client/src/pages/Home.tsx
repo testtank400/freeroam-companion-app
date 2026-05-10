@@ -939,8 +939,8 @@ export default function Home() {
           if (editingCollection) {
             updateCollection(editingCollection.id as number, { name, coverImage, description });
           } else {
-            const newCol = await createCollection(name);
-            if (coverImage || description) updateCollection(newCol.id, { coverImage, description });
+            // Pass all fields in one shot so the image is saved atomically
+            await createCollection(name, coverImage, description);
           }
         }}
       />

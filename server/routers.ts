@@ -4,6 +4,7 @@ import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, router } from "./_core/trpc";
 import { z } from "zod";
 import { ENV } from "./_core/env";
+import { storagePut } from "./storage";
 import {
   addCharacterToCollection,
   createCollection as dbCreateCollection,
@@ -498,6 +499,23 @@ export const appRouter = router({
       .input(z.object({ collectionId: z.number(), characterId: z.string() }))
       .mutation(async ({ input }) => {
         return removeCharacterFromCollection(input.collectionId, input.characterId);
+      }),
+
+    // Upload a cover image for a collection to Manus S3 storage.
+    // Accepts base64-encoded file content and returns a /manus-storage/ URL.
+    uploadCoverImage: publicProcedure
+      .input(
+        z.object({
+          fileBase64: z.string(),
+          mimeType: z.string(),
+          fileName: z.string(),
+        })
+      )
+      .mutation(async ({ input }) => {
+        const buffer = Buffer.from(input.fileBase64, "base64");
+        const key = `collection-covers/${input.fileName}`;
+        const { url } = await storagePut(key, buffer, input.mimeType);
+        return { url };
       }),
   }),
 });
