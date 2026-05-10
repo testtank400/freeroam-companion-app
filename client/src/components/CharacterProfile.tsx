@@ -160,7 +160,7 @@ export default function CharacterProfile({ character, onClose, onUpdated, collec
 
   // Derive display values — prefer local override, then full fetch, then list data
   const displayName = fullCharacter?.name ?? displayCharacter.name;
-  const displayOwner = fullCharacter?.owner.display_name ?? fullCharacter?.owner.username ?? displayCharacter.owner.display_name;
+  const displayOwner = fullCharacter?.owner?.display_name ?? fullCharacter?.owner?.username ?? displayCharacter.owner.display_name;
   const displayPrivacy = fullCharacter?.privacy_status ?? displayCharacter.privacy_status;
   const imageUrl = fullCharacter?.display_headshot_url ?? fullCharacter?.headshot_url
     ?? displayCharacter.display_headshot_url ?? displayCharacter.headshot_url ?? FALLBACK_IMAGE;

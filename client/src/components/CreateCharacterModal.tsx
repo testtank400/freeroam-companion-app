@@ -216,14 +216,14 @@ export default function CreateCharacterModal({
         const updatedAsApiChar: ApiCharacter = {
           external_id: updated.external_id,
           name: updated.name,
-          backstory: updated.backstory,
-          description: updated.description,
-          headshot_url: updated.headshot_url,
-          display_headshot_url: updated.display_headshot_url,
+          backstory: updated.backstory ?? null,
+          description: updated.description ?? null,
+          headshot_url: updated.headshot_url ?? null,
+          display_headshot_url: updated.display_headshot_url ?? null,
           is_persona: editCharacter.is_persona,
           owner: {
-            username: updated.owner.username,
-            display_name: updated.owner.display_name ?? updated.owner.username,
+            username: updated.owner?.username ?? editCharacter.owner.username,
+            display_name: updated.owner?.display_name ?? updated.owner?.username ?? editCharacter.owner.display_name,
           },
           privacy_status: updated.privacy_status,
         };
@@ -241,14 +241,14 @@ export default function CreateCharacterModal({
         const createdAsApiChar: ApiCharacter = {
           external_id: created.external_id,
           name: created.name,
-          backstory: created.backstory,
-          description: created.description,
-          headshot_url: created.headshot_url,
-          display_headshot_url: created.display_headshot_url,
+          backstory: created.backstory ?? null,
+          description: created.description ?? null,
+          headshot_url: created.headshot_url ?? null,
+          display_headshot_url: created.display_headshot_url ?? null,
           is_persona: false,
           owner: {
-            username: created.owner.username,
-            display_name: created.owner.display_name ?? created.owner.username,
+            username: created.owner?.username ?? 'Test Tank',
+            display_name: created.owner?.display_name ?? created.owner?.username ?? 'Test Tank',
           },
           privacy_status: created.privacy_status,
         };

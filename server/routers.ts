@@ -39,20 +39,21 @@ const CharacterSchema = z.object({
   privacy_status: privacyStatusSchema,
 });
 
-// Single character response — includes the `appearance` field not in the list endpoint
+// Single character response — includes the `appearance` field not in the list endpoint.
+// Note: the create endpoint returns a slimmer shape (no description/owner), so both are optional.
 const SingleCharacterSchema = z.object({
   external_id: z.string(),
   name: z.string(),
-  backstory: z.string().nullable(),
-  description: z.string().nullable(),
-  appearance: z.string().nullable(),
-  headshot_url: z.string().nullable(),
-  display_headshot_url: z.string().nullable(),
+  backstory: z.string().nullable().optional(),
+  description: z.string().nullable().optional(),
+  appearance: z.string().nullable().optional(),
+  headshot_url: z.string().nullable().optional(),
+  display_headshot_url: z.string().nullable().optional(),
   privacy_status: privacyStatusSchema,
   owner: z.object({
     username: z.string(),
     display_name: z.string().optional(),
-  }),
+  }).optional(),
 });
 
 const CharactersResponseSchema = z.object({
