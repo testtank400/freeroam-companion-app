@@ -545,45 +545,105 @@ export default function Home() {
 
         {/* Section label + filter chips */}
         <div className="mb-6">
-          {/* Scrollable filter chip row on mobile */}
-          <div className="flex items-center gap-2 flex-wrap">
-            {([
-              { value: null,        label: 'All',      emoji: null,  count: allCharacters.length,                                              bg: privacyFilter === null       ? 'oklch(0.769 0.188 70.08 / 0.15)' : 'oklch(0.15 0.01 264)', border: privacyFilter === null       ? '1px solid oklch(0.769 0.188 70.08 / 0.45)' : '1px solid oklch(1 0 0 / 0.08)', color: privacyFilter === null       ? 'oklch(0.769 0.188 70.08)' : 'oklch(0.45 0.01 264)' },
-              { value: 'private',   label: 'Private',  emoji: '🔒', count: allCharacters.filter(c => c.privacy_status === 'private').length,  bg: privacyFilter === 'private'  ? 'oklch(0.22 0.01 264)'          : 'oklch(0.15 0.01 264)', border: privacyFilter === 'private'  ? '1px solid oklch(1 0 0 / 0.25)'              : '1px solid oklch(1 0 0 / 0.08)', color: privacyFilter === 'private'  ? 'oklch(0.88 0.005 65)'      : 'oklch(0.45 0.01 264)' },
-              { value: 'public',    label: 'Public',   emoji: '🌐', count: allCharacters.filter(c => c.privacy_status === 'public').length,   bg: privacyFilter === 'public'   ? 'oklch(0.22 0.08 145 / 0.4)'    : 'oklch(0.15 0.01 264)', border: privacyFilter === 'public'   ? '1px solid oklch(0.55 0.15 145 / 0.6)'       : '1px solid oklch(1 0 0 / 0.08)', color: privacyFilter === 'public'   ? 'oklch(0.75 0.15 145)'      : 'oklch(0.45 0.01 264)' },
-              { value: 'unlisted',  label: 'Unlisted', emoji: '🔗', count: allCharacters.filter(c => c.privacy_status === 'unlisted').length, bg: privacyFilter === 'unlisted' ? 'oklch(0.22 0.08 220 / 0.4)'    : 'oklch(0.15 0.01 264)', border: privacyFilter === 'unlisted' ? '1px solid oklch(0.55 0.15 220 / 0.6)'       : '1px solid oklch(1 0 0 / 0.08)', color: privacyFilter === 'unlisted' ? 'oklch(0.75 0.15 220)'      : 'oklch(0.45 0.01 264)' },
-            ] as const).map(({ value, label, emoji, count, bg, border, color }) => (
-              <button
-                key={label}
-                onClick={() => setPrivacyFilter(value === privacyFilter ? null : (value as PrivacyStatus | null))}
-                className="flex items-center gap-1.5 px-3 py-1 rounded-sm text-[11px] font-semibold tracking-wider uppercase transition-all flex-shrink-0"
-                style={{ fontFamily: 'Rajdhani, sans-serif', background: bg, border, color }}
-              >
-                {emoji && <span>{emoji}</span>}
-                {label}
-                {!isLoading && count > 0 && (
-                  <span
-                    className="inline-flex items-center justify-center rounded-sm px-1 min-w-[18px] h-[16px] text-[9px] font-bold"
-                    style={{
-                      fontFamily: 'JetBrains Mono, monospace',
-                      background: 'oklch(1 0 0 / 0.12)',
-                      color: 'inherit',
-                    }}
-                  >
-                    {count}
-                  </span>
-                )}
-              </button>
-            ))}
+          {/* On mobile: 3-col grid so row 1 = All/Private/Public, row 2 = Unlisted/Favorites.
+              On sm+: single flex row with all chips side by side. */}
+          <div className="grid grid-cols-3 sm:flex sm:flex-row gap-2">
 
-            {/* Favorites chip */}
+            {/* All */}
+            {(() => {
+              const bg = privacyFilter === null ? 'oklch(0.769 0.188 70.08 / 0.15)' : 'oklch(0.15 0.01 264)';
+              const border = privacyFilter === null ? '1px solid oklch(0.769 0.188 70.08 / 0.45)' : '1px solid oklch(1 0 0 / 0.08)';
+              const color = privacyFilter === null ? 'oklch(0.769 0.188 70.08)' : 'oklch(0.45 0.01 264)';
+              return (
+                <button
+                  onClick={() => setPrivacyFilter(null)}
+                  className="flex items-center justify-center sm:justify-start gap-1.5 px-3 py-1 rounded-sm text-[11px] font-semibold tracking-wider uppercase transition-all"
+                  style={{ fontFamily: 'Rajdhani, sans-serif', background: bg, border, color }}
+                >
+                  All
+                  {!isLoading && allCharacters.length > 0 && (
+                    <span className="inline-flex items-center justify-center rounded-sm px-1 min-w-[18px] h-[16px] text-[9px] font-bold" style={{ fontFamily: 'JetBrains Mono, monospace', background: 'oklch(1 0 0 / 0.12)', color: 'inherit' }}>
+                      {allCharacters.length}
+                    </span>
+                  )}
+                </button>
+              );
+            })()}
+
+            {/* Private */}
+            {(() => {
+              const count = allCharacters.filter(c => c.privacy_status === 'private').length;
+              const bg = privacyFilter === 'private' ? 'oklch(0.22 0.01 264)' : 'oklch(0.15 0.01 264)';
+              const border = privacyFilter === 'private' ? '1px solid oklch(1 0 0 / 0.25)' : '1px solid oklch(1 0 0 / 0.08)';
+              const color = privacyFilter === 'private' ? 'oklch(0.88 0.005 65)' : 'oklch(0.45 0.01 264)';
+              return (
+                <button
+                  onClick={() => setPrivacyFilter(privacyFilter === 'private' ? null : 'private')}
+                  className="flex items-center justify-center sm:justify-start gap-1.5 px-3 py-1 rounded-sm text-[11px] font-semibold tracking-wider uppercase transition-all"
+                  style={{ fontFamily: 'Rajdhani, sans-serif', background: bg, border, color }}
+                >
+                  🔒 Private
+                  {!isLoading && count > 0 && (
+                    <span className="inline-flex items-center justify-center rounded-sm px-1 min-w-[18px] h-[16px] text-[9px] font-bold" style={{ fontFamily: 'JetBrains Mono, monospace', background: 'oklch(1 0 0 / 0.12)', color: 'inherit' }}>
+                      {count}
+                    </span>
+                  )}
+                </button>
+              );
+            })()}
+
+            {/* Public */}
+            {(() => {
+              const count = allCharacters.filter(c => c.privacy_status === 'public').length;
+              const bg = privacyFilter === 'public' ? 'oklch(0.22 0.08 145 / 0.4)' : 'oklch(0.15 0.01 264)';
+              const border = privacyFilter === 'public' ? '1px solid oklch(0.55 0.15 145 / 0.6)' : '1px solid oklch(1 0 0 / 0.08)';
+              const color = privacyFilter === 'public' ? 'oklch(0.75 0.15 145)' : 'oklch(0.45 0.01 264)';
+              return (
+                <button
+                  onClick={() => setPrivacyFilter(privacyFilter === 'public' ? null : 'public')}
+                  className="flex items-center justify-center sm:justify-start gap-1.5 px-3 py-1 rounded-sm text-[11px] font-semibold tracking-wider uppercase transition-all"
+                  style={{ fontFamily: 'Rajdhani, sans-serif', background: bg, border, color }}
+                >
+                  🌐 Public
+                  {!isLoading && count > 0 && (
+                    <span className="inline-flex items-center justify-center rounded-sm px-1 min-w-[18px] h-[16px] text-[9px] font-bold" style={{ fontFamily: 'JetBrains Mono, monospace', background: 'oklch(1 0 0 / 0.12)', color: 'inherit' }}>
+                      {count}
+                    </span>
+                  )}
+                </button>
+              );
+            })()}
+
+            {/* Unlisted */}
+            {(() => {
+              const count = allCharacters.filter(c => c.privacy_status === 'unlisted').length;
+              const bg = privacyFilter === 'unlisted' ? 'oklch(0.22 0.08 220 / 0.4)' : 'oklch(0.15 0.01 264)';
+              const border = privacyFilter === 'unlisted' ? '1px solid oklch(0.55 0.15 220 / 0.6)' : '1px solid oklch(1 0 0 / 0.08)';
+              const color = privacyFilter === 'unlisted' ? 'oklch(0.75 0.15 220)' : 'oklch(0.45 0.01 264)';
+              return (
+                <button
+                  onClick={() => setPrivacyFilter(privacyFilter === 'unlisted' ? null : 'unlisted')}
+                  className="flex items-center justify-center sm:justify-start gap-1.5 px-3 py-1 rounded-sm text-[11px] font-semibold tracking-wider uppercase transition-all"
+                  style={{ fontFamily: 'Rajdhani, sans-serif', background: bg, border, color }}
+                >
+                  🔗 Unlisted
+                  {!isLoading && count > 0 && (
+                    <span className="inline-flex items-center justify-center rounded-sm px-1 min-w-[18px] h-[16px] text-[9px] font-bold" style={{ fontFamily: 'JetBrains Mono, monospace', background: 'oklch(1 0 0 / 0.12)', color: 'inherit' }}>
+                      {count}
+                    </span>
+                  )}
+                </button>
+              );
+            })()}
+
+            {/* Favorites */}
             {(() => {
               const favCount = allCharacters.filter(c => isSaved(c.external_id)).length;
               const isActive = favoritesOnly;
               return (
                 <button
                   onClick={() => setFavoritesOnly(v => !v)}
-                  className="flex items-center gap-1.5 px-3 py-1 rounded-sm text-[11px] font-semibold tracking-wider uppercase transition-all flex-shrink-0"
+                  className="flex items-center justify-center sm:justify-start gap-1.5 px-3 py-1 rounded-sm text-[11px] font-semibold tracking-wider uppercase transition-all"
                   style={{
                     fontFamily: 'Rajdhani, sans-serif',
                     background: isActive ? 'oklch(0.65 0.22 25 / 0.2)' : 'oklch(0.15 0.01 264)',
@@ -593,14 +653,7 @@ export default function Home() {
                 >
                   ❤️ Favorites
                   {!isLoading && (
-                    <span
-                      className="inline-flex items-center justify-center rounded-sm px-1 min-w-[18px] h-[16px] text-[9px] font-bold"
-                      style={{
-                        fontFamily: 'JetBrains Mono, monospace',
-                        background: 'oklch(1 0 0 / 0.12)',
-                        color: 'inherit',
-                      }}
-                    >
+                    <span className="inline-flex items-center justify-center rounded-sm px-1 min-w-[18px] h-[16px] text-[9px] font-bold" style={{ fontFamily: 'JetBrains Mono, monospace', background: 'oklch(1 0 0 / 0.12)', color: 'inherit' }}>
                       {favCount}
                     </span>
                   )}
@@ -608,14 +661,14 @@ export default function Home() {
               );
             })()}
 
-            {/* Persona chip — only shown when at least one persona exists in the roster */}
+            {/* Persona chip — only shown when at least one persona exists */}
             {!isLoading && allCharacters.some(c => c.is_persona) && (() => {
               const personaCount = allCharacters.filter(c => c.is_persona).length;
               const isActive = personaFilter === true;
               return (
                 <button
                   onClick={() => setPersonaFilter(isActive ? null : true)}
-                  className="flex items-center gap-1.5 px-3 py-1 rounded-sm text-[11px] font-semibold tracking-wider uppercase transition-all flex-shrink-0"
+                  className="flex items-center justify-center sm:justify-start gap-1.5 px-3 py-1 rounded-sm text-[11px] font-semibold tracking-wider uppercase transition-all"
                   style={{
                     fontFamily: 'Rajdhani, sans-serif',
                     background: isActive ? 'oklch(0.25 0.1 300 / 0.4)' : 'oklch(0.15 0.01 264)',
@@ -624,19 +677,13 @@ export default function Home() {
                   }}
                 >
                   👤 Personas
-                  <span
-                    className="inline-flex items-center justify-center rounded-sm px-1 min-w-[18px] h-[16px] text-[9px] font-bold"
-                    style={{
-                      fontFamily: 'JetBrains Mono, monospace',
-                      background: 'oklch(1 0 0 / 0.12)',
-                      color: 'inherit',
-                    }}
-                  >
+                  <span className="inline-flex items-center justify-center rounded-sm px-1 min-w-[18px] h-[16px] text-[9px] font-bold" style={{ fontFamily: 'JetBrains Mono, monospace', background: 'oklch(1 0 0 / 0.12)', color: 'inherit' }}>
                     {personaCount}
                   </span>
                 </button>
               );
             })()}
+
           </div>
         </div>
 
