@@ -9,9 +9,12 @@ import {
   addCharacterToCollection,
   createCollection as dbCreateCollection,
   deleteCollection as dbDeleteCollection,
+  getCharacterExtended,
   getCollectionsByOwner,
+  parseLimitFromError,
   removeCharacterFromCollection,
   updateCollection as dbUpdateCollection,
+  upsertCharacterExtended,
 } from "./db";
 
 // Coerce any unknown privacy_status value to 'private' so unexpected API values never crash the app
@@ -233,37 +236,90 @@ export const appRouter = router({
         const cookie = process.env.cookie;
         if (!cookie) throw new Error("Cookie not configured in environment");
 
-        const body: Record<string, string> = { name: input.name };
-        if (input.backstory !== undefined)   body.backstory    = input.backstory;
-        if (input.appearance !== undefined)  body.appearance   = input.appearance;
-        if (input.headshot_url !== undefined) body.headshot_url = input.headshot_url;
-        body.privacy_status = input.privacy_status;
+        const FREEROAM_HEADERS = {
+          accept: "*/*",
+          "accept-language": "en-US,en;q=0.9",
+          cookie,
+          origin: "https://getfreeroam.com",
+          referer: "https://getfreeroam.com",
+          "content-type": "application/json",
+          "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36",
+        };
 
-        const response = await fetch(
-          `https://getfreeroam.com/api/characters/${encodeURIComponent(input.characterId)}`,
-          {
+        // Look up any previously detected limits for this character
+        const existing = await getCharacterExtended(input.characterId);
+        let backstoryLimit = existing?.backstoryLimit ?? null;
+        let appearanceLimit = existing?.appearanceLimit ?? null;
+
+        // Trim content to known limits (if any)
+        let backstorySent = input.backstory ?? null;
+        let appearanceSent = input.appearance ?? null;
+        if (backstorySent && backstoryLimit) backstorySent = backstorySent.slice(0, backstoryLimit);
+        if (appearanceSent && appearanceLimit) appearanceSent = appearanceSent.slice(0, appearanceLimit);
+
+        const buildBody = (bs: string | null, ap: string | null) => {
+          const body: Record<string, string> = { name: input.name };
+          if (bs !== undefined && bs !== null)  body.backstory    = bs;
+          if (ap !== undefined && ap !== null)  body.appearance   = ap;
+          if (input.headshot_url !== undefined) body.headshot_url = input.headshot_url;
+          body.privacy_status = input.privacy_status;
+          return body;
+        };
+
+        const doUpdate = (bs: string | null, ap: string | null) =>
+          fetch(`https://getfreeroam.com/api/characters/${encodeURIComponent(input.characterId)}`, {
             method: "PUT",
-            headers: {
-              accept: "*/*",
-              "accept-language": "en-US,en;q=0.9",
-              cookie: cookie,
-              origin: "https://getfreeroam.com",
-              referer: "https://getfreeroam.com",
-              "content-type": "application/json",
-              "user-agent":
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36",
-            },
-            body: JSON.stringify(body),
-          }
-        );
+            headers: FREEROAM_HEADERS,
+            body: JSON.stringify(buildBody(bs, ap)),
+          });
 
+        let response = await doUpdate(backstorySent, appearanceSent);
+        let trimmedBackstory: number | null = null;
+        let trimmedAppearance: number | null = null;
+
+        // If Freeroam rejects, parse the limit from the error and retry once
         if (!response.ok) {
-          const text = await response.text();
-          throw new Error(`Update failed (${response.status}): ${text}`);
+          const errorText = await response.text();
+          const detectedLimit = parseLimitFromError(errorText);
+
+          if (detectedLimit && response.status === 400) {
+            // Determine which field was rejected by checking the error message
+            const isBackstory = /backstory/i.test(errorText);
+            const isAppearance = /appearance|description/i.test(errorText);
+
+            if (isBackstory && backstorySent && backstorySent.length > detectedLimit) {
+              backstoryLimit = detectedLimit;
+              backstorySent = backstorySent.slice(0, detectedLimit);
+              trimmedBackstory = detectedLimit;
+            } else if (isAppearance && appearanceSent && appearanceSent.length > detectedLimit) {
+              appearanceLimit = detectedLimit;
+              appearanceSent = appearanceSent.slice(0, detectedLimit);
+              trimmedAppearance = detectedLimit;
+            } else {
+              // Trim both as a fallback
+              if (backstorySent) { backstoryLimit = detectedLimit; backstorySent = backstorySent.slice(0, detectedLimit); trimmedBackstory = detectedLimit; }
+              if (appearanceSent) { appearanceLimit = detectedLimit; appearanceSent = appearanceSent.slice(0, detectedLimit); trimmedAppearance = detectedLimit; }
+            }
+
+            response = await doUpdate(backstorySent, appearanceSent);
+            if (!response.ok) {
+              const retryError = await response.text();
+              throw new Error(`Update failed after retry (${response.status}): ${retryError}`);
+            }
+          } else {
+            throw new Error(`Update failed (${response.status}): ${errorText}`);
+          }
         }
 
-        // The update endpoint returns { message, character_external_id } — not a full character.
-        // Return a reconstructed object from the input so the client can update its local state.
+        // Save the full (untrimmed) content and detected limits to our DB
+        await upsertCharacterExtended(
+          input.characterId,
+          input.backstory ?? null,
+          input.appearance ?? null,
+          backstoryLimit,
+          appearanceLimit
+        );
+
         return {
           external_id: input.characterId,
           name: input.name,
@@ -274,6 +330,9 @@ export const appRouter = router({
           display_headshot_url: null as string | null,
           privacy_status: input.privacy_status,
           owner: undefined as { username: string; display_name?: string } | undefined,
+          // Trim warnings — null means no trimming occurred
+          trimmedBackstory,
+          trimmedAppearance,
         };
       }),
 
@@ -291,35 +350,87 @@ export const appRouter = router({
         const cookie = process.env.cookie;
         if (!cookie) throw new Error("Cookie not configured in environment");
 
-        const body: Record<string, string> = { name: input.name };
-        if (input.backstory)    body.backstory    = input.backstory;
-        if (input.appearance)   body.appearance   = input.appearance;
-        if (input.headshot_url) body.headshot_url = input.headshot_url;
-        body.privacy_status = input.privacy_status;
+        const FREEROAM_HEADERS = {
+          accept: "*/*",
+          "accept-language": "en-US,en;q=0.9",
+          cookie,
+          origin: "https://getfreeroam.com",
+          referer: "https://getfreeroam.com",
+          "content-type": "application/json",
+          "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36",
+        };
 
-        const response = await fetch("https://getfreeroam.com/api/characters", {
-          method: "POST",
-          headers: {
-            accept: "*/*",
-            "accept-language": "en-US,en;q=0.9",
-            cookie: cookie,
-            origin: "https://getfreeroam.com",
-            referer: "https://getfreeroam.com",
-            "content-type": "application/json",
-            "user-agent":
-              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36",
-          },
-          body: JSON.stringify(body),
-        });
+        let backstorySent = input.backstory ?? null;
+        let appearanceSent = input.appearance ?? null;
+        let backstoryLimit: number | null = null;
+        let appearanceLimit: number | null = null;
+        let trimmedBackstory: number | null = null;
+        let trimmedAppearance: number | null = null;
+
+        const buildBody = (bs: string | null, ap: string | null) => {
+          const body: Record<string, string> = { name: input.name };
+          if (bs) body.backstory = bs;
+          if (ap) body.appearance = ap;
+          if (input.headshot_url) body.headshot_url = input.headshot_url;
+          body.privacy_status = input.privacy_status;
+          return body;
+        };
+
+        const doCreate = (bs: string | null, ap: string | null) =>
+          fetch("https://getfreeroam.com/api/characters", {
+            method: "POST",
+            headers: FREEROAM_HEADERS,
+            body: JSON.stringify(buildBody(bs, ap)),
+          });
+
+        let response = await doCreate(backstorySent, appearanceSent);
 
         if (!response.ok) {
-          const text = await response.text();
-          throw new Error(`Create failed (${response.status}): ${text}`);
+          const errorText = await response.text();
+          const detectedLimit = parseLimitFromError(errorText);
+
+          if (detectedLimit && response.status === 400) {
+            const isBackstory = /backstory/i.test(errorText);
+            const isAppearance = /appearance|description/i.test(errorText);
+
+            if (isBackstory && backstorySent && backstorySent.length > detectedLimit) {
+              backstoryLimit = detectedLimit;
+              backstorySent = backstorySent.slice(0, detectedLimit);
+              trimmedBackstory = detectedLimit;
+            } else if (isAppearance && appearanceSent && appearanceSent.length > detectedLimit) {
+              appearanceLimit = detectedLimit;
+              appearanceSent = appearanceSent.slice(0, detectedLimit);
+              trimmedAppearance = detectedLimit;
+            } else {
+              if (backstorySent) { backstoryLimit = detectedLimit; backstorySent = backstorySent.slice(0, detectedLimit); trimmedBackstory = detectedLimit; }
+              if (appearanceSent) { appearanceLimit = detectedLimit; appearanceSent = appearanceSent.slice(0, detectedLimit); trimmedAppearance = detectedLimit; }
+            }
+
+            response = await doCreate(backstorySent, appearanceSent);
+            if (!response.ok) {
+              const retryError = await response.text();
+              throw new Error(`Create failed after retry (${response.status}): ${retryError}`);
+            }
+          } else {
+            throw new Error(`Create failed (${response.status}): ${errorText}`);
+          }
         }
 
         const data = await response.json() as { character?: unknown };
-        // The create endpoint wraps the result: { success: true, character: { ... } }
-        return SingleCharacterSchema.parse(data.character ?? data);
+        const created = SingleCharacterSchema.parse(data.character ?? data);
+
+        // Save full content to our DB
+        if (input.backstory || input.appearance) {
+          await upsertCharacterExtended(
+            created.external_id,
+            input.backstory ?? null,
+            input.appearance ?? null,
+            backstoryLimit,
+            appearanceLimit
+          );
+        }
+
+        return { ...created, trimmedBackstory, trimmedAppearance };
       }),
 
     save: publicProcedure
@@ -440,6 +551,13 @@ export const appRouter = router({
 
         const data = await response.json();
         return SingleCharacterSchema.parse(data);
+      }),
+
+    // Fetch the full extended backstory/appearance stored in our DB
+    getExtended: publicProcedure
+      .input(z.object({ characterId: z.string() }))
+      .query(async ({ input }) => {
+        return getCharacterExtended(input.characterId);
       }),
   }),
 

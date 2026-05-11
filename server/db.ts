@@ -1,6 +1,6 @@
 import { and, eq, inArray } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { collectionMembers, collections, InsertUser, users } from "../drizzle/schema";
+import { characterExtended, collectionMembers, collections, InsertUser, users } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -207,4 +207,64 @@ export async function removeCharacterFromCollection(collectionId: number, charac
     );
 
   return true;
+}
+
+// ─── Character Extended Content ───────────────────────────────────────────────────────
+
+/** Get the full extended content for a character. */
+export async function getCharacterExtended(characterId: string) {
+  const db = await getDb();
+  if (!db) return null;
+
+  const rows = await db
+    .select()
+    .from(characterExtended)
+    .where(eq(characterExtended.characterId, characterId))
+    .limit(1);
+
+  return rows.length > 0 ? rows[0] : null;
+}
+
+/** Upsert the full extended content for a character. */
+export async function upsertCharacterExtended(
+  characterId: string,
+  backstoryFull: string | null,
+  appearanceFull: string | null,
+  backstoryLimit?: number | null,
+  appearanceLimit?: number | null
+) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  await db
+    .insert(characterExtended)
+    .values({
+      characterId,
+      backstoryFull: backstoryFull ?? null,
+      appearanceFull: appearanceFull ?? null,
+      backstoryLimit: backstoryLimit ?? null,
+      appearanceLimit: appearanceLimit ?? null,
+    })
+    .onDuplicateKeyUpdate({
+      set: {
+        backstoryFull: backstoryFull ?? null,
+        appearanceFull: appearanceFull ?? null,
+        ...(backstoryLimit != null ? { backstoryLimit } : {}),
+        ...(appearanceLimit != null ? { appearanceLimit } : {}),
+        updatedAt: new Date(),
+      },
+    });
+
+  return true;
+}
+
+/**
+ * Parse a character limit from a Freeroam API error message.
+ * Freeroam returns errors like "Backstory must be at most 2000 characters"
+ * or "max 1000 characters". Returns the number if found, otherwise null.
+ */
+export function parseLimitFromError(errorText: string): number | null {
+  const match = errorText.match(/(\d+)\s*characters?/i);
+  if (match) return parseInt(match[1], 10);
+  return null;
 }

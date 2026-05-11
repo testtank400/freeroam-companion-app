@@ -51,3 +51,22 @@ export const collectionMembers = mysqlTable("collection_members", {
 
 export type CollectionMember = typeof collectionMembers.$inferSelect;
 export type InsertCollectionMember = typeof collectionMembers.$inferInsert;
+
+// Extended character content — stores the full unlimited backstory/appearance
+// that may exceed Freeroam's API limits. The Freeroam API only receives a trimmed
+// version; this table is the source of truth for the full content on this site.
+export const characterExtended = mysqlTable("character_extended", {
+  id: int("id").autoincrement().primaryKey(),
+  /** External character ID from getfreeroam.com */
+  characterId: varchar("characterId", { length: 128 }).notNull().unique(),
+  backstoryFull: text("backstoryFull"),
+  appearanceFull: text("appearanceFull"),
+  /** The backstory character limit last reported by Freeroam (null = not yet detected) */
+  backstoryLimit: int("backstoryLimit"),
+  /** The appearance character limit last reported by Freeroam (null = not yet detected) */
+  appearanceLimit: int("appearanceLimit"),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type CharacterExtended = typeof characterExtended.$inferSelect;
+export type InsertCharacterExtended = typeof characterExtended.$inferInsert;

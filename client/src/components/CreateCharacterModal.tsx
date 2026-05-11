@@ -68,6 +68,12 @@ export default function CreateCharacterModal({
     { enabled: isEditMode && !!editCharacter?.external_id, staleTime: 5 * 60_000 }
   );
 
+  // Fetch extended (unlimited) content from our DB
+  const { data: extendedData } = trpc.characters.getExtended.useQuery(
+    { characterId: editCharacter?.external_id ?? '' },
+    { enabled: isEditMode && !!editCharacter?.external_id, staleTime: 5 * 60_000 }
+  );
+
   // Form state — seeded from editCharacter when available
   const [name, setName] = useState('');
   const [backstory, setBackstory] = useState('');
@@ -87,13 +93,14 @@ export default function CreateCharacterModal({
 
   const isSubmitting = createMutation.isPending || updateMutation.isPending || isUploading;
 
-  // Seed form when opening in edit mode (wait for full data if available)
+  // Seed form when opening in edit mode — prefer extended DB content over Freeroam data
   useEffect(() => {
     if (open && isEditMode) {
       const src = fullEditData ?? editCharacter;
       setName(src?.name ?? '');
-      setBackstory((fullEditData?.backstory ?? editCharacter?.backstory) ?? '');
-      setAppearance(fullEditData?.appearance ?? '');
+      // Use extended DB content if available (may be longer than Freeroam's copy)
+      setBackstory(extendedData?.backstoryFull ?? fullEditData?.backstory ?? editCharacter?.backstory ?? '');
+      setAppearance(extendedData?.appearanceFull ?? fullEditData?.appearance ?? '');
       setPrivacy((src?.privacy_status as PrivacyStatus) ?? 'private');
       const existingUrl = src?.display_headshot_url ?? src?.headshot_url ?? '';
       setHeadshotUrl(existingUrl);
@@ -102,7 +109,7 @@ export default function CreateCharacterModal({
       setUploadPreview(null);
       setUploadedHeadshotUrl(null);
     }
-  }, [open, isEditMode, editCharacter, fullEditData]);
+      }, [open, isEditMode, editCharacter, fullEditData, extendedData]);
 
   // Seed form when opening in duplicate mode
   useEffect(() => {
@@ -210,7 +217,16 @@ export default function CreateCharacterModal({
           headshot_url: finalHeadshotUrl,
           privacy_status: privacy,
         });
-        toast.success(`${name} updated successfully!`);
+        // Show trim warnings if Freeroam enforced a limit
+        if (updated.trimmedBackstory) {
+          toast.warning(`Backstory trimmed to ${updated.trimmedBackstory.toLocaleString()} characters on Freeroam. Full version saved here.`, { duration: 6000 });
+        }
+        if (updated.trimmedAppearance) {
+          toast.warning(`Appearance trimmed to ${updated.trimmedAppearance.toLocaleString()} characters on Freeroam. Full version saved here.`, { duration: 6000 });
+        }
+        if (!updated.trimmedBackstory && !updated.trimmedAppearance) {
+          toast.success(`${name} updated successfully!`);
+        }
         handleClose();
         // Convert SingleCharacter response back to ApiCharacter shape for the list
         const updatedAsApiChar: ApiCharacter = {
@@ -236,7 +252,16 @@ export default function CreateCharacterModal({
           headshot_url: finalHeadshotUrl,
           privacy_status: privacy,
         });
-        toast.success(`${name} created successfully!`);
+        // Show trim warnings if Freeroam enforced a limit
+        if (created.trimmedBackstory) {
+          toast.warning(`Backstory trimmed to ${created.trimmedBackstory.toLocaleString()} characters on Freeroam. Full version saved here.`, { duration: 6000 });
+        }
+        if (created.trimmedAppearance) {
+          toast.warning(`Appearance trimmed to ${created.trimmedAppearance.toLocaleString()} characters on Freeroam. Full version saved here.`, { duration: 6000 });
+        }
+        if (!created.trimmedBackstory && !created.trimmedAppearance) {
+          toast.success(`${name} created successfully!`);
+        }
         handleClose();
         const createdAsApiChar: ApiCharacter = {
           external_id: created.external_id,

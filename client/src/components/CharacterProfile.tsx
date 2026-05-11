@@ -100,6 +100,12 @@ export default function CharacterProfile({ character, onClose, onUpdated, collec
     { enabled: !!displayCharacter?.external_id, staleTime: 5 * 60_000 }
   );
 
+  // Fetch extended (unlimited) content from our DB — overrides Freeroam's truncated copy
+  const { data: extendedCharacter } = trpc.characters.getExtended.useQuery(
+    { characterId: displayCharacter?.external_id ?? '' },
+    { enabled: !!displayCharacter?.external_id, staleTime: 5 * 60_000 }
+  );
+
   useEffect(() => {
     if (character) {
       setActiveTab('about');
@@ -164,9 +170,10 @@ export default function CharacterProfile({ character, onClose, onUpdated, collec
   const displayPrivacy = fullCharacter?.privacy_status ?? displayCharacter.privacy_status;
   const imageUrl = fullCharacter?.display_headshot_url ?? fullCharacter?.headshot_url
     ?? displayCharacter.display_headshot_url ?? displayCharacter.headshot_url ?? FALLBACK_IMAGE;
-  const backstory = fullCharacter?.backstory ?? displayCharacter.backstory;
+  // Prefer extended DB content (full, unlimited) over Freeroam's potentially truncated copy
+  const backstory = extendedCharacter?.backstoryFull ?? fullCharacter?.backstory ?? displayCharacter.backstory;
   // description from library endpoint = appearance; fall back to full character fetch
-  const appearance = (displayCharacter.description) ?? fullCharacter?.appearance ?? null;
+  const appearance = extendedCharacter?.appearanceFull ?? (displayCharacter.description) ?? fullCharacter?.appearance ?? null;
 
   return (
     <>
