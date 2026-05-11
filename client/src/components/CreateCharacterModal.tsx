@@ -156,9 +156,8 @@ export default function CreateCharacterModal({
     }, 250);
   };
 
-  const handleBackdropClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (e.target === e.currentTarget) handleClose();
-  };
+  // Intentionally no backdrop click handler — clicking outside does nothing.
+  // Use the X button or Escape key to close without losing your work.
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => { if (e.key === 'Escape' && open) handleClose(); };
@@ -296,7 +295,7 @@ export default function CreateCharacterModal({
         backdropFilter: visible ? 'blur(6px)' : 'blur(0px)',
         transition: 'background 0.25s ease, backdrop-filter 0.25s ease',
       }}
-      onClick={handleBackdropClick}
+
     >
       <div
         className="relative w-full sm:max-w-2xl sm:rounded-sm overflow-hidden flex flex-col"
