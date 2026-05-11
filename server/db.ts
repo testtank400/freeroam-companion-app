@@ -259,12 +259,41 @@ export async function upsertCharacterExtended(
 }
 
 /**
- * Parse a character limit from a Freeroam API error message.
- * Freeroam returns errors like "Backstory must be at most 2000 characters"
- * or "max 1000 characters". Returns the number if found, otherwise null.
+ * Parse a character limit from a Freeroam API error response.
+ * Handles both plain text ("max 2000 characters") and structured JSON
+ * ({"detail":[{"msg":"String should have at most 2000 characters","loc":["body","backstory"]}]}).
+ * Returns { limit, field } where field is 'backstory', 'appearance', or null (unknown).
  */
-export function parseLimitFromError(errorText: string): number | null {
+export function parseLimitFromError(errorText: string): { limit: number; field: string | null } | null {
+  // Try structured JSON first (Freeroam 422 format)
+  try {
+    const json = JSON.parse(errorText) as { detail?: Array<{ msg?: string; loc?: string[] }> };
+    if (Array.isArray(json.detail)) {
+      for (const item of json.detail) {
+        const msg = item.msg ?? '';
+        const match = msg.match(/(\d+)\s*characters?/i);
+        if (match) {
+          const limit = parseInt(match[1], 10);
+          // Determine which field from loc array: ["body", "backstory"] or ["body", "appearance"]
+          const loc = item.loc ?? [];
+          const field = loc.find(l => l === 'backstory' || l === 'appearance') ?? null;
+          return { limit, field };
+        }
+      }
+    }
+  } catch {
+    // Not JSON — fall through to plain text parsing
+  }
+
+  // Plain text fallback
   const match = errorText.match(/(\d+)\s*characters?/i);
-  if (match) return parseInt(match[1], 10);
+  if (match) {
+    const limit = parseInt(match[1], 10);
+    const field = /backstory/i.test(errorText) ? 'backstory'
+      : /appearance|description/i.test(errorText) ? 'appearance'
+      : null;
+    return { limit, field };
+  }
+
   return null;
 }

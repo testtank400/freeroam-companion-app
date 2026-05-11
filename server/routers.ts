@@ -278,34 +278,32 @@ export const appRouter = router({
         let trimmedAppearance: number | null = null;
 
         // If Freeroam rejects, parse the limit from the error and retry once
-        if (!response.ok) {
+        // Retry loop: handle multiple fields being over-limit (each retry fixes one field)
+        while (!response.ok) {
           const errorText = await response.text();
-          const detectedLimit = parseLimitFromError(errorText);
+          const parsed = parseLimitFromError(errorText);
 
-          if (detectedLimit && response.status === 400) {
-            // Determine which field was rejected by checking the error message
-            const isBackstory = /backstory/i.test(errorText);
-            const isAppearance = /appearance|description/i.test(errorText);
+          // Accept 400 and 422 as retriable limit errors
+          if (parsed && (response.status === 400 || response.status === 422)) {
+            const { limit, field } = parsed;
+            const isBackstory = field === 'backstory' || (!field && !!backstorySent);
+            const isAppearance = field === 'appearance';
 
-            if (isBackstory && backstorySent && backstorySent.length > detectedLimit) {
-              backstoryLimit = detectedLimit;
-              backstorySent = backstorySent.slice(0, detectedLimit);
-              trimmedBackstory = detectedLimit;
-            } else if (isAppearance && appearanceSent && appearanceSent.length > detectedLimit) {
-              appearanceLimit = detectedLimit;
-              appearanceSent = appearanceSent.slice(0, detectedLimit);
-              trimmedAppearance = detectedLimit;
+            if (isBackstory && backstorySent && backstorySent.length > limit) {
+              backstoryLimit = limit;
+              backstorySent = backstorySent.slice(0, limit);
+              trimmedBackstory = limit;
+            } else if (isAppearance && appearanceSent && appearanceSent.length > limit) {
+              appearanceLimit = limit;
+              appearanceSent = appearanceSent.slice(0, limit);
+              trimmedAppearance = limit;
             } else {
               // Trim both as a fallback
-              if (backstorySent) { backstoryLimit = detectedLimit; backstorySent = backstorySent.slice(0, detectedLimit); trimmedBackstory = detectedLimit; }
-              if (appearanceSent) { appearanceLimit = detectedLimit; appearanceSent = appearanceSent.slice(0, detectedLimit); trimmedAppearance = detectedLimit; }
+              if (backstorySent && backstorySent.length > limit) { backstoryLimit = limit; backstorySent = backstorySent.slice(0, limit); trimmedBackstory = limit; }
+              if (appearanceSent && appearanceSent.length > limit) { appearanceLimit = limit; appearanceSent = appearanceSent.slice(0, limit); trimmedAppearance = limit; }
             }
 
             response = await doUpdate(backstorySent, appearanceSent);
-            if (!response.ok) {
-              const retryError = await response.text();
-              throw new Error(`Update failed after retry (${response.status}): ${retryError}`);
-            }
           } else {
             throw new Error(`Update failed (${response.status}): ${errorText}`);
           }
@@ -385,32 +383,30 @@ export const appRouter = router({
 
         let response = await doCreate(backstorySent, appearanceSent);
 
-        if (!response.ok) {
+        // Retry loop: handle multiple fields being over-limit
+        while (!response.ok) {
           const errorText = await response.text();
-          const detectedLimit = parseLimitFromError(errorText);
+          const parsed = parseLimitFromError(errorText);
 
-          if (detectedLimit && response.status === 400) {
-            const isBackstory = /backstory/i.test(errorText);
-            const isAppearance = /appearance|description/i.test(errorText);
+          if (parsed && (response.status === 400 || response.status === 422)) {
+            const { limit, field } = parsed;
+            const isBackstory = field === 'backstory' || (!field && !!backstorySent);
+            const isAppearance = field === 'appearance';
 
-            if (isBackstory && backstorySent && backstorySent.length > detectedLimit) {
-              backstoryLimit = detectedLimit;
-              backstorySent = backstorySent.slice(0, detectedLimit);
-              trimmedBackstory = detectedLimit;
-            } else if (isAppearance && appearanceSent && appearanceSent.length > detectedLimit) {
-              appearanceLimit = detectedLimit;
-              appearanceSent = appearanceSent.slice(0, detectedLimit);
-              trimmedAppearance = detectedLimit;
+            if (isBackstory && backstorySent && backstorySent.length > limit) {
+              backstoryLimit = limit;
+              backstorySent = backstorySent.slice(0, limit);
+              trimmedBackstory = limit;
+            } else if (isAppearance && appearanceSent && appearanceSent.length > limit) {
+              appearanceLimit = limit;
+              appearanceSent = appearanceSent.slice(0, limit);
+              trimmedAppearance = limit;
             } else {
-              if (backstorySent) { backstoryLimit = detectedLimit; backstorySent = backstorySent.slice(0, detectedLimit); trimmedBackstory = detectedLimit; }
-              if (appearanceSent) { appearanceLimit = detectedLimit; appearanceSent = appearanceSent.slice(0, detectedLimit); trimmedAppearance = detectedLimit; }
+              if (backstorySent && backstorySent.length > limit) { backstoryLimit = limit; backstorySent = backstorySent.slice(0, limit); trimmedBackstory = limit; }
+              if (appearanceSent && appearanceSent.length > limit) { appearanceLimit = limit; appearanceSent = appearanceSent.slice(0, limit); trimmedAppearance = limit; }
             }
 
             response = await doCreate(backstorySent, appearanceSent);
-            if (!response.ok) {
-              const retryError = await response.text();
-              throw new Error(`Create failed after retry (${response.status}): ${retryError}`);
-            }
           } else {
             throw new Error(`Create failed (${response.status}): ${errorText}`);
           }
