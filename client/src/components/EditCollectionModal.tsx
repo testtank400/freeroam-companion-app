@@ -251,10 +251,10 @@ export default function EditCollectionModal({ open, onClose, collection, onSave 
                 <div className="flex-1">
                   {coverMode === 'url' ? (
                     <input
-                      type="url"
+                      type="text"
                       value={coverUrl}
                       onChange={(e) => setCoverUrl(e.target.value)}
-                      placeholder="https://images.example.com/cover.webp"
+                      placeholder="https://... or /manus-storage/..."
                       style={{ ...FIELD_STYLE }}
                       onFocus={(e) => (e.target.style.borderColor = 'oklch(0.769 0.188 70.08 / 0.5)')}
                       onBlur={(e) => (e.target.style.borderColor = 'oklch(1 0 0 / 0.1)')}
