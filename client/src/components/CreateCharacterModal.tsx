@@ -481,32 +481,60 @@ export default function CreateCharacterModal({
             </div>
 
             {/* Backstory */}
-            <div>
-              <label style={LABEL_STYLE}>Backstory</label>
-              <textarea
-                value={backstory}
-                onChange={(e) => setBackstory(e.target.value)}
-                placeholder="Character backstory, personality, and motivations..."
-                rows={5}
-                style={FIELD_STYLE}
-                onFocus={(e) => (e.target.style.borderColor = 'oklch(0.769 0.188 70.08 / 0.5)')}
-                onBlur={(e) => (e.target.style.borderColor = 'oklch(1 0 0 / 0.1)')}
-              />
-            </div>
+            {(() => {
+              const LIMIT = 2000;
+              const len = backstory.length;
+              const pct = len / LIMIT;
+              const counterColor = pct >= 1 ? 'oklch(0.65 0.22 25)' : pct >= 0.9 ? 'oklch(0.769 0.188 70.08)' : 'oklch(0.45 0.01 264)';
+              return (
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label style={LABEL_STYLE}>Backstory</label>
+                    <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '10px', color: counterColor, fontWeight: pct >= 0.9 ? 700 : 400 }}>
+                      {len.toLocaleString()} / {LIMIT.toLocaleString()}
+                      {len > LIMIT && <span style={{ marginLeft: 4 }}>⚠ will trim on Freeroam</span>}
+                    </span>
+                  </div>
+                  <textarea
+                    value={backstory}
+                    onChange={(e) => setBackstory(e.target.value)}
+                    placeholder="Character backstory, personality, and motivations..."
+                    rows={5}
+                    style={{ ...FIELD_STYLE, borderColor: pct >= 1 ? 'oklch(0.65 0.22 25 / 0.5)' : undefined }}
+                    onFocus={(e) => (e.target.style.borderColor = 'oklch(0.769 0.188 70.08 / 0.5)')}
+                    onBlur={(e) => (e.target.style.borderColor = pct >= 1 ? 'oklch(0.65 0.22 25 / 0.5)' : 'oklch(1 0 0 / 0.1)')}
+                  />
+                </div>
+              );
+            })()}
 
             {/* Appearance */}
-            <div>
-              <label style={LABEL_STYLE}>Appearance</label>
-              <textarea
-                value={appearance}
-                onChange={(e) => setAppearance(e.target.value)}
-                placeholder="Physical description, clothing, distinguishing features..."
-                rows={4}
-                style={FIELD_STYLE}
-                onFocus={(e) => (e.target.style.borderColor = 'oklch(0.769 0.188 70.08 / 0.5)')}
-                onBlur={(e) => (e.target.style.borderColor = 'oklch(1 0 0 / 0.1)')}
-              />
-            </div>
+            {(() => {
+              const LIMIT = 1000;
+              const len = appearance.length;
+              const pct = len / LIMIT;
+              const counterColor = pct >= 1 ? 'oklch(0.65 0.22 25)' : pct >= 0.9 ? 'oklch(0.769 0.188 70.08)' : 'oklch(0.45 0.01 264)';
+              return (
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label style={LABEL_STYLE}>Appearance</label>
+                    <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '10px', color: counterColor, fontWeight: pct >= 0.9 ? 700 : 400 }}>
+                      {len.toLocaleString()} / {LIMIT.toLocaleString()}
+                      {len > LIMIT && <span style={{ marginLeft: 4 }}>⚠ will trim on Freeroam</span>}
+                    </span>
+                  </div>
+                  <textarea
+                    value={appearance}
+                    onChange={(e) => setAppearance(e.target.value)}
+                    placeholder="Physical description, clothing, distinguishing features..."
+                    rows={4}
+                    style={{ ...FIELD_STYLE, borderColor: pct >= 1 ? 'oklch(0.65 0.22 25 / 0.5)' : undefined }}
+                    onFocus={(e) => (e.target.style.borderColor = 'oklch(0.769 0.188 70.08 / 0.5)')}
+                    onBlur={(e) => (e.target.style.borderColor = pct >= 1 ? 'oklch(0.65 0.22 25 / 0.5)' : 'oklch(1 0 0 / 0.1)')}
+                  />
+                </div>
+              );
+            })()}
 
           </div>
 
