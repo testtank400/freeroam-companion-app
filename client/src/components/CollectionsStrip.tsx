@@ -64,6 +64,7 @@ export default function CollectionsStrip({
   const [newName, setNewName] = useState('');
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editName, setEditName] = useState('');
+  const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
   const newInputRef = useRef<HTMLInputElement>(null);
   const editInputRef = useRef<HTMLInputElement>(null);
 
@@ -88,6 +89,12 @@ export default function CollectionsStrip({
     if (!editName.trim()) { setEditingId(null); return; }
     onRename(id, editName.trim());
     setEditingId(null);
+  };
+
+  const handleDeleteConfirm = (id: number) => {
+    onDelete(id);
+    setDeleteConfirmId(null);
+    if (activeCollectionId === id) onSelect(null);
   };
 
   const getCharsForCollection = (col: Collection) =>
@@ -232,14 +239,35 @@ export default function CollectionsStrip({
                   </button>
 
                   {/* Delete button */}
-                  <button
-                    onClick={(e) => { e.stopPropagation(); onDelete(col.id); if (activeCollectionId === col.id) onSelect(null); }}
-                    className="px-1.5 py-1.5 opacity-0 group-hover:opacity-100 transition-opacity hover:text-red-400"
-                    style={{ color: 'oklch(0.5 0.01 264)', borderLeft: '1px solid oklch(1 0 0 / 0.08)' }}
-                    title="Delete collection"
-                  >
-                    <Trash2 size={10} strokeWidth={2.5} />
-                  </button>
+                  {deleteConfirmId === col.id ? (
+                    <div className="flex items-center gap-1 px-1.5 py-1.5 border-l" style={{ borderColor: 'oklch(1 0 0 / 0.08)' }}>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleDeleteConfirm(col.id); }}
+                        className="px-1 py-0.5 rounded text-[9px] font-semibold uppercase transition-all hover:brightness-125"
+                        style={{ background: 'oklch(0.65 0.22 25)', color: 'white' }}
+                        title="Confirm delete"
+                      >
+                        Yes
+                      </button>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setDeleteConfirmId(null); }}
+                        className="px-1 py-0.5 rounded text-[9px] font-semibold uppercase transition-all hover:brightness-125"
+                        style={{ background: 'oklch(0.3 0.01 264)', color: 'oklch(0.5 0.01 264)' }}
+                        title="Cancel"
+                      >
+                        No
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setDeleteConfirmId(col.id); }}
+                      className="px-1.5 py-1.5 opacity-0 group-hover:opacity-100 transition-opacity hover:text-red-400"
+                      style={{ color: 'oklch(0.5 0.01 264)', borderLeft: '1px solid oklch(1 0 0 / 0.08)' }}
+                      title="Delete collection"
+                    >
+                      <Trash2 size={10} strokeWidth={2.5} />
+                    </button>
+                  )}
                 </div>
               )}
             </div>
