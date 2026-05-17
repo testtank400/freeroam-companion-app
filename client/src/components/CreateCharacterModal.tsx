@@ -116,7 +116,8 @@ export default function CreateCharacterModal({
     if (open && !isEditMode && duplicateSource) {
       setName(duplicateSource.name);
       setBackstory(duplicateSource.backstory ?? '');
-      setAppearance(''); // appearance not available in list data; user can fill it in
+      // description carries appearance data in the ApiCharacter shape (set by handleDuplicate in CharacterProfile)
+      setAppearance(duplicateSource.description ?? '');
       setPrivacy((duplicateSource.privacy_status as PrivacyStatus) ?? 'private');
       const url = duplicateSource.display_headshot_url ?? duplicateSource.headshot_url ?? '';
       setHeadshotUrl(url);

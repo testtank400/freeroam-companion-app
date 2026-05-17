@@ -147,16 +147,16 @@ export default function CharacterProfile({ character, onClose, onUpdated, collec
   // Open the duplicate form pre-filled with current character data
   const handleDuplicate = () => {
     if (!displayCharacter) return;
-    // Build a synthetic ApiCharacter with "Copy of" prefix and the full data we have
+    // Build a synthetic ApiCharacter with "Copy of" prefix and the full data we have.
+    // Prefer extended DB content (full, unlimited) over Freeroam's truncated copy.
     const source: ApiCharacter = {
       ...displayCharacter,
       name: `Copy of ${displayCharacter.name}`,
-      // Use the headshot URL we have (display > regular)
       display_headshot_url: fullCharacter?.display_headshot_url ?? displayCharacter.display_headshot_url,
       headshot_url: fullCharacter?.headshot_url ?? displayCharacter.headshot_url,
-      // Merge in full backstory/description if available
-      backstory: fullCharacter?.backstory ?? displayCharacter.backstory,
-      description: fullCharacter?.description ?? displayCharacter.description,
+      backstory: extendedCharacter?.backstoryFull ?? fullCharacter?.backstory ?? displayCharacter.backstory,
+      // description field carries appearance data in the ApiCharacter shape
+      description: extendedCharacter?.appearanceFull ?? fullCharacter?.appearance ?? fullCharacter?.description ?? displayCharacter.description,
     };
     setDuplicateSource(source);
     setShowDuplicateModal(true);
