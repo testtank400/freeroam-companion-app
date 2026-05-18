@@ -8,6 +8,7 @@ import CharacterCard from '@/components/CharacterCard';
 import CharacterProfile from '@/components/CharacterProfile';
 import CollectionCard from '@/components/CollectionCard';
 import CreateCharacterModal from '@/components/CreateCharacterModal';
+import DeleteCollectionDialog from '@/components/DeleteCollectionDialog';
 import DeleteConfirmDialog from '@/components/DeleteConfirmDialog';
 import EditCollectionModal from '@/components/EditCollectionModal';
 import { Collection, useCollections } from '@/hooks/useCollections';
@@ -137,6 +138,7 @@ export default function Home() {
   const { collections, createCollection, renameCollection, updateCollection, deleteCollection, toggleInCollection, isInCollection } = useCollections();
   const [activeCollectionId, setActiveCollectionId] = useState<number | null>(null);
   const [editingCollection, setEditingCollection] = useState<Collection | null>(null);
+  const [deletingCollection, setDeletingCollection] = useState<Collection | null>(null);
   const [showNewCollectionModal, setShowNewCollectionModal] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
   const addRef = useRef<HTMLDivElement>(null);
@@ -533,7 +535,7 @@ export default function Home() {
                     characters={allCharacters.filter(c => col.characterIds.includes(c.external_id))}
                     onClick={(c) => setActiveCollectionId(c.id as number)}
                     onEdit={(c) => setEditingCollection(c)}
-                    onDelete={(c) => { deleteCollection(c.id); }}
+                    onDelete={(c) => setDeletingCollection(c)}
                   />
                 ))}
               </div>
@@ -973,6 +975,17 @@ export default function Home() {
         onConfirm={handleConfirmDelete}
         onCancel={() => setDeleteCharacter(null)}
         isDeleting={deleteMutation.isPending}
+      />
+
+      {/* Delete collection confirmation dialog */}
+      <DeleteCollectionDialog
+        collection={deletingCollection}
+        onConfirm={(c) => {
+          deleteCollection(c.id);
+          if (activeCollectionId === c.id) setActiveCollectionId(null);
+          setDeletingCollection(null);
+        }}
+        onCancel={() => setDeletingCollection(null)}
       />
 
       {/* Create character modal */}
