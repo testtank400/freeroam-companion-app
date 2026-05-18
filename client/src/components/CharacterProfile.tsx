@@ -257,7 +257,7 @@ export default function CharacterProfile({ character, onClose, onUpdated, collec
                   title={isSaved ? 'Remove from favorites' : 'Add to favorites'}
                 >
                   <Heart size={12} strokeWidth={2} fill={isSaved ? 'currentColor' : 'none'} />
-                  {isSaved ? 'Saved' : 'Save'}
+                  {isSaved ? 'Favorited' : 'Favorite'}
                 </button>
               )}
 
