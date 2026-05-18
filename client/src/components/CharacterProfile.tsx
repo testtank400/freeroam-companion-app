@@ -94,14 +94,25 @@ export default function CharacterProfile({ character, onClose, onUpdated, collec
   // The character we actually display — prefer local override
   const displayCharacter = localCharacter ?? character;
 
-  // NSFW flag — fetched from our DB, toggled via mutation
-  const { data: nsfwData, refetch: refetchNsfw } = trpc.nsfw.getBatch.useQuery(
-    { characterIds: displayCharacter?.external_id ? [displayCharacter.external_id] : [] },
-    { enabled: !!displayCharacter?.external_id, staleTime: 0 }
-  );
-  const isNsfw = displayCharacter?.external_id ? (nsfwData?.[displayCharacter.external_id] ?? false) : false;
+  // NSFW flag — fetched from our DB via POST mutation to avoid 414 URL-too-large
+  const [isNsfw, setIsNsfw] = useState(false);
+  const nsfwGetMutation = trpc.nsfw.getBatch.useMutation({
+    onSuccess: (data) => {
+      if (displayCharacter?.external_id) {
+        setIsNsfw(data[displayCharacter.external_id] ?? false);
+      }
+    },
+  });
+  // Fetch NSFW status when a character opens
+  useEffect(() => {
+    if (displayCharacter?.external_id) {
+      nsfwGetMutation.mutate({ characterIds: [displayCharacter.external_id] });
+    } else {
+      setIsNsfw(false);
+    }
+  }, [displayCharacter?.external_id]);
   const nsfwToggleMutation = trpc.nsfw.toggle.useMutation({
-    onSuccess: () => refetchNsfw(),
+    onSuccess: (data) => setIsNsfw(data.isNsfw),
   });
 
   // Fetch full character data (with appearance) when a character is selected

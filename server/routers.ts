@@ -636,10 +636,11 @@ export const appRouter = router({
   }),
 
   nsfw: router({
-    /** Get NSFW status for a batch of character IDs. Returns a map of characterId -> boolean. */
+    /** Get NSFW status for a batch of character IDs. Returns a map of characterId -> boolean.
+     * Uses mutation (POST) to avoid HTTP 414 URL-too-large errors with large rosters. */
     getBatch: publicProcedure
       .input(z.object({ characterIds: z.array(z.string()) }))
-      .query(async ({ input }) => {
+      .mutation(async ({ input }) => {
         return getCharactersNsfw(input.characterIds);
       }),
 

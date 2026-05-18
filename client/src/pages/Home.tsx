@@ -156,12 +156,17 @@ export default function Home() {
 
   const activeCollection = activeCollectionId != null ? collections.find(c => c.id === activeCollectionId) ?? null : null;
 
-  // Fetch NSFW flags for all loaded characters
-  const characterIds = allCharacters.map(c => c.external_id);
-  const { data: nsfwMap = {} } = trpc.nsfw.getBatch.useQuery(
-    { characterIds },
-    { enabled: characterIds.length > 0, staleTime: 30_000 }
-  );
+  // Fetch NSFW flags for all loaded characters (POST mutation to avoid 414 URL-too-large)
+  const [nsfwMap, setNsfwMap] = useState<Record<string, boolean>>({});
+  const nsfwBatchMutation = trpc.nsfw.getBatch.useMutation({
+    onSuccess: (data) => setNsfwMap(data),
+  });
+  // Refresh NSFW map whenever the character list changes
+  useEffect(() => {
+    if (allCharacters.length > 0) {
+      nsfwBatchMutation.mutate({ characterIds: allCharacters.map(c => c.external_id) });
+    }
+  }, [allCharacters]);
 
   // Multi-select state
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
