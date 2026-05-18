@@ -10,9 +10,11 @@ import {
   createCollection as dbCreateCollection,
   deleteCollection as dbDeleteCollection,
   getCharacterExtended,
+  getCharactersNsfw,
   getCollectionsByOwner,
   parseLimitFromError,
   removeCharacterFromCollection,
+  toggleCharacterNsfw,
   updateCollection as dbUpdateCollection,
   upsertCharacterExtended,
 } from "./db";
@@ -630,6 +632,23 @@ export const appRouter = router({
         const key = `collection-covers/${input.fileName}`;
         const { url } = await storagePut(key, buffer, input.mimeType);
         return { url };
+      }),
+  }),
+
+  nsfw: router({
+    /** Get NSFW status for a batch of character IDs. Returns a map of characterId -> boolean. */
+    getBatch: publicProcedure
+      .input(z.object({ characterIds: z.array(z.string()) }))
+      .query(async ({ input }) => {
+        return getCharactersNsfw(input.characterIds);
+      }),
+
+    /** Toggle the NSFW flag for a single character. Returns the new boolean value. */
+    toggle: publicProcedure
+      .input(z.object({ characterId: z.string() }))
+      .mutation(async ({ input }) => {
+        const newValue = await toggleCharacterNsfw(input.characterId);
+        return { characterId: input.characterId, isNsfw: newValue };
       }),
   }),
 });

@@ -70,3 +70,16 @@ export const characterExtended = mysqlTable("character_extended", {
 
 export type CharacterExtended = typeof characterExtended.$inferSelect;
 export type InsertCharacterExtended = typeof characterExtended.$inferInsert;
+
+// NSFW flags — tracks which characters are marked as NSFW by the owner
+// This is a local-only feature; Freeroam does not have this concept.
+export const characterNsfw = mysqlTable("character_nsfw", {
+  id: int("id").autoincrement().primaryKey(),
+  /** External character ID from getfreeroam.com */
+  characterId: varchar("characterId", { length: 128 }).notNull().unique(),
+  isNsfw: int("isNsfw").notNull().default(0), // 0 = SFW, 1 = NSFW
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type CharacterNsfw = typeof characterNsfw.$inferSelect;
+export type InsertCharacterNsfw = typeof characterNsfw.$inferInsert;

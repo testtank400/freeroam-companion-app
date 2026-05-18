@@ -1,6 +1,6 @@
 import { and, eq, inArray } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { characterExtended, collectionMembers, collections, InsertUser, users } from "../drizzle/schema";
+import { characterExtended, characterNsfw, collectionMembers, collections, InsertUser, users } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -256,6 +256,56 @@ export async function upsertCharacterExtended(
     });
 
   return true;
+}
+
+// ─── Character NSFW Flags ────────────────────────────────────────────────────
+
+/** Get NSFW status for a single character. Returns false if not found (default SFW). */
+export async function getCharacterNsfw(characterId: string): Promise<boolean> {
+  const db = await getDb();
+  if (!db) return false;
+
+  const rows = await db
+    .select()
+    .from(characterNsfw)
+    .where(eq(characterNsfw.characterId, characterId))
+    .limit(1);
+
+  return rows.length > 0 ? rows[0].isNsfw === 1 : false;
+}
+
+/** Get NSFW status for multiple characters at once. Returns a map of characterId -> boolean. */
+export async function getCharactersNsfw(characterIds: string[]): Promise<Record<string, boolean>> {
+  if (characterIds.length === 0) return {};
+  const db = await getDb();
+  if (!db) return {};
+
+  const rows = await db
+    .select()
+    .from(characterNsfw)
+    .where(inArray(characterNsfw.characterId, characterIds));
+
+  const result: Record<string, boolean> = {};
+  for (const row of rows) {
+    result[row.characterId] = row.isNsfw === 1;
+  }
+  return result;
+}
+
+/** Toggle the NSFW flag for a character. Returns the new value. */
+export async function toggleCharacterNsfw(characterId: string): Promise<boolean> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const current = await getCharacterNsfw(characterId);
+  const newValue = current ? 0 : 1;
+
+  await db
+    .insert(characterNsfw)
+    .values({ characterId, isNsfw: newValue })
+    .onDuplicateKeyUpdate({ set: { isNsfw: newValue, updatedAt: new Date() } });
+
+  return newValue === 1;
 }
 
 /**

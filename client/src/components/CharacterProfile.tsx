@@ -9,7 +9,7 @@ import CreateCharacterModal from '@/components/CreateCharacterModal';
 import { Collection } from '@/hooks/useCollections';
 import { trpc } from '@/lib/trpc';
 import { ApiCharacter } from '@/pages/Home';
-import { Copy, FolderPlus, Globe, Heart, Link, Lock, Pencil, X } from 'lucide-react';
+import { Copy, EyeOff, FolderPlus, Globe, Heart, Link, Lock, Pencil, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
 interface CharacterProfileProps {
@@ -93,6 +93,16 @@ export default function CharacterProfile({ character, onClose, onUpdated, collec
 
   // The character we actually display — prefer local override
   const displayCharacter = localCharacter ?? character;
+
+  // NSFW flag — fetched from our DB, toggled via mutation
+  const { data: nsfwData, refetch: refetchNsfw } = trpc.nsfw.getBatch.useQuery(
+    { characterIds: displayCharacter?.external_id ? [displayCharacter.external_id] : [] },
+    { enabled: !!displayCharacter?.external_id, staleTime: 0 }
+  );
+  const isNsfw = displayCharacter?.external_id ? (nsfwData?.[displayCharacter.external_id] ?? false) : false;
+  const nsfwToggleMutation = trpc.nsfw.toggle.useMutation({
+    onSuccess: () => refetchNsfw(),
+  });
 
   // Fetch full character data (with appearance) when a character is selected
   const { data: fullCharacter, isLoading: isLoadingFull, refetch: refetchFull } = trpc.characters.get.useQuery(
@@ -274,6 +284,28 @@ export default function CharacterProfile({ character, onClose, onUpdated, collec
                   )}
                 </div>
               )}
+
+              {/* NSFW toggle button */}
+              <button
+                onClick={() => displayCharacter && nsfwToggleMutation.mutate({ characterId: displayCharacter.external_id })}
+                disabled={nsfwToggleMutation.isPending}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-sm transition-all hover:brightness-110 disabled:opacity-50"
+                style={{
+                  background: isNsfw ? 'oklch(0.55 0.15 300 / 0.2)' : 'oklch(0.18 0.01 264 / 0.85)',
+                  border: isNsfw ? '1px solid oklch(0.55 0.15 300 / 0.5)' : '1px solid oklch(1 0 0 / 0.15)',
+                  color: isNsfw ? 'oklch(0.75 0.15 300)' : 'oklch(0.65 0.01 264)',
+                  backdropFilter: 'blur(4px)',
+                  fontFamily: 'Rajdhani, sans-serif',
+                  fontSize: '11px',
+                  fontWeight: 700,
+                  letterSpacing: '0.1em',
+                  textTransform: 'uppercase',
+                }}
+                title={isNsfw ? 'Mark as SFW' : 'Mark as NSFW'}
+              >
+                <EyeOff size={12} strokeWidth={2} />
+                {isNsfw ? 'NSFW' : 'SFW'}
+              </button>
 
               {/* Duplicate button */}
               <button

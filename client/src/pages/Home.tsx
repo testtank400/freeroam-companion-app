@@ -63,6 +63,8 @@ export default function Home() {
   const [personaFilter, setPersonaFilter] = useState<boolean | null>(null);
   // true = show only saved/favorited characters
   const [favoritesOnly, setFavoritesOnly] = useState(false);
+  // true = hide NSFW-tagged characters
+  const [sfwOnly, setSfwOnly] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const sortDropdownRef = useRef<HTMLDivElement>(null);
   const utils = trpc.useUtils();
@@ -153,6 +155,13 @@ export default function Home() {
   }, []);
 
   const activeCollection = activeCollectionId != null ? collections.find(c => c.id === activeCollectionId) ?? null : null;
+
+  // Fetch NSFW flags for all loaded characters
+  const characterIds = allCharacters.map(c => c.external_id);
+  const { data: nsfwMap = {} } = trpc.nsfw.getBatch.useQuery(
+    { characterIds },
+    { enabled: characterIds.length > 0, staleTime: 30_000 }
+  );
 
   // Multi-select state
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -657,6 +666,33 @@ export default function Home() {
               );
             })()}
 
+            {/* SFW chip — hides NSFW-tagged characters */}
+            {(() => {
+              const nsfwCount = allCharacters.filter(c => nsfwMap[c.external_id]).length;
+              const isActive = sfwOnly;
+              if (nsfwCount === 0 && !isActive) return null;
+              return (
+                <button
+                  onClick={() => setSfwOnly(v => !v)}
+                  className="flex items-center justify-center sm:justify-start gap-1.5 px-3 py-1 rounded-sm text-[11px] font-semibold tracking-wider uppercase transition-all"
+                  style={{
+                    fontFamily: 'Rajdhani, sans-serif',
+                    background: isActive ? 'oklch(0.25 0.1 145 / 0.4)' : 'oklch(0.15 0.01 264)',
+                    border: isActive ? '1px solid oklch(0.6 0.15 145 / 0.6)' : '1px solid oklch(1 0 0 / 0.08)',
+                    color: isActive ? 'oklch(0.78 0.15 145)' : 'oklch(0.45 0.01 264)',
+                  }}
+                  title={isActive ? 'Show all characters (including NSFW)' : 'Hide NSFW characters'}
+                >
+                  🛡️ SFW Only
+                  {!isLoading && (
+                    <span className="inline-flex items-center justify-center rounded-sm px-1 min-w-[18px] h-[16px] text-[9px] font-bold" style={{ fontFamily: 'JetBrains Mono, monospace', background: 'oklch(1 0 0 / 0.12)', color: 'inherit' }}>
+                      {nsfwCount}
+                    </span>
+                  )}
+                </button>
+              );
+            })()}
+
             {/* Persona chip — only shown when at least one persona exists */}
             {!isLoading && allCharacters.some(c => c.is_persona) && (() => {
               const personaCount = allCharacters.filter(c => c.is_persona).length;
@@ -748,15 +784,20 @@ export default function Home() {
           const allCollectionIds = new Set(collections.flatMap(col => col.characterIds));
           const visibleCharacters = allCharacters.filter(c => {
             const matchesPrivacy = !privacyFilter || c.privacy_status === privacyFilter;
-            const matchesSearch = !q || c.name.toLowerCase().includes(q);
+            // When inside a collection, search only within that collection's members
+            const matchesSearch = !q || (activeCol
+              ? (activeCol.characterIds.includes(c.external_id) && c.name.toLowerCase().includes(q))
+              : c.name.toLowerCase().includes(q));
             const matchesPersona = personaFilter === null || c.is_persona === personaFilter;
             const matchesFavorites = !favoritesOnly || isSaved(c.external_id);
             const matchesCollection = !activeCol || activeCol.characterIds.includes(c.external_id);
-            // Hide characters that belong to any collection when not in a collection view
+            // When searching outside a collection, include collection members in results.
+            // When not searching, hide characters that belong to any collection (they live in collection view).
             const notInOtherCollection = activeCol
               ? activeCol.characterIds.includes(c.external_id)
-              : !allCollectionIds.has(c.external_id);
-            return matchesPrivacy && matchesSearch && matchesPersona && matchesFavorites && matchesCollection && notInOtherCollection;
+              : (q ? true : !allCollectionIds.has(c.external_id));
+            const matchesNsfw = !sfwOnly || !nsfwMap[c.external_id];
+            return matchesPrivacy && matchesSearch && matchesPersona && matchesFavorites && matchesCollection && notInOtherCollection && matchesNsfw;
           });
 
           const filteredEmpty = !isLoading && !isError && allCharacters.length > 0 && visibleCharacters.length === 0;
@@ -782,7 +823,7 @@ export default function Home() {
 
                   </p>
                   <button
-                    onClick={() => { setPrivacyFilter(null); setPersonaFilter(null); setFavoritesOnly(false); setActiveCollectionId(null); setSearchQuery(''); }}
+                    onClick={() => { setPrivacyFilter(null); setPersonaFilter(null); setFavoritesOnly(false); setSfwOnly(false); setActiveCollectionId(null); setSearchQuery(''); }}
                     className="mt-1 px-3 py-1.5 rounded-sm text-[11px] font-semibold tracking-wider uppercase transition-all"
                     style={{
                       fontFamily: 'Rajdhani, sans-serif',
@@ -811,14 +852,19 @@ export default function Home() {
           const activeCol = activeCollectionId != null ? collections.find(col => col.id === activeCollectionId) : null;
           const allCollectionIds = new Set(collections.flatMap(col => col.characterIds));
           const matchesPrivacy = !privacyFilter || c.privacy_status === privacyFilter;
-          const matchesSearch = !q || c.name.toLowerCase().includes(q);
+          // When inside a collection, search only within that collection's members
+          const matchesSearch = !q || (activeCol
+            ? (activeCol.characterIds.includes(c.external_id) && c.name.toLowerCase().includes(q))
+            : c.name.toLowerCase().includes(q));
           const matchesPersona = personaFilter === null || c.is_persona === personaFilter;
           const matchesFavorites = !favoritesOnly || isSaved(c.external_id);
           const matchesCollection = !activeCol || activeCol.characterIds.includes(c.external_id);
+          // When searching outside a collection, include collection members in results.
           const notInOtherCollection = activeCol
             ? activeCol.characterIds.includes(c.external_id)
-            : !allCollectionIds.has(c.external_id);
-          return matchesPrivacy && matchesSearch && matchesPersona && matchesFavorites && matchesCollection && notInOtherCollection;
+            : (q ? true : !allCollectionIds.has(c.external_id));
+          const matchesNsfw = !sfwOnly || !nsfwMap[c.external_id];
+          return matchesPrivacy && matchesSearch && matchesPersona && matchesFavorites && matchesCollection && notInOtherCollection && matchesNsfw;
         }).map((character) => (
               <CharacterCard
                 key={character.external_id}
@@ -839,12 +885,16 @@ export default function Home() {
                       const activeCol = activeCollectionId != null ? collections.find(col => col.id === activeCollectionId) : null;
                       const allColIds = new Set(collections.flatMap(col => col.characterIds));
                       const notInOther = activeCol ? activeCol.characterIds.includes(c.external_id) : !allColIds.has(c.external_id);
+                      const matchesSearch = !q || (activeCol
+                        ? (activeCol.characterIds.includes(c.external_id) && c.name.toLowerCase().includes(q))
+                        : c.name.toLowerCase().includes(q));
                       return (!privacyFilter || c.privacy_status === privacyFilter)
-                        && (!q || c.name.toLowerCase().includes(q))
+                        && matchesSearch
                         && (personaFilter === null || c.is_persona === personaFilter)
                         && (!favoritesOnly || isSaved(c.external_id))
                         && (!activeCol || activeCol.characterIds.includes(c.external_id))
-                        && notInOther;
+                        && notInOther
+                        && (!sfwOnly || !nsfwMap[c.external_id]);
                     });
                     lastSelectedIndexRef.current = visibleList.findIndex(c => c.external_id === char.external_id);
                     return;
@@ -857,12 +907,16 @@ export default function Home() {
                       const activeCol = activeCollectionId != null ? collections.find(col => col.id === activeCollectionId) : null;
                       const allColIds = new Set(collections.flatMap(col => col.characterIds));
                       const notInOther = activeCol ? activeCol.characterIds.includes(c.external_id) : !allColIds.has(c.external_id);
+                      const matchesSearch = !q || (activeCol
+                        ? (activeCol.characterIds.includes(c.external_id) && c.name.toLowerCase().includes(q))
+                        : c.name.toLowerCase().includes(q));
                       return (!privacyFilter || c.privacy_status === privacyFilter)
-                        && (!q || c.name.toLowerCase().includes(q))
+                        && matchesSearch
                         && (personaFilter === null || c.is_persona === personaFilter)
                         && (!favoritesOnly || isSaved(c.external_id))
                         && (!activeCol || activeCol.characterIds.includes(c.external_id))
-                        && notInOther;
+                        && notInOther
+                        && (!sfwOnly || !nsfwMap[c.external_id]);
                     });
                     const currentIdx = visibleList.findIndex(c => c.external_id === char.external_id);
                     const [from, to] = [Math.min(lastSelectedIndexRef.current, currentIdx), Math.max(lastSelectedIndexRef.current, currentIdx)];

@@ -29,6 +29,11 @@
 - [x] Server: save full content to character_extended after successful sync
 - [x] Client: load full content from character_extended when editing/viewing
 - [x] Client: show trim warning toast with actual limit from Freeroam response
+- [x] Add character_nsfw DB table (character_id, is_nsfw) for NSFW flag storage
+- [x] Add tRPC procedures: getNsfw (batch fetch flags), toggleNsfw (flip flag for one character)
+- [x] Add NSFW toggle button in CharacterProfile modal action bar
+- [x] Add SFW filter chip to hide NSFW-tagged characters from the main grid
+- [x] Fix search: scope to collection members when inside a collection, search all when outside
 - [ ] Headshot upload/linking for characters
 - [ ] Cover image upload/linking for collections (partially done - URL input works)
 - [ ] Advanced filtering options
