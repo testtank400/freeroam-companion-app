@@ -190,9 +190,10 @@ export default function Home() {
   const handleConfirmDelete = async (character: ApiCharacter) => {
     try {
       await deleteMutation.mutateAsync({ characterId: character.external_id });
-      // Remove from local list immediately (optimistic)
+      // Remove from local list immediately, then do a full refresh to sync
       setAllCharacters(prev => prev.filter(c => c.external_id !== character.external_id));
       toast.success(`${character.name} deleted`);
+      fetchAll(sort);
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : 'Failed to delete character');
     } finally {
@@ -200,16 +201,9 @@ export default function Home() {
     }
   };
 
-  const handleCharacterSaved = (character: ApiCharacter, mode: 'create' | 'edit') => {
-    if (mode === 'edit') {
-      // Patch the existing card in-place — no roster reload needed
-      setAllCharacters(prev =>
-        prev.map(c => c.external_id === character.external_id ? character : c)
-      );
-    } else {
-      // New character: prepend to the top of the list
-      setAllCharacters(prev => [character, ...prev]);
-    }
+  const handleCharacterSaved = (_character: ApiCharacter, _mode: 'create' | 'edit') => {
+    // Always do a full list refresh so the roster reflects the latest data from Freeroam
+    fetchAll(sort);
   };
 
   return (
