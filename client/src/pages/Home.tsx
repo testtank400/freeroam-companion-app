@@ -982,6 +982,9 @@ export default function Home() {
           onCreateCollection={createCollection}
           isSaved={selectedCharacter ? isSaved(selectedCharacter.external_id) : false}
           onToggleSave={selectedCharacter ? () => toggleSave(selectedCharacter.external_id, selectedCharacter.name) : undefined}
+          onNsfwToggle={(characterId, isNsfw) => {
+            setNsfwMap(prev => ({ ...prev, [characterId]: isNsfw }));
+          }}
         />
       )}
 

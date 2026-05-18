@@ -1,0 +1,28 @@
+{
+  "query": "SELECT * FROM character_nsfw WHERE isNsfw = 1;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway06.us-east-1.prod.aws.tidbcloud.com --port 4000 --user o5X5dUuHaxxkex7.root --database cxwoV3UVdPSrRocF96aWqA --execute SELECT * FROM character_nsfw WHERE isNsfw = 1;",
+  "rows": [
+    {
+      "id": "1",
+      "characterId": "835e7763-e308-46c5-b278-6af40f2330cb",
+      "isNsfw": "1",
+      "updatedAt": "2026-05-18 00:35:00"
+    },
+    {
+      "id": "30001",
+      "characterId": "39fb1b32-d061-45db-9744-fd30be3100b3",
+      "isNsfw": "1",
+      "updatedAt": "2026-05-18 00:48:36"
+    },
+    {
+      "id": "30002",
+      "characterId": "4b1b50ba-52d4-40fd-8d89-f782d4ddb987",
+      "isNsfw": "1",
+      "updatedAt": "2026-05-18 00:48:40"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tcharacterId\tisNsfw\tupdatedAt\n1\t835e7763-e308-46c5-b278-6af40f2330cb\t1\t2026-05-18 00:35:00\n30001\t39fb1b32-d061-45db-9744-fd30be3100b3\t1\t2026-05-18 00:48:36\n30002\t4b1b50ba-52d4-40fd-8d89-f782d4ddb987\t1\t2026-05-18 00:48:40\n",
+  "stderr": "",
+  "execution_time_ms": 256
+}

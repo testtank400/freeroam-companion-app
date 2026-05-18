@@ -25,6 +25,8 @@ interface CharacterProfileProps {
   // Favorites
   isSaved?: boolean;
   onToggleSave?: () => void;
+  // NSFW
+  onNsfwToggle?: (characterId: string, isNsfw: boolean) => void;
 }
 
 type Tab = 'about' | 'appearance';
@@ -79,7 +81,7 @@ function InfoRow({ label, value }: { label: string; value: string }) {
 
 const FALLBACK_IMAGE = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjUwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iNDAwIiBoZWlnaHQ9IjUwMCIgZmlsbD0iIzFhMWEyNCIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBmb250LWZhbWlseT0ibW9ub3NwYWNlIiBmb250LXNpemU9IjE0IiBmaWxsPSIjMzMzMzQ0IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkeT0iLjNlbSI+Tk8gSU1BR0U8L3RleHQ+PC9zdmc+';
 
-export default function CharacterProfile({ character, onClose, onUpdated, collections = [], isInCollection, onToggleInCollection, onCreateCollection, isSaved = false, onToggleSave }: CharacterProfileProps) {
+export default function CharacterProfile({ character, onClose, onUpdated, collections = [], isInCollection, onToggleInCollection, onCreateCollection, isSaved = false, onToggleSave, onNsfwToggle }: CharacterProfileProps) {
   const [activeTab, setActiveTab] = useState<Tab>('about');
   const [visible, setVisible] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
@@ -112,7 +114,10 @@ export default function CharacterProfile({ character, onClose, onUpdated, collec
     }
   }, [displayCharacter?.external_id]);
   const nsfwToggleMutation = trpc.nsfw.toggle.useMutation({
-    onSuccess: (data) => setIsNsfw(data.isNsfw),
+    onSuccess: (data) => {
+      setIsNsfw(data.isNsfw);
+      onNsfwToggle?.(data.characterId, data.isNsfw);
+    },
   });
 
   // Fetch full character data (with appearance) when a character is selected
