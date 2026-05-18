@@ -274,21 +274,27 @@ export async function getCharacterNsfw(characterId: string): Promise<boolean> {
   return rows.length > 0 ? rows[0].isNsfw === 1 : false;
 }
 
-/** Get NSFW status for multiple characters at once. Returns a map of characterId -> boolean. */
+/** Get NSFW status for multiple characters at once. Returns a map of characterId -> boolean.
+ * Chunks large arrays into batches of 500 to avoid MySQL IN clause limits. */
 export async function getCharactersNsfw(characterIds: string[]): Promise<Record<string, boolean>> {
   if (characterIds.length === 0) return {};
   const db = await getDb();
   if (!db) return {};
 
-  const rows = await db
-    .select()
-    .from(characterNsfw)
-    .where(inArray(characterNsfw.characterId, characterIds));
-
+  const CHUNK_SIZE = 500;
   const result: Record<string, boolean> = {};
-  for (const row of rows) {
-    result[row.characterId] = row.isNsfw === 1;
+
+  for (let i = 0; i < characterIds.length; i += CHUNK_SIZE) {
+    const chunk = characterIds.slice(i, i + CHUNK_SIZE);
+    const rows = await db
+      .select()
+      .from(characterNsfw)
+      .where(inArray(characterNsfw.characterId, chunk));
+    for (const row of rows) {
+      result[row.characterId] = row.isNsfw === 1;
+    }
   }
+
   return result;
 }
 

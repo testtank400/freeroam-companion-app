@@ -1,0 +1,16 @@
+{
+  "query": "SELECT * FROM character_nsfw;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway06.us-east-1.prod.aws.tidbcloud.com --port 4000 --user o5X5dUuHaxxkex7.root --database cxwoV3UVdPSrRocF96aWqA --execute SELECT * FROM character_nsfw;",
+  "rows": [
+    {
+      "id": "1",
+      "characterId": "835e7763-e308-46c5-b278-6af40f2330cb",
+      "isNsfw": "1",
+      "updatedAt": "2026-05-18 00:35:00"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tcharacterId\tisNsfw\tupdatedAt\n1\t835e7763-e308-46c5-b278-6af40f2330cb\t1\t2026-05-18 00:35:00\n",
+  "stderr": "",
+  "execution_time_ms": 316
+}
