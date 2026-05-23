@@ -208,9 +208,10 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
               placeholder="Paste your Freeroam cookie here..."
               rows={3}
               disabled={status === 'verifying'}
-              className="w-full rounded-sm px-3 py-2 text-[11px] resize-none outline-none transition-colors disabled:opacity-50"
+              className="w-full rounded-sm px-3 py-2 resize-none outline-none transition-colors disabled:opacity-50"
               style={{
                 fontFamily: 'JetBrains Mono, monospace',
+                fontSize: '16px', // 16px prevents iOS auto-zoom on focus
                 background: 'oklch(0.15 0.01 264)',
                 border: '1px solid oklch(1 0 0 / 0.1)',
                 color: 'oklch(0.82 0.005 65)',
