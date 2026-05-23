@@ -188,7 +188,7 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
                   'Refresh the page',
                   'Click any request to getfreeroam.com',
                   'Under Request Headers, find the Cookie row',
-                  'Right-click the Cookie value → Copy value',
+                  'Double-click the Cookie value to select it, then copy (Ctrl+C / Cmd+C)',
                 ].map((step, i) => (
                   <li key={i} className="text-[11px]" style={{ fontFamily: 'JetBrains Mono, monospace', color: 'oklch(0.45 0.01 264)' }}>
                     {step}
