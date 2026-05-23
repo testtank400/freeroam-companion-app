@@ -29,7 +29,7 @@ interface CharacterProfileProps {
   onNsfwToggle?: (characterId: string, isNsfw: boolean) => void;
 }
 
-type Tab = 'about' | 'appearance';
+type Tab = 'about' | 'appearance' | 'full-backstory' | 'full-appearance';
 type PrivacyStatus = 'private' | 'public' | 'unlisted';
 
 function PrivacyBadgeLarge({ status }: { status: PrivacyStatus }) {
@@ -406,24 +406,51 @@ export default function CharacterProfile({ character, onClose, onUpdated, collec
           </div>
 
           {/* Tab bar */}
-          <div className="flex-shrink-0 flex" style={{ borderBottom: '1px solid oklch(1 0 0 / 0.08)' }}>
-            {(['about', 'appearance'] as Tab[]).map((tab) => (
-              <button
-                key={tab}
-                onClick={() => setActiveTab(tab)}
-                className="relative px-6 py-3 text-sm font-semibold tracking-widest uppercase transition-colors"
-                style={{
-                  fontFamily: 'Rajdhani, sans-serif',
-                  color: activeTab === tab ? 'oklch(0.769 0.188 70.08)' : 'oklch(0.5 0.01 264)',
-                  background: 'transparent',
-                  borderBottom: activeTab === tab ? '2px solid oklch(0.769 0.188 70.08)' : '2px solid transparent',
-                  marginBottom: '-1px',
-                }}
-              >
-                {tab}
-              </button>
-            ))}
-          </div>
+          {(() => {
+            const BACKSTORY_LIMIT = 2000;
+            const APPEARANCE_LIMIT = 1000;
+            const backstoryExceeds = (backstory?.length ?? 0) > BACKSTORY_LIMIT;
+            const appearanceExceeds = (appearance?.length ?? 0) > APPEARANCE_LIMIT;
+            const tabs: { id: Tab; label: string; badge?: string }[] = [
+              { id: 'about', label: 'About' },
+              { id: 'appearance', label: 'Appearance' },
+              ...(backstoryExceeds ? [{ id: 'full-backstory' as Tab, label: 'Full Backstory', badge: `${(backstory?.length ?? 0).toLocaleString()} chars` }] : []),
+              ...(appearanceExceeds ? [{ id: 'full-appearance' as Tab, label: 'Full Appearance', badge: `${(appearance?.length ?? 0).toLocaleString()} chars` }] : []),
+            ];
+            return (
+              <div className="flex-shrink-0 flex overflow-x-auto" style={{ borderBottom: '1px solid oklch(1 0 0 / 0.08)', scrollbarWidth: 'none' }}>
+                {tabs.map((tab) => (
+                  <button
+                    key={tab.id}
+                    onClick={() => setActiveTab(tab.id)}
+                    className="relative flex-shrink-0 flex items-center gap-1.5 px-5 py-3 text-sm font-semibold tracking-widest uppercase transition-colors"
+                    style={{
+                      fontFamily: 'Rajdhani, sans-serif',
+                      color: activeTab === tab.id ? 'oklch(0.769 0.188 70.08)' : 'oklch(0.5 0.01 264)',
+                      background: 'transparent',
+                      borderBottom: activeTab === tab.id ? '2px solid oklch(0.769 0.188 70.08)' : '2px solid transparent',
+                      marginBottom: '-1px',
+                    }}
+                  >
+                    {tab.label}
+                    {tab.badge && (
+                      <span
+                        className="text-[9px] px-1 py-0.5 rounded"
+                        style={{
+                          fontFamily: 'JetBrains Mono, monospace',
+                          background: 'oklch(0.55 0.15 300 / 0.2)',
+                          color: 'oklch(0.75 0.15 300)',
+                          border: '1px solid oklch(0.55 0.15 300 / 0.3)',
+                        }}
+                      >
+                        {tab.badge}
+                      </span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            );
+          })()}
 
           {/* Tab content — scrollable */}
           <div className="flex-1 overflow-y-auto">
@@ -487,6 +514,46 @@ export default function CharacterProfile({ character, onClose, onUpdated, collec
                     style={{ fontFamily: 'JetBrains Mono, monospace', color: 'oklch(0.72 0.008 264)', fontSize: '12px' }}
                   >
                     {backstory || 'No backstory provided.'}
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* Full Backstory tab — shown when backstory exceeds Freeroam's 2000-char limit */}
+            {!isLoadingFull && activeTab === 'full-backstory' && (
+              <div className="p-6">
+                <div className="mb-4 px-3 py-2 rounded-sm" style={{ background: 'oklch(0.55 0.15 300 / 0.08)', border: '1px solid oklch(0.55 0.15 300 / 0.25)' }}>
+                  <p className="text-[11px]" style={{ fontFamily: 'JetBrains Mono, monospace', color: 'oklch(0.65 0.12 300)' }}>
+                    This is the full backstory stored locally. Freeroam only received the first 2,000 characters.
+                  </p>
+                </div>
+                <div className="py-2">
+                  <SectionLabel label="Full Backstory" />
+                  <p
+                    className="leading-loose whitespace-pre-wrap"
+                    style={{ fontFamily: 'JetBrains Mono, monospace', color: 'oklch(0.72 0.008 264)', fontSize: '12px' }}
+                  >
+                    {backstory}
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* Full Appearance tab — shown when appearance exceeds Freeroam's 1000-char limit */}
+            {!isLoadingFull && activeTab === 'full-appearance' && (
+              <div className="p-6">
+                <div className="mb-4 px-3 py-2 rounded-sm" style={{ background: 'oklch(0.55 0.15 300 / 0.08)', border: '1px solid oklch(0.55 0.15 300 / 0.25)' }}>
+                  <p className="text-[11px]" style={{ fontFamily: 'JetBrains Mono, monospace', color: 'oklch(0.65 0.12 300)' }}>
+                    This is the full appearance stored locally. Freeroam only received the first 1,000 characters.
+                  </p>
+                </div>
+                <div className="py-2">
+                  <SectionLabel label="Full Appearance" />
+                  <p
+                    className="leading-loose whitespace-pre-wrap"
+                    style={{ fontFamily: 'JetBrains Mono, monospace', color: 'oklch(0.72 0.008 264)', fontSize: '12px' }}
+                  >
+                    {appearance}
                   </p>
                 </div>
               </div>

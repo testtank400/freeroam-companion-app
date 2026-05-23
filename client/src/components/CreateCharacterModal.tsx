@@ -63,15 +63,16 @@ export default function CreateCharacterModal({
   const [visible, setVisible] = useState(false);
 
   // Fetch full character data (with appearance) when in edit mode
+  // staleTime: 0 ensures fresh data is always fetched when the modal re-opens after a save
   const { data: fullEditData } = trpc.characters.get.useQuery(
     { characterId: editCharacter?.external_id ?? '' },
-    { enabled: isEditMode && !!editCharacter?.external_id, staleTime: 5 * 60_000 }
+    { enabled: isEditMode && !!editCharacter?.external_id, staleTime: 0 }
   );
 
   // Fetch extended (unlimited) content from our DB
   const { data: extendedData } = trpc.characters.getExtended.useQuery(
     { characterId: editCharacter?.external_id ?? '' },
-    { enabled: isEditMode && !!editCharacter?.external_id, staleTime: 5 * 60_000 }
+    { enabled: isEditMode && !!editCharacter?.external_id, staleTime: 0 }
   );
 
   // Form state — seeded from editCharacter when available

@@ -34,6 +34,9 @@
 - [x] Add NSFW toggle button in CharacterProfile modal action bar
 - [x] Add SFW filter chip to hide NSFW-tagged characters from the main grid
 - [x] Fix search: scope to collection members when inside a collection, search all when outside
+- [x] Fix edit modal showing stale data after update (editCharacter not refreshed after save)
+- [x] Add extended backstory tab in CharacterProfile when content > 2000 chars
+- [x] Add extended appearance tab in CharacterProfile when content > 1000 chars
 - [ ] Headshot upload/linking for characters
 - [ ] Cover image upload/linking for collections (partially done - URL input works)
 - [ ] Advanced filtering options
