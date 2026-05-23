@@ -90,10 +90,11 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
       onClick={handleBackdropClick}
     >
       <div
-        className="relative w-full max-w-md rounded-sm overflow-hidden"
+        className="relative w-full max-w-md rounded-sm flex flex-col"
         style={{
           background: 'oklch(0.11 0.009 264)',
           border: '1px solid oklch(0.769 0.188 70.08 / 0.2)',
+          maxHeight: '92dvh',
           transform: visible ? 'scale(1)' : 'scale(0.95)',
           opacity: visible ? 1 : 0,
           transition: 'transform 0.2s ease, opacity 0.2s ease',
@@ -123,8 +124,8 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
           </button>
         </div>
 
-        {/* Body */}
-        <div className="px-5 py-5 space-y-5">
+        {/* Body — scrollable so footer buttons are always reachable on mobile */}
+        <div className="flex-1 overflow-y-auto px-5 py-5 space-y-5">
 
           {/* Section: Freeroam Cookie */}
           <div>
