@@ -197,6 +197,10 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
               </ol>
             </div>
 
+            <p className="text-[10px] mb-3 px-2 py-1.5 rounded-sm" style={{ fontFamily: 'JetBrains Mono, monospace', color: 'oklch(0.5 0.15 220)', background: 'oklch(0.55 0.15 220 / 0.08)', border: '1px solid oklch(0.55 0.15 220 / 0.2)' }}>
+              📱 On mobile? Get your cookie on a desktop browser first, then paste it here.
+            </p>
+
             <textarea
               ref={inputRef}
               value={input}
