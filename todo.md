@@ -37,6 +37,11 @@
 - [x] Fix edit modal showing stale data after update (editCharacter not refreshed after save)
 - [x] Add extended backstory tab in CharacterProfile when content > 2000 chars
 - [x] Add extended appearance tab in CharacterProfile when content > 1000 chars
+- [x] Add useFreeroamCookie hook (localStorage get/set/clear)
+- [x] Build Settings panel in header (gear icon → modal with cookie input)
+- [x] Pass user cookie as x-freeroam-cookie header from tRPC client
+- [x] Server: read x-freeroam-cookie header, fall back to env cookie if absent
+- [x] Show empty roster prompt when user has no cookie set
 - [ ] Headshot upload/linking for characters
 - [ ] Cover image upload/linking for collections (partially done - URL input works)
 - [ ] Advanced filtering options

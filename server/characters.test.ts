@@ -9,7 +9,11 @@ vi.stubGlobal("fetch", mockFetch);
 function createCtx(): TrpcContext {
   return {
     user: null,
-    req: { protocol: "https", headers: {} } as TrpcContext["req"],
+    req: {
+      protocol: "https",
+      // Include a user cookie header so the hasUserCookie gate allows the request through
+      headers: { 'x-freeroam-cookie': 'session=test-user-cookie' },
+    } as TrpcContext["req"],
     res: { clearCookie: vi.fn() } as unknown as TrpcContext["res"],
   };
 }
@@ -344,13 +348,18 @@ describe("characters.list", () => {
     expect(result.next_cursor).toBe("next-page-cursor-xyz");
   });
 
-  it("throws when cookie is not set", async () => {
-    delete process.env.cookie;
-
-    const caller = appRouter.createCaller(createCtx());
-    await expect(
-      caller.characters.list({ username: "Test Tank", limit: 20, sort: "recent" })
-    ).rejects.toThrow("Cookie not configured");
+  it("returns empty roster when no user cookie is provided", async () => {
+    // When no x-freeroam-cookie header is present, the server returns an empty roster
+    // rather than exposing the owner's characters or throwing an error.
+    const ctxWithoutCookie = {
+      user: null,
+      req: { protocol: "https", headers: {} } as TrpcContext["req"],
+      res: { clearCookie: vi.fn() } as unknown as TrpcContext["res"],
+    };
+    const caller = appRouter.createCaller(ctxWithoutCookie);
+    const result = await caller.characters.list({ username: "Test Tank", limit: 20, sort: "recent" });
+    expect(result.characters).toHaveLength(0);
+    expect(result.has_more).toBe(false);
   });
 
   it("throws when API returns non-ok status", async () => {

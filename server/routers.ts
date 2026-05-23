@@ -19,6 +19,29 @@ import {
   upsertCharacterExtended,
 } from "./db";
 
+/**
+ * Get the Freeroam session cookie to use for API calls.
+ * Prefers the per-user cookie sent as x-freeroam-cookie header (from localStorage),
+ * falls back to the owner's env cookie. The owner cookie is NEVER exposed to the client.
+ */
+function getFreeroamCookie(ctx: { req: { headers: Record<string, string | string[] | undefined> } }): string {
+  const userCookie = ctx.req.headers['x-freeroam-cookie'];
+  if (userCookie && typeof userCookie === 'string' && userCookie.trim()) {
+    return userCookie.trim();
+  }
+  return process.env.cookie ?? '';
+}
+
+/**
+ * Returns true if the request has a user-provided cookie (not just the owner fallback).
+ * Used to gate character-loading endpoints so non-owner users see an empty roster
+ * rather than the owner's characters.
+ */
+function hasUserCookie(ctx: { req: { headers: Record<string, string | string[] | undefined> } }): boolean {
+  const userCookie = ctx.req.headers['x-freeroam-cookie'];
+  return !!(userCookie && typeof userCookie === 'string' && userCookie.trim());
+}
+
 // Coerce any unknown privacy_status value to 'private' so unexpected API values never crash the app
 // Valid values: private, public, unlisted
 const privacyStatusSchema = z
@@ -92,8 +115,11 @@ export const appRouter = router({
           cursor: z.string().optional(),
         })
       )
-      .query(async ({ input }) => {
-        const cookie = process.env.cookie;
+      .query(async ({ input, ctx }) => {
+        // Return empty roster for users without their own cookie
+        if (!hasUserCookie(ctx)) return { characters: [], has_more: false, next_cursor: null };
+
+        const cookie = getFreeroamCookie(ctx);
         if (!cookie) {
           throw new Error("Cookie not configured in environment");
         }
@@ -124,8 +150,11 @@ export const appRouter = router({
 
     // Single-request library endpoint — returns ALL characters with is_saved, description, tags
     library: publicProcedure
-      .query(async () => {
-        const cookie = process.env.cookie;
+      .query(async ({ ctx }) => {
+        // Return empty roster for users without their own cookie — do not expose owner's characters
+        if (!hasUserCookie(ctx)) return [];
+
+        const cookie = getFreeroamCookie(ctx);
         if (!cookie) throw new Error("Cookie not configured in environment");
 
         const response = await fetch(
@@ -186,8 +215,8 @@ export const appRouter = router({
           fileName: z.string(),
         })
       )
-      .mutation(async ({ input }) => {
-        const cookie = process.env.cookie;
+      .mutation(async ({ input, ctx }) => {
+        const cookie = getFreeroamCookie(ctx);
         if (!cookie) throw new Error("Cookie not configured in environment");
 
         // Decode base64 back to binary
@@ -234,8 +263,8 @@ export const appRouter = router({
           privacy_status: z.enum(["private", "public", "unlisted"]).default("private"),
         })
       )
-      .mutation(async ({ input }) => {
-        const cookie = process.env.cookie;
+      .mutation(async ({ input, ctx }) => {
+        const cookie = getFreeroamCookie(ctx);
         if (!cookie) throw new Error("Cookie not configured in environment");
 
         const FREEROAM_HEADERS = {
@@ -346,8 +375,8 @@ export const appRouter = router({
           privacy_status: z.enum(["private", "public", "unlisted"]).default("private"),
         })
       )
-      .mutation(async ({ input }) => {
-        const cookie = process.env.cookie;
+      .mutation(async ({ input, ctx }) => {
+        const cookie = getFreeroamCookie(ctx);
         if (!cookie) throw new Error("Cookie not configured in environment");
 
         const FREEROAM_HEADERS = {
@@ -433,8 +462,8 @@ export const appRouter = router({
 
     save: publicProcedure
       .input(z.object({ characterId: z.string() }))
-      .mutation(async ({ input }) => {
-        const cookie = process.env.cookie;
+      .mutation(async ({ input, ctx }) => {
+        const cookie = getFreeroamCookie(ctx);
         if (!cookie) throw new Error("Cookie not configured in environment");
 
         const response = await fetch(
@@ -463,8 +492,8 @@ export const appRouter = router({
 
     unsave: publicProcedure
       .input(z.object({ characterId: z.string() }))
-      .mutation(async ({ input }) => {
-        const cookie = process.env.cookie;
+      .mutation(async ({ input, ctx }) => {
+        const cookie = getFreeroamCookie(ctx);
         if (!cookie) throw new Error("Cookie not configured in environment");
 
         const response = await fetch(
@@ -493,8 +522,8 @@ export const appRouter = router({
 
     delete: publicProcedure
       .input(z.object({ characterId: z.string() }))
-      .mutation(async ({ input }) => {
-        const cookie = process.env.cookie;
+      .mutation(async ({ input, ctx }) => {
+        const cookie = getFreeroamCookie(ctx);
         if (!cookie) throw new Error("Cookie not configured in environment");
 
         const response = await fetch(
@@ -523,8 +552,8 @@ export const appRouter = router({
 
     get: publicProcedure
       .input(z.object({ characterId: z.string() }))
-      .query(async ({ input }) => {
-        const cookie = process.env.cookie;
+      .query(async ({ input, ctx }) => {
+        const cookie = getFreeroamCookie(ctx);
         if (!cookie) {
           throw new Error("Cookie not configured in environment");
         }
@@ -554,7 +583,7 @@ export const appRouter = router({
     // Fetch the full extended backstory/appearance stored in our DB
     getExtended: publicProcedure
       .input(z.object({ characterId: z.string() }))
-      .query(async ({ input }) => {
+      .query(async ({ input, ctx }) => {
         return getCharacterExtended(input.characterId);
       }),
   }),
@@ -576,7 +605,7 @@ export const appRouter = router({
           coverImage: z.string().optional(),
         })
       )
-      .mutation(async ({ input }) => {
+      .mutation(async ({ input, ctx }) => {
         return dbCreateCollection(
           ENV.ownerOpenId,
           input.name,
@@ -594,26 +623,26 @@ export const appRouter = router({
           coverImage: z.string().nullable().optional(),
         })
       )
-      .mutation(async ({ input }) => {
+      .mutation(async ({ input, ctx }) => {
         const { id, ...updates } = input;
         return dbUpdateCollection(id, ENV.ownerOpenId, updates);
       }),
 
     delete: publicProcedure
       .input(z.object({ id: z.number() }))
-      .mutation(async ({ input }) => {
+      .mutation(async ({ input, ctx }) => {
         return dbDeleteCollection(input.id, ENV.ownerOpenId);
       }),
 
     addCharacter: publicProcedure
       .input(z.object({ collectionId: z.number(), characterId: z.string() }))
-      .mutation(async ({ input }) => {
+      .mutation(async ({ input, ctx }) => {
         return addCharacterToCollection(input.collectionId, input.characterId);
       }),
 
     removeCharacter: publicProcedure
       .input(z.object({ collectionId: z.number(), characterId: z.string() }))
-      .mutation(async ({ input }) => {
+      .mutation(async ({ input, ctx }) => {
         return removeCharacterFromCollection(input.collectionId, input.characterId);
       }),
 
@@ -627,7 +656,7 @@ export const appRouter = router({
           fileName: z.string(),
         })
       )
-      .mutation(async ({ input }) => {
+      .mutation(async ({ input, ctx }) => {
         const buffer = Buffer.from(input.fileBase64, "base64");
         const key = `collection-covers/${input.fileName}`;
         const { url } = await storagePut(key, buffer, input.mimeType);
@@ -640,14 +669,14 @@ export const appRouter = router({
      * Uses mutation (POST) to avoid HTTP 414 URL-too-large errors with large rosters. */
     getBatch: publicProcedure
       .input(z.object({ characterIds: z.array(z.string()) }))
-      .mutation(async ({ input }) => {
+      .mutation(async ({ input, ctx }) => {
         return getCharactersNsfw(input.characterIds);
       }),
 
     /** Toggle the NSFW flag for a single character. Returns the new boolean value. */
     toggle: publicProcedure
       .input(z.object({ characterId: z.string() }))
-      .mutation(async ({ input }) => {
+      .mutation(async ({ input, ctx }) => {
         const newValue = await toggleCharacterNsfw(input.characterId);
         return { characterId: input.characterId, isNsfw: newValue };
       }),

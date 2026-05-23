@@ -37,11 +37,22 @@ queryClient.getMutationCache().subscribe(event => {
   }
 });
 
+const COOKIE_STORAGE_KEY = 'freeroam_cookie';
+
 const trpcClient = trpc.createClient({
   links: [
     httpBatchLink({
       url: "/api/trpc",
       transformer: superjson,
+      headers() {
+        // Inject the user's Freeroam cookie as a header so the server can use it.
+        // The server falls back to the owner env cookie if this header is absent.
+        const userCookie = localStorage.getItem(COOKIE_STORAGE_KEY);
+        if (userCookie && userCookie.trim()) {
+          return { 'x-freeroam-cookie': userCookie.trim() };
+        }
+        return {};
+      },
       fetch(input, init) {
         return globalThis.fetch(input, {
           ...(init ?? {}),

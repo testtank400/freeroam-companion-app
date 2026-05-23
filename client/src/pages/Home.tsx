@@ -11,11 +11,13 @@ import CreateCharacterModal from '@/components/CreateCharacterModal';
 import DeleteCollectionDialog from '@/components/DeleteCollectionDialog';
 import DeleteConfirmDialog from '@/components/DeleteConfirmDialog';
 import EditCollectionModal from '@/components/EditCollectionModal';
+import SettingsModal from '@/components/SettingsModal';
 import { Collection, useCollections } from '@/hooks/useCollections';
 import { useSavedCharacters } from '@/hooks/useSavedCharacters';
 import { trpc } from '@/lib/trpc';
-import { ArrowDownUp, ArrowLeft, ChevronDown, FolderPlus, Plus, RefreshCw, Search, UserPlus, X as XIcon } from 'lucide-react';
+import { ArrowDownUp, ArrowLeft, ChevronDown, FolderPlus, Plus, RefreshCw, Search, Settings, UserPlus, X as XIcon } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useFreeroamCookie } from '@/hooks/useFreeroamCookie';
 import { toast } from 'sonner';
 
 export type PrivacyStatus = 'private' | 'public' | 'unlisted';
@@ -135,6 +137,9 @@ export default function Home() {
     setSortDropdownOpen(false);
     // useEffect above will trigger fetchAll(newSort)
   };
+
+  const { hasCookie } = useFreeroamCookie();
+  const [showSettings, setShowSettings] = useState(false);
 
   const { isSaved, toggleSave, initFromApi } = useSavedCharacters();
   const { collections, createCollection, renameCollection, updateCollection, deleteCollection, toggleInCollection, isInCollection } = useCollections();
@@ -432,6 +437,20 @@ export default function Home() {
               </div>
             )}
           </div>
+
+          {/* Settings gear button */}
+          <button
+            onClick={() => setShowSettings(true)}
+            className="w-8 h-8 flex items-center justify-center rounded-sm transition-colors hover:brightness-110"
+            style={{
+              background: hasCookie ? 'oklch(0.55 0.15 145 / 0.12)' : 'oklch(0.18 0.01 264)',
+              border: hasCookie ? '1px solid oklch(0.55 0.15 145 / 0.35)' : '1px solid oklch(1 0 0 / 0.1)',
+              color: hasCookie ? 'oklch(0.65 0.15 145)' : 'oklch(0.55 0.01 264)',
+            }}
+            title={hasCookie ? 'Settings (cookie set)' : 'Settings (no cookie set)'}
+          >
+            <Settings size={13} strokeWidth={2} />
+          </button>
 
           {/* Refresh button */}
           <button
@@ -771,13 +790,39 @@ export default function Home() {
 
         {/* Empty state */}
         {!isLoading && !isError && allCharacters.length === 0 && (
-          <div className="flex flex-col items-center justify-center py-20 gap-3">
-            <p style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: '18px', fontWeight: 700, color: 'oklch(0.4 0.01 264)' }}>
-              NO CHARACTERS ON RECORD
-            </p>
-            <p style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '12px', color: 'oklch(0.35 0.01 264)' }}>
-              Your roster is empty.
-            </p>
+          <div className="flex flex-col items-center justify-center py-20 gap-4">
+            {!hasCookie ? (
+              <>
+                <p style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: '18px', fontWeight: 700, color: 'oklch(0.4 0.01 264)' }}>
+                  NO CHARACTERS ON RECORD
+                </p>
+                <p style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '12px', color: 'oklch(0.35 0.01 264)', textAlign: 'center', maxWidth: 360 }}>
+                  Add your Freeroam session cookie to load your characters.
+                </p>
+                <button
+                  onClick={() => setShowSettings(true)}
+                  className="flex items-center gap-2 px-4 py-2 rounded-sm text-xs font-semibold tracking-wider uppercase transition-all hover:brightness-110"
+                  style={{
+                    fontFamily: 'Rajdhani, sans-serif',
+                    background: 'oklch(0.769 0.188 70.08 / 0.12)',
+                    border: '1px solid oklch(0.769 0.188 70.08 / 0.4)',
+                    color: 'oklch(0.769 0.188 70.08)',
+                  }}
+                >
+                  <Settings size={13} strokeWidth={2} />
+                  Open Settings
+                </button>
+              </>
+            ) : (
+              <>
+                <p style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: '18px', fontWeight: 700, color: 'oklch(0.4 0.01 264)' }}>
+                  NO CHARACTERS ON RECORD
+                </p>
+                <p style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '12px', color: 'oklch(0.35 0.01 264)' }}>
+                  Your roster is empty.
+                </p>
+              </>
+            )}
           </div>
         )}
 
@@ -1050,6 +1095,12 @@ export default function Home() {
         onClose={() => { setShowCreateModal(false); setEditCharacter(null); }}
         onSaved={handleCharacterSaved}
         editCharacter={editCharacter}
+      />
+
+      {/* Settings modal */}
+      <SettingsModal
+        open={showSettings}
+        onClose={() => setShowSettings(false)}
       />
     </div>
   );
