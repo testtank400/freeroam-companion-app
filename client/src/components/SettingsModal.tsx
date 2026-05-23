@@ -179,12 +179,23 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
               </div>
             )}
 
-            <p
-              className="text-[11px] leading-relaxed mb-3"
-              style={{ fontFamily: 'JetBrains Mono, monospace', color: 'oklch(0.45 0.01 264)' }}
-            >
-              Paste your Freeroam session cookie to load your characters. Get it from DevTools → Application → Cookies → getfreeroam.com.
-            </p>
+            <div className="mb-3 space-y-1.5">
+              <p className="text-[11px] font-semibold" style={{ fontFamily: 'Rajdhani, sans-serif', color: 'oklch(0.65 0.01 264)' }}>How to get your cookie:</p>
+              <ol className="space-y-1" style={{ paddingLeft: '1rem', listStyleType: 'decimal' }}>
+                {[
+                  'Go to getfreeroam.com and log in',
+                  'Open DevTools (F12) → Network tab',
+                  'Refresh the page',
+                  'Click any request to getfreeroam.com',
+                  'Under Request Headers, find the Cookie row',
+                  'Right-click the Cookie value → Copy value',
+                ].map((step, i) => (
+                  <li key={i} className="text-[11px]" style={{ fontFamily: 'JetBrains Mono, monospace', color: 'oklch(0.45 0.01 264)' }}>
+                    {step}
+                  </li>
+                ))}
+              </ol>
+            </div>
 
             <textarea
               ref={inputRef}
