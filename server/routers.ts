@@ -11,12 +11,13 @@ import {
   deleteCollection as dbDeleteCollection,
   getCharacterExtended,
   getCharactersNsfw,
-  getCollectionsByOwner,
+  getCollectionsByAccountId,
   parseLimitFromError,
   removeCharacterFromCollection,
   toggleCharacterNsfw,
   updateCollection as dbUpdateCollection,
   upsertCharacterExtended,
+  upsertFreeroamUser,
 } from "./db";
 
 /**
@@ -40,6 +41,17 @@ function getFreeroamCookie(ctx: { req: { headers: Record<string, string | string
 function hasUserCookie(ctx: { req: { headers: Record<string, string | string[] | undefined> } }): boolean {
   const userCookie = ctx.req.headers['x-freeroam-cookie'];
   return !!(userCookie && typeof userCookie === 'string' && userCookie.trim());
+}
+
+/**
+ * Get the Freeroam account ID from the x-freeroam-account-id header.
+ * Returns null if not present or invalid.
+ */
+function getFreeroamAccountId(ctx: { req: { headers: Record<string, string | string[] | undefined> } }): number | null {
+  const header = ctx.req.headers['x-freeroam-account-id'];
+  if (!header || typeof header !== 'string') return null;
+  const parsed = parseInt(header, 10);
+  return isNaN(parsed) ? null : parsed;
 }
 
 // Coerce any unknown privacy_status value to 'private' so unexpected API values never crash the app
@@ -589,12 +601,13 @@ export const appRouter = router({
   }),
 
   // ─── Collections (DB-backed) ──────────────────────────────────────────────────────────
-  // All operations are scoped to ENV.ownerOpenId so only the site owner can
-  // manage their own collections. No auth middleware needed — the owner openId
-  // is a server-side env var, never exposed to the client.
+  // All operations are scoped to the user's Freeroam accountId (from x-freeroam-account-id header).
+  // Returns empty list if no account ID is present — prevents data leaking between users.
   collections: router({
-    list: publicProcedure.query(async () => {
-      return getCollectionsByOwner(ENV.ownerOpenId);
+    list: publicProcedure.query(async ({ ctx }) => {
+      const accountId = getFreeroamAccountId(ctx);
+      if (!accountId) return [];
+      return getCollectionsByAccountId(accountId);
     }),
 
     create: publicProcedure
@@ -606,8 +619,10 @@ export const appRouter = router({
         })
       )
       .mutation(async ({ input, ctx }) => {
+        const accountId = getFreeroamAccountId(ctx);
+        if (!accountId) throw new Error('No Freeroam account ID — please set your cookie in Settings');
         return dbCreateCollection(
-          ENV.ownerOpenId,
+          accountId,
           input.name,
           input.description,
           input.coverImage
@@ -624,14 +639,18 @@ export const appRouter = router({
         })
       )
       .mutation(async ({ input, ctx }) => {
+        const accountId = getFreeroamAccountId(ctx);
+        if (!accountId) throw new Error('No Freeroam account ID — please set your cookie in Settings');
         const { id, ...updates } = input;
-        return dbUpdateCollection(id, ENV.ownerOpenId, updates);
+        return dbUpdateCollection(id, accountId, updates);
       }),
 
     delete: publicProcedure
       .input(z.object({ id: z.number() }))
       .mutation(async ({ input, ctx }) => {
-        return dbDeleteCollection(input.id, ENV.ownerOpenId);
+        const accountId = getFreeroamAccountId(ctx);
+        if (!accountId) throw new Error('No Freeroam account ID — please set your cookie in Settings');
+        return dbDeleteCollection(input.id, accountId);
       }),
 
     addCharacter: publicProcedure
@@ -670,16 +689,70 @@ export const appRouter = router({
     getBatch: publicProcedure
       .input(z.object({ characterIds: z.array(z.string()) }))
       .mutation(async ({ input, ctx }) => {
-        return getCharactersNsfw(input.characterIds);
+        const accountId = getFreeroamAccountId(ctx);
+        if (!accountId) return {};
+        return getCharactersNsfw(input.characterIds, accountId);
       }),
 
     /** Toggle the NSFW flag for a single character. Returns the new boolean value. */
     toggle: publicProcedure
       .input(z.object({ characterId: z.string() }))
       .mutation(async ({ input, ctx }) => {
-        const newValue = await toggleCharacterNsfw(input.characterId);
+        const accountId = getFreeroamAccountId(ctx);
+        if (!accountId) throw new Error('No Freeroam account ID — please set your cookie in Settings');
+        const newValue = await toggleCharacterNsfw(input.characterId, accountId);
         return { characterId: input.characterId, isNsfw: newValue };
       }),
+  }),
+
+  // ─── Freeroam Cookie Verification ──────────────────────────────────────────────────────────
+  freeroam: router({
+    /**
+     * Verify a Freeroam session cookie by calling /api/user/current.
+     * On success, upserts the user in our DB and returns their profile.
+     * The cookie is passed as x-freeroam-cookie header (already set by the client).
+     */
+    verifySession: publicProcedure
+      .input(z.object({ cookie: z.string().optional() }))
+      .mutation(async ({ input, ctx }) => {
+      // Use the explicitly provided cookie (for first-time setup) or fall back to the header
+      const cookie = (input.cookie && input.cookie.trim()) ? input.cookie.trim() : getFreeroamCookie(ctx);
+      if (!cookie) throw new Error('No cookie provided');
+
+      const response = await fetch('https://getfreeroam.com/api/user/current', {
+        headers: {
+          accept: '*/*',
+          'accept-language': 'en-US,en;q=0.9',
+          cookie,
+          origin: 'https://getfreeroam.com',
+          referer: 'https://getfreeroam.com',
+          'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36',
+        },
+      });
+
+      if (response.status === 401 || response.status === 403) {
+        throw new Error('SESSION_EXPIRED');
+      }
+      if (!response.ok) {
+        throw new Error(`Freeroam API error: ${response.status}`);
+      }
+
+      const data = await response.json() as {
+        account_id: number;
+        username: string;
+        email: string;
+        external_id: string;
+      };
+
+      // Upsert the user in our DB for persistent identity
+      await upsertFreeroamUser(data.account_id, data.username, data.email, data.external_id);
+
+      return {
+        accountId: data.account_id,
+        username: data.username,
+        email: data.email,
+      };
+    }),
   }),
 });
 

@@ -34,9 +34,9 @@ describe('collections router', () => {
 });
 
 describe('db helpers for collections', () => {
-  it('exports getCollectionsByOwner', async () => {
-    const { getCollectionsByOwner } = await import('./db');
-    expect(typeof getCollectionsByOwner).toBe('function');
+  it('exports getCollectionsByAccountId', async () => {
+    const { getCollectionsByAccountId } = await import('./db');
+    expect(typeof getCollectionsByAccountId).toBe('function');
   });
 
   it('exports createCollection', async () => {

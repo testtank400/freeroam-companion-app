@@ -38,6 +38,7 @@ queryClient.getMutationCache().subscribe(event => {
 });
 
 const COOKIE_STORAGE_KEY = 'freeroam_cookie';
+const ACCOUNT_ID_STORAGE_KEY = 'freeroam_account_id';
 
 const trpcClient = trpc.createClient({
   links: [
@@ -45,13 +46,18 @@ const trpcClient = trpc.createClient({
       url: "/api/trpc",
       transformer: superjson,
       headers() {
-        // Inject the user's Freeroam cookie as a header so the server can use it.
-        // The server falls back to the owner env cookie if this header is absent.
+        // Inject the user's Freeroam cookie and accountId as headers.
+        // The server uses these to load the user's characters and scope their data.
         const userCookie = localStorage.getItem(COOKIE_STORAGE_KEY);
+        const accountId = localStorage.getItem(ACCOUNT_ID_STORAGE_KEY);
+        const headers: Record<string, string> = {};
         if (userCookie && userCookie.trim()) {
-          return { 'x-freeroam-cookie': userCookie.trim() };
+          headers['x-freeroam-cookie'] = userCookie.trim();
         }
-        return {};
+        if (accountId && accountId.trim()) {
+          headers['x-freeroam-account-id'] = accountId.trim();
+        }
+        return headers;
       },
       fetch(input, init) {
         return globalThis.fetch(input, {

@@ -112,7 +112,12 @@ export default function Home() {
         .map(c => c.external_id);
       initFromApi(savedFromApi);
     } catch (err) {
-      toast.error('Failed to load characters. Please refresh.');
+      const msg = err instanceof Error ? err.message : '';
+      if (msg.includes('401') || msg.includes('SESSION_EXPIRED') || msg.includes('Unauthorized')) {
+        toast.error('Your Freeroam session has expired. Please update your cookie in Settings.', { duration: 8000 });
+      } else {
+        toast.error('Failed to load characters. Please refresh.');
+      }
     } finally {
       setIsLoadingAll(false);
     }

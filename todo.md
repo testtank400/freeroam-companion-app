@@ -42,6 +42,15 @@
 - [x] Pass user cookie as x-freeroam-cookie header from tRPC client
 - [x] Server: read x-freeroam-cookie header, fall back to env cookie if absent
 - [x] Show empty roster prompt when user has no cookie set
+- [x] Add freeroam_users DB table (account_id, username, email, external_id)
+- [x] Migrate collections table: replace ownerOpenId with freeroamAccountId
+- [x] Migrate character_nsfw table: add freeroamAccountId column
+- [x] Add tRPC procedure: auth.verifyFreeroamCookie (calls /api/user/current, upserts freeroam_users)
+- [x] Update all DB helpers to use freeroamAccountId instead of ownerOpenId
+- [x] Update SettingsModal: verify cookie on save, store account_id in localStorage
+- [x] Update useFreeroamCookie hook to also store/retrieve account_id
+- [x] Fix collections leak: gate collections.list by account_id from localStorage header
+- [x] Handle cookie expiry: show 'Session expired' message when Freeroam returns 401
 - [ ] Headshot upload/linking for characters
 - [ ] Cover image upload/linking for collections (partially done - URL input works)
 - [ ] Advanced filtering options

@@ -1,10 +1,11 @@
 // SettingsModal.tsx
 // Settings panel for per-user Freeroam cookie configuration.
-// The cookie is stored in localStorage and sent as a header with each API request.
+// On save, calls verifySession to validate the cookie and get the user's accountId.
 // The cookie value is NEVER read back or displayed — only a status indicator is shown.
 
 import { useFreeroamCookie } from '@/hooks/useFreeroamCookie';
-import { CheckCircle, Settings, X, XCircle } from 'lucide-react';
+import { trpc } from '@/lib/trpc';
+import { CheckCircle, Loader2, Settings, User, X, XCircle } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
 interface SettingsModalProps {
@@ -13,17 +14,37 @@ interface SettingsModalProps {
 }
 
 export default function SettingsModal({ open, onClose }: SettingsModalProps) {
-  const { hasCookie, setCookie, clearCookie } = useFreeroamCookie();
+  const { hasCookie, identity, saveIdentity, clearCookie } = useFreeroamCookie();
   const [visible, setVisible] = useState(false);
   const [input, setInput] = useState('');
-  const [saved, setSaved] = useState(false);
+  const [status, setStatus] = useState<'idle' | 'verifying' | 'success' | 'error' | 'expired'>('idle');
+  const [errorMsg, setErrorMsg] = useState('');
   const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  const verifyMutation = trpc.freeroam.verifySession.useMutation({
+    onSuccess: (data) => {
+      saveIdentity(input.trim(), data.accountId, data.username);
+      setStatus('success');
+      setInput('');
+      // Reload so the new cookie + accountId take effect for all queries
+      setTimeout(() => window.location.reload(), 1000);
+    },
+    onError: (err) => {
+      if (err.message.includes('SESSION_EXPIRED')) {
+        setStatus('expired');
+      } else {
+        setStatus('error');
+        setErrorMsg(err.message);
+      }
+    },
+  });
 
   useEffect(() => {
     if (open) {
       requestAnimationFrame(() => setVisible(true));
       setInput('');
-      setSaved(false);
+      setStatus('idle');
+      setErrorMsg('');
       setTimeout(() => inputRef.current?.focus(), 100);
     } else {
       setVisible(false);
@@ -40,17 +61,16 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
 
   const handleSave = () => {
     if (!input.trim()) return;
-    setCookie(input.trim());
-    setInput('');
-    setSaved(true);
-    // Reload the page so the new cookie takes effect for all pending queries
-    setTimeout(() => window.location.reload(), 800);
+    setStatus('verifying');
+    setErrorMsg('');
+    verifyMutation.mutate({ cookie: input.trim() });
   };
 
   const handleClear = () => {
     clearCookie();
-    setSaved(false);
+    setStatus('idle');
     setInput('');
+    setTimeout(() => window.location.reload(), 300);
   };
 
   const handleBackdropClick = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -112,7 +132,7 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
               className="text-[11px] uppercase tracking-widest mb-1"
               style={{ fontFamily: 'Rajdhani, sans-serif', color: 'oklch(0.769 0.188 70.08)', fontWeight: 600 }}
             >
-              Freeroam Session Cookie
+              Freeroam Session
             </p>
 
             {/* Status indicator */}
@@ -136,16 +156,34 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
                 }}
               >
                 {hasCookie
-                  ? 'Cookie set — your Freeroam characters will load'
-                  : 'No cookie set — using site default (owner\'s characters)'}
+                  ? 'Session active'
+                  : 'No session — paste your cookie below to connect'}
               </span>
             </div>
+
+            {/* Identity info */}
+            {identity && (
+              <div
+                className="flex items-center gap-2 px-3 py-2 rounded-sm mb-3"
+                style={{ background: 'oklch(0.15 0.01 264)', border: '1px solid oklch(1 0 0 / 0.08)' }}
+              >
+                <User size={13} style={{ color: 'oklch(0.769 0.188 70.08)', flexShrink: 0 }} />
+                <div className="min-w-0">
+                  <p className="text-[11px] font-semibold truncate" style={{ fontFamily: 'Rajdhani, sans-serif', color: 'oklch(0.88 0.005 65)' }}>
+                    {identity.username}
+                  </p>
+                  <p className="text-[10px] truncate" style={{ fontFamily: 'JetBrains Mono, monospace', color: 'oklch(0.45 0.01 264)' }}>
+                    Account #{identity.accountId}
+                  </p>
+                </div>
+              </div>
+            )}
 
             <p
               className="text-[11px] leading-relaxed mb-3"
               style={{ fontFamily: 'JetBrains Mono, monospace', color: 'oklch(0.45 0.01 264)' }}
             >
-              Paste your Freeroam session cookie to load your own characters. Get it from your browser's DevTools → Application → Cookies → getfreeroam.com.
+              Paste your Freeroam session cookie to load your characters. Get it from DevTools → Application → Cookies → getfreeroam.com.
             </p>
 
             <textarea
@@ -154,7 +192,8 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
               onChange={(e) => setInput(e.target.value)}
               placeholder="Paste your Freeroam cookie here..."
               rows={3}
-              className="w-full rounded-sm px-3 py-2 text-[11px] resize-none outline-none transition-colors"
+              disabled={status === 'verifying'}
+              className="w-full rounded-sm px-3 py-2 text-[11px] resize-none outline-none transition-colors disabled:opacity-50"
               style={{
                 fontFamily: 'JetBrains Mono, monospace',
                 background: 'oklch(0.15 0.01 264)',
@@ -165,9 +204,28 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
               onBlur={(e) => (e.target.style.borderColor = 'oklch(1 0 0 / 0.1)')}
             />
 
-            {saved && (
-              <p className="mt-1 text-[11px]" style={{ fontFamily: 'JetBrains Mono, monospace', color: 'oklch(0.65 0.15 145)' }}>
-                ✓ Cookie saved — reloading...
+            {/* Status messages */}
+            {status === 'verifying' && (
+              <div className="flex items-center gap-1.5 mt-2">
+                <Loader2 size={11} className="animate-spin" style={{ color: 'oklch(0.769 0.188 70.08)' }} />
+                <p className="text-[11px]" style={{ fontFamily: 'JetBrains Mono, monospace', color: 'oklch(0.769 0.188 70.08)' }}>
+                  Verifying with Freeroam...
+                </p>
+              </div>
+            )}
+            {status === 'success' && (
+              <p className="mt-2 text-[11px]" style={{ fontFamily: 'JetBrains Mono, monospace', color: 'oklch(0.65 0.15 145)' }}>
+                ✓ Verified — reloading...
+              </p>
+            )}
+            {status === 'expired' && (
+              <p className="mt-2 text-[11px]" style={{ fontFamily: 'JetBrains Mono, monospace', color: 'oklch(0.65 0.22 25)' }}>
+                ✗ Session expired — please get a fresh cookie from Freeroam.
+              </p>
+            )}
+            {status === 'error' && (
+              <p className="mt-2 text-[11px]" style={{ fontFamily: 'JetBrains Mono, monospace', color: 'oklch(0.65 0.22 25)' }}>
+                ✗ {errorMsg || 'Verification failed — check your cookie and try again.'}
               </p>
             )}
           </div>
@@ -180,7 +238,7 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
         >
           <button
             onClick={handleClear}
-            disabled={!hasCookie}
+            disabled={!hasCookie || status === 'verifying'}
             className="px-3 py-1.5 rounded-sm text-xs font-semibold tracking-wider uppercase transition-all disabled:opacity-30"
             style={{
               fontFamily: 'Rajdhani, sans-serif',
@@ -189,12 +247,13 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
               color: 'oklch(0.65 0.22 25)',
             }}
           >
-            Clear Cookie
+            Disconnect
           </button>
           <div className="flex gap-2">
             <button
               onClick={onClose}
-              className="px-4 py-1.5 rounded-sm text-xs font-semibold tracking-wider uppercase transition-all"
+              disabled={status === 'verifying'}
+              className="px-4 py-1.5 rounded-sm text-xs font-semibold tracking-wider uppercase transition-all disabled:opacity-50"
               style={{
                 fontFamily: 'Rajdhani, sans-serif',
                 background: 'transparent',
@@ -206,7 +265,7 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
             </button>
             <button
               onClick={handleSave}
-              disabled={!input.trim()}
+              disabled={!input.trim() || status === 'verifying'}
               className="px-4 py-1.5 rounded-sm text-xs font-semibold tracking-wider uppercase transition-all disabled:opacity-40 hover:brightness-110"
               style={{
                 fontFamily: 'Rajdhani, sans-serif',
@@ -215,7 +274,7 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
                 color: 'oklch(0.769 0.188 70.08)',
               }}
             >
-              Save Cookie
+              {status === 'verifying' ? 'Verifying...' : 'Connect'}
             </button>
           </div>
         </div>

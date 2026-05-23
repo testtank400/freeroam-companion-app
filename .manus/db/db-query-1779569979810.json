@@ -1,0 +1,9 @@
+{
+  "query": "UPDATE collections SET freeroamAccountId = 113027 WHERE freeroamAccountId = 0; UPDATE character_nsfw SET freeroamAccountId = 113027 WHERE freeroamAccountId = 0;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway06.us-east-1.prod.aws.tidbcloud.com --port 4000 --user o5X5dUuHaxxkex7.root --database cxwoV3UVdPSrRocF96aWqA --execute UPDATE collections SET freeroamAccountId = 113027 WHERE freeroamAccountId = 0; UPDATE character_nsfw SET freeroamAccountId = 113027 WHERE freeroamAccountId = 0;",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 271
+}

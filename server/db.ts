@@ -1,6 +1,6 @@
 import { and, eq, inArray } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { characterExtended, characterNsfw, collectionMembers, collections, InsertUser, users } from "../drizzle/schema";
+import { characterExtended, characterNsfw, collectionMembers, collections, freeroamUsers, InsertUser, users } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -89,17 +89,40 @@ export async function getUserByOpenId(openId: string) {
   return result.length > 0 ? result[0] : undefined;
 }
 
+// ─── Freeroam User Identity ────────────────────────────────────────────────────
+
+/** Upsert a Freeroam user record by their stable account_id. Returns the record. */
+export async function upsertFreeroamUser(
+  accountId: number,
+  username: string,
+  email?: string | null,
+  externalId?: string | null
+) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  await db
+    .insert(freeroamUsers)
+    .values({ accountId, username, email: email ?? null, externalId: externalId ?? null })
+    .onDuplicateKeyUpdate({
+      set: { username, email: email ?? null, externalId: externalId ?? null, updatedAt: new Date() },
+    });
+
+  const rows = await db.select().from(freeroamUsers).where(eq(freeroamUsers.accountId, accountId)).limit(1);
+  return rows[0];
+}
+
 // ─── Collections ────────────────────────────────────────────────────────────
 
-/** Return all collections owned by a given openId, with their member characterIds. */
-export async function getCollectionsByOwner(ownerOpenId: string) {
+/** Return all collections owned by a given Freeroam accountId, with their member characterIds. */
+export async function getCollectionsByAccountId(freeroamAccountId: number) {
   const db = await getDb();
   if (!db) return [];
 
   const cols = await db
     .select()
     .from(collections)
-    .where(eq(collections.ownerOpenId, ownerOpenId))
+    .where(eq(collections.freeroamAccountId, freeroamAccountId))
     .orderBy(collections.createdAt);
 
   if (cols.length === 0) return [];
@@ -120,7 +143,7 @@ export async function getCollectionsByOwner(ownerOpenId: string) {
 
 /** Create a new collection and return it (with empty characterIds). */
 export async function createCollection(
-  ownerOpenId: string,
+  freeroamAccountId: number,
   name: string,
   description?: string,
   coverImage?: string
@@ -130,7 +153,7 @@ export async function createCollection(
 
   const [result] = await db
     .insert(collections)
-    .values({ ownerOpenId, name, description: description ?? null, coverImage: coverImage ?? null });
+    .values({ freeroamAccountId, name, description: description ?? null, coverImage: coverImage ?? null });
 
   const id = (result as { insertId: number }).insertId;
   const rows = await db.select().from(collections).where(eq(collections.id, id)).limit(1);
@@ -140,7 +163,7 @@ export async function createCollection(
 /** Update collection metadata (name, description, coverImage). */
 export async function updateCollection(
   id: number,
-  ownerOpenId: string,
+  freeroamAccountId: number,
   updates: { name?: string; description?: string | null; coverImage?: string | null }
 ) {
   const db = await getDb();
@@ -149,13 +172,13 @@ export async function updateCollection(
   await db
     .update(collections)
     .set({ ...updates, updatedAt: new Date() })
-    .where(and(eq(collections.id, id), eq(collections.ownerOpenId, ownerOpenId)));
+    .where(and(eq(collections.id, id), eq(collections.freeroamAccountId, freeroamAccountId)));
 
   return true;
 }
 
 /** Delete a collection and all its members. */
-export async function deleteCollection(id: number, ownerOpenId: string) {
+export async function deleteCollection(id: number, freeroamAccountId: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
@@ -164,7 +187,7 @@ export async function deleteCollection(id: number, ownerOpenId: string) {
     .where(eq(collectionMembers.collectionId, id));
   await db
     .delete(collections)
-    .where(and(eq(collections.id, id), eq(collections.ownerOpenId, ownerOpenId)));
+    .where(and(eq(collections.id, id), eq(collections.freeroamAccountId, freeroamAccountId)));
 
   return true;
 }
@@ -260,23 +283,23 @@ export async function upsertCharacterExtended(
 
 // ─── Character NSFW Flags ────────────────────────────────────────────────────
 
-/** Get NSFW status for a single character. Returns false if not found (default SFW). */
-export async function getCharacterNsfw(characterId: string): Promise<boolean> {
+/** Get NSFW status for a single character for a specific user. Returns false if not found (default SFW). */
+export async function getCharacterNsfw(characterId: string, freeroamAccountId: number): Promise<boolean> {
   const db = await getDb();
   if (!db) return false;
 
   const rows = await db
     .select()
     .from(characterNsfw)
-    .where(eq(characterNsfw.characterId, characterId))
+    .where(and(eq(characterNsfw.characterId, characterId), eq(characterNsfw.freeroamAccountId, freeroamAccountId)))
     .limit(1);
 
   return rows.length > 0 ? rows[0].isNsfw === 1 : false;
 }
 
-/** Get NSFW status for multiple characters at once. Returns a map of characterId -> boolean.
+/** Get NSFW status for multiple characters at once for a specific user. Returns a map of characterId -> boolean.
  * Chunks large arrays into batches of 500 to avoid MySQL IN clause limits. */
-export async function getCharactersNsfw(characterIds: string[]): Promise<Record<string, boolean>> {
+export async function getCharactersNsfw(characterIds: string[], freeroamAccountId: number): Promise<Record<string, boolean>> {
   if (characterIds.length === 0) return {};
   const db = await getDb();
   if (!db) return {};
@@ -289,7 +312,7 @@ export async function getCharactersNsfw(characterIds: string[]): Promise<Record<
     const rows = await db
       .select()
       .from(characterNsfw)
-      .where(inArray(characterNsfw.characterId, chunk));
+      .where(and(inArray(characterNsfw.characterId, chunk), eq(characterNsfw.freeroamAccountId, freeroamAccountId)));
     for (const row of rows) {
       result[row.characterId] = row.isNsfw === 1;
     }
@@ -298,17 +321,17 @@ export async function getCharactersNsfw(characterIds: string[]): Promise<Record<
   return result;
 }
 
-/** Toggle the NSFW flag for a character. Returns the new value. */
-export async function toggleCharacterNsfw(characterId: string): Promise<boolean> {
+/** Toggle the NSFW flag for a character for a specific user. Returns the new value. */
+export async function toggleCharacterNsfw(characterId: string, freeroamAccountId: number): Promise<boolean> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
-  const current = await getCharacterNsfw(characterId);
+  const current = await getCharacterNsfw(characterId, freeroamAccountId);
   const newValue = current ? 0 : 1;
 
   await db
     .insert(characterNsfw)
-    .values({ characterId, isNsfw: newValue })
+    .values({ characterId, freeroamAccountId, isNsfw: newValue })
     .onDuplicateKeyUpdate({ set: { isNsfw: newValue, updatedAt: new Date() } });
 
   return newValue === 1;
