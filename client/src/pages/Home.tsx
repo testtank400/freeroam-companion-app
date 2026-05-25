@@ -225,9 +225,46 @@ export default function Home() {
     }
   };
 
-  const handleCharacterSaved = (_character: ApiCharacter, _mode: 'create' | 'edit') => {
-    // Always do a full list refresh so the roster reflects the latest data from Freeroam
-    fetchAll(sort);
+  const handleCharacterSaved = async (character: ApiCharacter, mode: 'create' | 'edit') => {
+    if (mode === 'create') {
+      // New character: full refresh to get server-assigned IDs and library metadata
+      fetchAll(sort);
+      return;
+    }
+    // Edit or duplicate: fetch only the updated character and patch/prepend in-place
+    try {
+      const updated = await utils.characters.get.fetch({ characterId: character.external_id });
+      const patched: ApiCharacter = {
+        external_id: updated.external_id,
+        name: updated.name,
+        backstory: updated.backstory ?? null,
+        description: updated.description ?? null,
+        headshot_url: updated.headshot_url ?? null,
+        display_headshot_url: updated.display_headshot_url ?? null,
+        is_persona: false,
+        owner: { username: updated.owner?.username ?? character.owner.username, display_name: updated.owner?.display_name ?? character.owner.display_name },
+        privacy_status: updated.privacy_status,
+        // Preserve library-only fields from the existing entry
+        is_saved: character.is_saved,
+        tags: character.tags,
+        creator_username: character.creator_username,
+        created_at: character.created_at,
+        is_yours: character.is_yours,
+      };
+      setAllCharacters(prev => {
+        const exists = prev.some(c => c.external_id === patched.external_id);
+        if (exists) {
+          // Edit: patch in-place
+          return prev.map(c => c.external_id === patched.external_id ? patched : c);
+        } else {
+          // Duplicate: prepend to top
+          return [patched, ...prev];
+        }
+      });
+    } catch {
+      // Fallback to full refresh if single-character fetch fails
+      fetchAll(sort);
+    }
   };
 
   return (
