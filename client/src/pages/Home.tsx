@@ -233,6 +233,9 @@ export default function Home() {
     }
     // Edit or duplicate: fetch only the updated character and patch/prepend in-place
     try {
+      // Invalidate the cached single-character query so the profile modal shows fresh data
+      await utils.characters.get.invalidate({ characterId: character.external_id });
+      await utils.characters.getExtended.invalidate({ characterId: character.external_id });
       const updated = await utils.characters.get.fetch({ characterId: character.external_id });
       const patched: ApiCharacter = {
         external_id: updated.external_id,
