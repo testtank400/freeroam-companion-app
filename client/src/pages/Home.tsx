@@ -149,6 +149,8 @@ export default function Home() {
   const { isSaved, toggleSave, initFromApi } = useSavedCharacters();
   const { collections, createCollection, renameCollection, updateCollection, deleteCollection, toggleInCollection, isInCollection } = useCollections();
   const [activeCollectionId, setActiveCollectionId] = useState<number | null>(null);
+  // When viewing sub-collections of a parent, this tracks the parent collection ID
+  const [activeParentCollectionId, setActiveParentCollectionId] = useState<number | null>(null);
   const [editingCollection, setEditingCollection] = useState<Collection | null>(null);
   const [deletingCollection, setDeletingCollection] = useState<Collection | null>(null);
   const [showNewCollectionModal, setShowNewCollectionModal] = useState(false);
@@ -634,47 +636,109 @@ export default function Home() {
       {/* Main content */}
       <main className="container py-4 sm:py-8">
 
-        {/* Collections section — only shown when NOT in collection view */}
+        {/* Collections section — only shown when NOT in character-collection view */}
         {!activeCollectionId && (
           <div className="mb-8">
-            <div className="mb-3">
-              <span
-                className="text-[10px] uppercase tracking-[0.2em]"
-                style={{ fontFamily: 'Rajdhani, sans-serif', color: 'oklch(0.4 0.01 264)', fontWeight: 600 }}
-              >
-                Collections
-              </span>
+            {/* Header row: label + back button (when in sub-collection view) + add sub-collection */}
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                {activeParentCollectionId && (
+                  <button
+                    onClick={() => setActiveParentCollectionId(null)}
+                    className="w-6 h-6 flex items-center justify-center rounded-sm transition-colors hover:bg-white/10"
+                    style={{ background: 'oklch(0.769 0.188 70.08 / 0.12)', border: '1px solid oklch(0.769 0.188 70.08 / 0.3)', color: 'oklch(0.769 0.188 70.08)' }}
+                    title="Back to collections"
+                  >
+                    <ArrowLeft size={12} strokeWidth={2} />
+                  </button>
+                )}
+                <span
+                  className="text-[10px] uppercase tracking-[0.2em]"
+                  style={{ fontFamily: 'Rajdhani, sans-serif', color: 'oklch(0.4 0.01 264)', fontWeight: 600 }}
+                >
+                  {activeParentCollectionId
+                    ? `${collections.find(c => c.id === activeParentCollectionId)?.name ?? 'Collection'} › Sub-collections`
+                    : 'Collections'}
+                </span>
+              </div>
+              {activeParentCollectionId && (
+                <button
+                  onClick={() => {
+                    // Create a sub-collection under the active parent
+                    setShowNewCollectionModal(true);
+                  }}
+                  className="flex items-center gap-1 text-[10px] font-semibold tracking-wider uppercase transition-all hover:brightness-110"
+                  style={{ fontFamily: 'Rajdhani, sans-serif', color: 'oklch(0.769 0.188 70.08)', background: 'none', border: 'none' }}
+                >
+                  <Plus size={11} strokeWidth={2.5} />
+                  New Sub-collection
+                </button>
+              )}
             </div>
 
-            {collections.length === 0 ? (
-              <button
-                onClick={() => setShowNewCollectionModal(true)}
-                className="flex items-center gap-2 px-4 py-3 rounded-sm w-full transition-all hover:brightness-110"
-                style={{
-                  background: 'oklch(0.13 0.01 264)',
-                  border: '1px dashed oklch(1 0 0 / 0.12)',
-                  color: 'oklch(0.4 0.01 264)',
-                  fontFamily: 'JetBrains Mono, monospace',
-                  fontSize: '12px',
-                }}
-              >
-                <span style={{ fontSize: 18 }}>📁</span>
-                No collections yet — click to create one
-              </button>
-            ) : (
-              <div className="grid grid-cols-1 min-[400px]:grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-4">
-                {collections.map(col => (
-                  <CollectionCard
-                    key={col.id}
-                    collection={col}
-                    characters={allCharacters.filter(c => col.characterIds.includes(c.external_id))}
-                    onClick={(c) => setActiveCollectionId(c.id as number)}
-                    onEdit={(c) => setEditingCollection(c)}
-                    onDelete={(c) => setDeletingCollection(c)}
-                  />
-                ))}
-              </div>
-            )}
+            {(() => {
+              // Determine which collections to show
+              const topLevel = collections.filter(c => !c.parentId);
+              const subCollections = activeParentCollectionId
+                ? collections.filter(c => c.parentId === activeParentCollectionId)
+                : [];
+              const displayCollections = activeParentCollectionId ? subCollections : topLevel;
+
+              if (displayCollections.length === 0 && !activeParentCollectionId) {
+                return (
+                  <button
+                    onClick={() => setShowNewCollectionModal(true)}
+                    className="flex items-center gap-2 px-4 py-3 rounded-sm w-full transition-all hover:brightness-110"
+                    style={{
+                      background: 'oklch(0.13 0.01 264)',
+                      border: '1px dashed oklch(1 0 0 / 0.12)',
+                      color: 'oklch(0.4 0.01 264)',
+                      fontFamily: 'JetBrains Mono, monospace',
+                      fontSize: '12px',
+                    }}
+                  >
+                    <span style={{ fontSize: 18 }}>📁</span>
+                    No collections yet — click to create one
+                  </button>
+                );
+              }
+
+              if (displayCollections.length === 0 && activeParentCollectionId) {
+                return (
+                  <p className="text-[12px] py-4" style={{ fontFamily: 'JetBrains Mono, monospace', color: 'oklch(0.35 0.01 264)' }}>
+                    No sub-collections yet. Click "New Sub-collection" to add one.
+                  </p>
+                );
+              }
+
+              return (
+                <div className="grid grid-cols-1 min-[400px]:grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-4">
+                  {displayCollections.map(col => {
+                    const hasSubCollections = collections.some(c => c.parentId === col.id);
+                    const subCount = collections.filter(c => c.parentId === col.id).length;
+                    return (
+                      <CollectionCard
+                        key={col.id}
+                        collection={col}
+                        characters={allCharacters.filter(c => col.characterIds.includes(c.external_id))}
+                        subCollectionCount={hasSubCollections ? subCount : 0}
+                        onClick={(c) => {
+                          if (hasSubCollections) {
+                            // Drill into sub-collections
+                            setActiveParentCollectionId(c.id as number);
+                          } else {
+                            // Filter characters by this collection
+                            setActiveCollectionId(c.id as number);
+                          }
+                        }}
+                        onEdit={(c) => setEditingCollection(c)}
+                        onDelete={(c) => setDeletingCollection(c)}
+                      />
+                    );
+                  })}
+                </div>
+              );
+            })()}
           </div>
         )}
 
@@ -1151,7 +1215,8 @@ export default function Home() {
             updateCollection(editingCollection.id as number, { name, coverImage, description });
           } else {
             // Pass all fields in one shot so the image is saved atomically
-            await createCollection(name, coverImage, description);
+            // If we're inside a parent collection view, create as a sub-collection
+            await createCollection(name, coverImage, description, activeParentCollectionId ?? null);
           }
         }}
       />

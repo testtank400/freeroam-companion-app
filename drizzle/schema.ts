@@ -51,6 +51,8 @@ export const collections = mysqlTable("collections", {
   id: int("id").autoincrement().primaryKey(),
   /** Freeroam account_id — permanent identity key for the collection owner */
   freeroamAccountId: int("freeroamAccountId").notNull(),
+  /** Parent collection ID for sub-collections (null = top-level collection) */
+  parentId: int("parentId"),
   name: varchar("name", { length: 255 }).notNull(),
   description: text("description"),
   coverImage: text("coverImage"),

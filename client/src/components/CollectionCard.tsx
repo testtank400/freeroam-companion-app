@@ -10,6 +10,7 @@ import { FolderOpen, Pencil, Trash2 } from 'lucide-react';
 interface CollectionCardProps {
   collection: Collection;
   characters: ApiCharacter[]; // characters in this collection
+  subCollectionCount?: number; // number of sub-collections (0 = no sub-collections)
   onClick: (collection: Collection) => void;
   onEdit: (collection: Collection) => void;
   onDelete: (collection: Collection) => void;
@@ -38,7 +39,7 @@ function HeadshotGrid({ characters }: { characters: ApiCharacter[] }) {
   );
 }
 
-export default function CollectionCard({ collection, characters, onClick, onEdit, onDelete }: CollectionCardProps) {
+export default function CollectionCard({ collection, characters, subCollectionCount = 0, onClick, onEdit, onDelete }: CollectionCardProps) {
   const hasCover = !!collection.coverImage;
   const coverImageSrc = collection.coverImage ?? undefined;
 
@@ -134,7 +135,9 @@ export default function CollectionCard({ collection, characters, onClick, onEdit
               color: 'oklch(0.55 0.01 264)',
             }}
           >
-            {characters.length} character{characters.length !== 1 ? 's' : ''}
+            {subCollectionCount > 0
+              ? `${subCollectionCount} sub-collection${subCollectionCount !== 1 ? 's' : ''}`
+              : `${characters.length} character${characters.length !== 1 ? 's' : ''}`}
           </p>
         </div>
       </div>

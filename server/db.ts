@@ -146,14 +146,15 @@ export async function createCollection(
   freeroamAccountId: number,
   name: string,
   description?: string,
-  coverImage?: string
+  coverImage?: string,
+  parentId?: number | null
 ) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
   const [result] = await db
     .insert(collections)
-    .values({ freeroamAccountId, name, description: description ?? null, coverImage: coverImage ?? null });
+    .values({ freeroamAccountId, name, description: description ?? null, coverImage: coverImage ?? null, parentId: parentId ?? null });
 
   const id = (result as { insertId: number }).insertId;
   const rows = await db.select().from(collections).where(eq(collections.id, id)).limit(1);

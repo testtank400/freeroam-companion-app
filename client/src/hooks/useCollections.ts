@@ -12,6 +12,7 @@ export interface Collection {
   characterIds: string[];
   createdAt: Date;
   coverImage?: string | null;
+  parentId?: number | null; // null = top-level collection
 }
 
 export function useCollections() {
@@ -42,11 +43,12 @@ export function useCollections() {
 
   // Create a new collection (with optional cover image and description)
   const createCollection = useCallback(
-    async (name: string, coverImage?: string, description?: string): Promise<Collection> => {
+    async (name: string, coverImage?: string, description?: string, parentId?: number | null): Promise<Collection> => {
       const result = await createMutation.mutateAsync({
         name,
         coverImage: coverImage ?? undefined,
         description: description ?? undefined,
+        parentId: parentId ?? null,
       });
       return result as Collection;
     },

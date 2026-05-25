@@ -616,6 +616,7 @@ export const appRouter = router({
           name: z.string().min(1).max(255),
           description: z.string().optional(),
           coverImage: z.string().optional(),
+          parentId: z.number().nullable().optional(),
         })
       )
       .mutation(async ({ input, ctx }) => {
@@ -625,7 +626,8 @@ export const appRouter = router({
           accountId,
           input.name,
           input.description,
-          input.coverImage
+          input.coverImage,
+          input.parentId
         );
       }),
 
