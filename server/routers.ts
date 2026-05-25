@@ -169,24 +169,35 @@ export const appRouter = router({
         const cookie = getFreeroamCookie(ctx);
         if (!cookie) throw new Error("Cookie not configured in environment");
 
-        const response = await fetch(
-          "https://getfreeroam.com/api/characters/library?page=1&limit=18&filter=",
-          {
-            headers: {
-              accept: "*/*",
-              "accept-language": "en-US,en;q=0.9",
-              cookie: cookie,
-              origin: "https://getfreeroam.com",
-              referer: "https://getfreeroam.com",
-              "user-agent":
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36",
-            },
+        // Retry up to 3 times with exponential backoff for 429 rate limit errors
+        let response: Response | null = null;
+        for (let attempt = 0; attempt < 3; attempt++) {
+          if (attempt > 0) {
+            await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, attempt - 1)));
           }
-        );
+          response = await fetch(
+            "https://getfreeroam.com/api/characters/library?page=1&limit=18&filter=",
+            {
+              headers: {
+                accept: "*/*",
+                "accept-language": "en-US,en;q=0.9",
+                cookie: cookie,
+                origin: "https://getfreeroam.com",
+                referer: "https://getfreeroam.com",
+                "user-agent":
+                  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36",
+              },
+            }
+          );
+          if (response.status !== 429) break;
+        }
 
-        if (!response.ok) {
-          const text = await response.text();
-          throw new Error(`Library fetch failed (${response.status}): ${text}`);
+        if (!response || !response.ok) {
+          const text = response ? await response.text() : 'No response';
+          if (response?.status === 429) {
+            throw new Error(`Rate limit exceeded. Please wait a moment and try again.`);
+          }
+          throw new Error(`Library fetch failed (${response?.status}): ${text}`);
         }
 
         const data = await response.json() as {

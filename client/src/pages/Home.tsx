@@ -115,6 +115,10 @@ export default function Home() {
       const msg = err instanceof Error ? err.message : '';
       if (msg.includes('401') || msg.includes('SESSION_EXPIRED') || msg.includes('Unauthorized')) {
         toast.error('Your Freeroam session has expired. Please update your cookie in Settings.', { duration: 8000 });
+      } else if (msg.includes('429') || msg.includes('Rate limit') || msg.includes('rate limit')) {
+        toast.error('Freeroam rate limit hit. Retrying automatically in a few seconds...', { duration: 5000 });
+        // Auto-retry after 5 seconds
+        setTimeout(() => fetchAll(sort), 5000);
       } else {
         toast.error('Failed to load characters. Please refresh.');
       }
