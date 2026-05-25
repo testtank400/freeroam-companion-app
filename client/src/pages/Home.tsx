@@ -302,13 +302,15 @@ export default function Home() {
             <button
               onClick={() => {
                 setSelectedIds(new Set());
-                // If this is a sub-collection, go back to the parent's sub-collections view
                 if (activeCollection.parentId) {
+                  // Sub-collection: go back to the parent collection view
+                  setActiveCollectionId(activeCollection.parentId);
                   setActiveParentCollectionId(activeCollection.parentId);
                 } else {
+                  // Top-level collection: go back to main screen
+                  setActiveCollectionId(null);
                   setActiveParentCollectionId(null);
                 }
-                setActiveCollectionId(null);
               }}
               className="w-8 h-8 flex items-center justify-center rounded-sm transition-colors hover:bg-white/10"
               style={{
@@ -758,38 +760,26 @@ export default function Home() {
 
 
 
-        {/* Sub-collections strip — shown when viewing a parent collection that has sub-collections */}
+        {/* Sub-collections grid — shown when viewing a parent collection that has sub-collections */}
         {activeCollectionId && activeParentCollectionId && (() => {
           const subCols = collections.filter(c => c.parentId === activeParentCollectionId);
           if (subCols.length === 0) return null;
           return (
-            <div className="mb-5">
-              <div className="flex items-center gap-2 mb-2">
+            <div className="mb-8">
+              <div className="flex items-center justify-between mb-3">
                 <span className="text-[10px] uppercase tracking-[0.2em]" style={{ fontFamily: 'Rajdhani, sans-serif', color: 'oklch(0.4 0.01 264)', fontWeight: 600 }}>Sub-collections</span>
               </div>
-              <div className="flex gap-2 flex-wrap">
-                {subCols.map(sub => {
-                  const isActive = activeCollectionId === sub.id;
-                  const charCount = allCharacters.filter(c => sub.characterIds.includes(c.external_id)).length;
-                  return (
-                    <button
-                      key={sub.id}
-                      onClick={() => setActiveCollectionId(sub.id)}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-sm text-[11px] font-semibold tracking-wide uppercase transition-all hover:brightness-110"
-                      style={{
-                        fontFamily: 'Rajdhani, sans-serif',
-                        background: isActive ? 'oklch(0.769 0.188 70.08 / 0.15)' : 'oklch(0.15 0.01 264)',
-                        border: isActive ? '1px solid oklch(0.769 0.188 70.08 / 0.45)' : '1px solid oklch(1 0 0 / 0.08)',
-                        color: isActive ? 'oklch(0.769 0.188 70.08)' : 'oklch(0.55 0.01 264)',
-                      }}
-                    >
-                      {sub.name}
-                      <span className="inline-flex items-center justify-center rounded-sm px-1 min-w-[16px] h-[14px] text-[9px] font-bold" style={{ fontFamily: 'JetBrains Mono, monospace', background: 'oklch(1 0 0 / 0.12)', color: 'inherit' }}>
-                        {charCount}
-                      </span>
-                    </button>
-                  );
-                })}
+              <div className="grid grid-cols-1 min-[400px]:grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-4">
+                {subCols.map(sub => (
+                  <CollectionCard
+                    key={sub.id}
+                    collection={sub}
+                    characters={allCharacters.filter(c => sub.characterIds.includes(c.external_id))}
+                    onClick={(c) => setActiveCollectionId(c.id as number)}
+                    onEdit={(c) => setEditingCollection(c)}
+                    onDelete={(c) => setDeletingCollection(c)}
+                  />
+                ))}
               </div>
             </div>
           );
