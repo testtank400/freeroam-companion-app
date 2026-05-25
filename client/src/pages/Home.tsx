@@ -296,14 +296,23 @@ export default function Home() {
           {/* Back button when in collection view */}
           {activeCollection ? (
             <button
-              onClick={() => { setActiveCollectionId(null); setSelectedIds(new Set()); }}
+              onClick={() => {
+                setSelectedIds(new Set());
+                // If this is a sub-collection, go back to the parent's sub-collections view
+                if (activeCollection.parentId) {
+                  setActiveParentCollectionId(activeCollection.parentId);
+                } else {
+                  setActiveParentCollectionId(null);
+                }
+                setActiveCollectionId(null);
+              }}
               className="w-8 h-8 flex items-center justify-center rounded-sm transition-colors hover:bg-white/10"
               style={{
                 background: 'oklch(0.769 0.188 70.08 / 0.12)',
                 border: '1px solid oklch(0.769 0.188 70.08 / 0.3)',
                 color: 'oklch(0.769 0.188 70.08)',
               }}
-              title="Back to roster"
+              title={activeCollection.parentId ? 'Back to sub-collections' : 'Back to roster'}
             >
               <ArrowLeft size={16} strokeWidth={2} />
             </button>
@@ -1210,13 +1219,15 @@ export default function Home() {
         open={showNewCollectionModal || !!editingCollection}
         onClose={() => { setShowNewCollectionModal(false); setEditingCollection(null); }}
         collection={editingCollection}
-        onSave={async (name, coverImage, description) => {
+        allCollections={collections}
+        onSave={async (name, coverImage, description, parentId) => {
           if (editingCollection) {
-            updateCollection(editingCollection.id as number, { name, coverImage, description });
+            updateCollection(editingCollection.id as number, { name, coverImage, description, parentId });
           } else {
             // Pass all fields in one shot so the image is saved atomically
-            // If we're inside a parent collection view, create as a sub-collection
-            await createCollection(name, coverImage, description, activeParentCollectionId ?? null);
+            // parentId from the modal takes precedence; fall back to activeParentCollectionId
+            const resolvedParentId = parentId !== undefined ? parentId : (activeParentCollectionId ?? null);
+            await createCollection(name, coverImage, description, resolvedParentId);
           }
         }}
       />

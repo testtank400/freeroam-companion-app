@@ -161,11 +161,11 @@ export async function createCollection(
   return { ...rows[0], characterIds: [] as string[] };
 }
 
-/** Update collection metadata (name, description, coverImage). */
+/** Update collection metadata (name, description, coverImage, parentId). */
 export async function updateCollection(
   id: number,
   freeroamAccountId: number,
-  updates: { name?: string; description?: string | null; coverImage?: string | null }
+  updates: { name?: string; description?: string | null; coverImage?: string | null; parentId?: number | null }
 ) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");

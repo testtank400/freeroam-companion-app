@@ -63,14 +63,15 @@ export function useCollections() {
     [updateMutation]
   );
 
-  // Update collection metadata (name, coverImage, description)
+  // Update collection metadata (name, coverImage, description, parentId)
   const updateCollection = useCallback(
-    (id: number, updates: Partial<Pick<Collection, "name" | "coverImage" | "description">>) => {
+    (id: number, updates: Partial<Pick<Collection, "name" | "coverImage" | "description" | "parentId">>) => {
       updateMutation.mutate({
         id,
         name: updates.name,
         coverImage: updates.coverImage ?? null,
         description: updates.description ?? null,
+        parentId: updates.parentId !== undefined ? (updates.parentId ?? null) : undefined,
       });
     },
     [updateMutation]

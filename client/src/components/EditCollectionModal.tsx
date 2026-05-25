@@ -13,7 +13,9 @@ interface EditCollectionModalProps {
   onClose: () => void;
   /** When provided, editing an existing collection; otherwise creating new */
   collection?: Collection | null;
-  onSave: (name: string, coverImage?: string, description?: string) => void;
+  /** All collections, used to populate the Parent Collection dropdown */
+  allCollections?: Collection[];
+  onSave: (name: string, coverImage?: string, description?: string, parentId?: number | null) => void;
 }
 
 const FIELD_STYLE = {
@@ -39,12 +41,13 @@ const LABEL_STYLE = {
   marginBottom: '6px',
 };
 
-export default function EditCollectionModal({ open, onClose, collection, onSave }: EditCollectionModalProps) {
+export default function EditCollectionModal({ open, onClose, collection, allCollections = [], onSave }: EditCollectionModalProps) {
   const isEditing = !!collection;
   const [visible, setVisible] = useState(false);
   const [name, setName] = useState('');
   const [coverUrl, setCoverUrl] = useState('');
   const [description, setDescription] = useState('');
+  const [parentId, setParentId] = useState<number | null>(null);
   const [coverMode, setCoverMode] = useState<'url' | 'upload'>('url');
   const [uploadPreview, setUploadPreview] = useState<string | null>(null);
   const [uploadedCoverUrl, setUploadedCoverUrl] = useState<string | null>(null);
@@ -57,6 +60,7 @@ export default function EditCollectionModal({ open, onClose, collection, onSave 
       setName(collection?.name ?? '');
       setDescription(collection?.description ?? '');
       setCoverUrl(collection?.coverImage ?? '');
+      setParentId(collection?.parentId ?? null);
       setCoverMode('url');
       setUploadPreview(null);
       setUploadedCoverUrl(null);
@@ -124,7 +128,7 @@ export default function EditCollectionModal({ open, onClose, collection, onSave 
     if (!name.trim()) { toast.error('Collection name is required'); return; }
     // Use the S3 URL for uploaded files, or the pasted URL for URL mode
     const finalCover = coverMode === 'url' ? coverUrl.trim() || undefined : (uploadedCoverUrl ?? undefined);
-    onSave(name.trim(), finalCover, description.trim() || undefined);
+    onSave(name.trim(), finalCover, description.trim() || undefined, parentId);
     handleClose();
   };
 
@@ -191,6 +195,27 @@ export default function EditCollectionModal({ open, onClose, collection, onSave 
                 onBlur={(e) => (e.target.style.borderColor = 'oklch(1 0 0 / 0.1)')}
               />
             </div>
+
+            {/* Parent Collection */}
+            {allCollections.filter(c => !c.parentId && c.id !== collection?.id).length > 0 && (
+              <div>
+                <label style={LABEL_STYLE}>Parent Collection <span style={{ opacity: 0.5, fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>(optional)</span></label>
+                <select
+                  value={parentId ?? ''}
+                  onChange={(e) => setParentId(e.target.value ? Number(e.target.value) : null)}
+                  style={{ ...FIELD_STYLE, cursor: 'pointer' }}
+                  onFocus={(e) => (e.target.style.borderColor = 'oklch(0.769 0.188 70.08 / 0.5)')}
+                  onBlur={(e) => (e.target.style.borderColor = 'oklch(1 0 0 / 0.1)')}
+                >
+                  <option value="">None (top-level collection)</option>
+                  {allCollections
+                    .filter(c => !c.parentId && c.id !== collection?.id)
+                    .map(c => (
+                      <option key={c.id} value={c.id}>{c.name}</option>
+                    ))}
+                </select>
+              </div>
+            )}
 
             {/* Description */}
             <div>
