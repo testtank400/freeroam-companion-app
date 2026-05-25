@@ -371,9 +371,11 @@ export default function Home() {
           </div>
         </div>
 
-        <div className="flex items-center gap-1.5 sm:gap-2 flex-shrink-0 sm:ml-auto">
-          {/* Search bar */}
-          <div className="relative flex items-center flex-1 sm:flex-none">
+        {/* On mobile: search on its own row below buttons. On sm+: all in one row */}
+        <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-2 sm:ml-auto">
+
+          {/* Search bar — full width on mobile, fixed width on sm+ */}
+          <div className="relative flex items-center w-full sm:w-48 order-last sm:order-first">
             <Search
               size={13}
               strokeWidth={2}
@@ -385,7 +387,7 @@ export default function Home() {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder={isFetching && !searchQuery ? 'Loading more...' : 'Search...'}
-              className="pl-8 pr-7 py-1.5 rounded-sm text-xs flex-1 sm:flex-none sm:w-48 transition-all min-w-0"
+              className="pl-8 pr-7 py-1.5 rounded-sm text-xs w-full transition-all"
               style={{
                 fontFamily: 'JetBrains Mono, monospace',
                 background: 'oklch(0.15 0.01 264)',
@@ -407,6 +409,9 @@ export default function Home() {
               </button>
             )}
           </div>
+
+          {/* Icon buttons row — always on first row */}
+          <div className="flex items-center gap-1.5 sm:gap-2 flex-shrink-0">
 
           {/* Sort dropdown */}
           <div ref={sortDropdownRef} className="relative">
@@ -563,6 +568,7 @@ export default function Home() {
                     </button>
                   </div>
                 )}
+          </div>
           </div>
         </div>
         </div>
