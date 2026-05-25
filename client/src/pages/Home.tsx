@@ -732,12 +732,13 @@ export default function Home() {
                         characters={allCharacters.filter(c => col.characterIds.includes(c.external_id))}
                         subCollectionCount={hasSubCollections ? subCount : 0}
                         onClick={(c) => {
+                          // Always set activeCollectionId to filter characters
+                          setActiveCollectionId(c.id as number);
+                          // Also track parent for showing sub-collections strip
                           if (hasSubCollections) {
-                            // Drill into sub-collections
                             setActiveParentCollectionId(c.id as number);
                           } else {
-                            // Filter characters by this collection
-                            setActiveCollectionId(c.id as number);
+                            setActiveParentCollectionId(null);
                           }
                         }}
                         onEdit={(c) => setEditingCollection(c)}
@@ -752,6 +753,43 @@ export default function Home() {
         )}
 
 
+
+        {/* Sub-collections strip — shown when viewing a parent collection that has sub-collections */}
+        {activeCollectionId && activeParentCollectionId && (() => {
+          const subCols = collections.filter(c => c.parentId === activeParentCollectionId);
+          if (subCols.length === 0) return null;
+          return (
+            <div className="mb-5">
+              <div className="flex items-center gap-2 mb-2">
+                <span className="text-[10px] uppercase tracking-[0.2em]" style={{ fontFamily: 'Rajdhani, sans-serif', color: 'oklch(0.4 0.01 264)', fontWeight: 600 }}>Sub-collections</span>
+              </div>
+              <div className="flex gap-2 flex-wrap">
+                {subCols.map(sub => {
+                  const isActive = activeCollectionId === sub.id;
+                  const charCount = allCharacters.filter(c => sub.characterIds.includes(c.external_id)).length;
+                  return (
+                    <button
+                      key={sub.id}
+                      onClick={() => setActiveCollectionId(sub.id)}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-sm text-[11px] font-semibold tracking-wide uppercase transition-all hover:brightness-110"
+                      style={{
+                        fontFamily: 'Rajdhani, sans-serif',
+                        background: isActive ? 'oklch(0.769 0.188 70.08 / 0.15)' : 'oklch(0.15 0.01 264)',
+                        border: isActive ? '1px solid oklch(0.769 0.188 70.08 / 0.45)' : '1px solid oklch(1 0 0 / 0.08)',
+                        color: isActive ? 'oklch(0.769 0.188 70.08)' : 'oklch(0.55 0.01 264)',
+                      }}
+                    >
+                      {sub.name}
+                      <span className="inline-flex items-center justify-center rounded-sm px-1 min-w-[16px] h-[14px] text-[9px] font-bold" style={{ fontFamily: 'JetBrains Mono, monospace', background: 'oklch(1 0 0 / 0.12)', color: 'inherit' }}>
+                        {charCount}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })()}
 
         {/* Section label + filter chips */}
         <div className="mb-6">
