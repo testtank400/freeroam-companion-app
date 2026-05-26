@@ -693,9 +693,9 @@ export default function Home() {
 
             {(() => {
               // Determine which collections to show
-              const topLevel = collections.filter(c => !c.parentId);
+              const topLevel = [...collections.filter(c => !c.parentId)].sort((a, b) => a.name.localeCompare(b.name));
               const subCollections = activeParentCollectionId
-                ? collections.filter(c => c.parentId === activeParentCollectionId)
+                ? [...collections.filter(c => c.parentId === activeParentCollectionId)].sort((a, b) => a.name.localeCompare(b.name))
                 : [];
               const displayCollections = activeParentCollectionId ? subCollections : topLevel;
 
@@ -762,7 +762,7 @@ export default function Home() {
 
         {/* Sub-collections grid — shown when viewing a parent collection that has sub-collections */}
         {activeCollectionId && activeParentCollectionId && (() => {
-          const subCols = collections.filter(c => c.parentId === activeParentCollectionId);
+          const subCols = [...collections.filter(c => c.parentId === activeParentCollectionId)].sort((a, b) => a.name.localeCompare(b.name));
           if (subCols.length === 0) return null;
           return (
             <div className="mb-8">
