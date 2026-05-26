@@ -411,9 +411,9 @@ export default function CharacterProfile({ character, onClose, onUpdated, collec
             const APPEARANCE_LIMIT = 1000;
             const backstoryExceeds = (backstory?.length ?? 0) > BACKSTORY_LIMIT;
             const appearanceExceeds = (appearance?.length ?? 0) > APPEARANCE_LIMIT;
-            const tabs: { id: Tab; label: string; badge?: string }[] = [
-              { id: 'about', label: 'About' },
-              { id: 'appearance', label: 'Appearance' },
+            const tabs: { id: Tab; label: string; badge?: string; badgeRed?: boolean }[] = [
+              { id: 'about', label: 'About', ...(backstoryExceeds ? { badge: `${(backstory?.length ?? 0).toLocaleString()} chars`, badgeRed: true } : {}) },
+              { id: 'appearance', label: 'Appearance', ...(appearanceExceeds ? { badge: `${(appearance?.length ?? 0).toLocaleString()} chars`, badgeRed: true } : {}) },
               ...(backstoryExceeds ? [{ id: 'full-backstory' as Tab, label: 'Full Backstory', badge: `${(backstory?.length ?? 0).toLocaleString()} chars` }] : []),
               ...(appearanceExceeds ? [{ id: 'full-appearance' as Tab, label: 'Full Appearance', badge: `${(appearance?.length ?? 0).toLocaleString()} chars` }] : []),
             ];
@@ -438,9 +438,9 @@ export default function CharacterProfile({ character, onClose, onUpdated, collec
                         className="text-[9px] px-1 py-0.5 rounded"
                         style={{
                           fontFamily: 'JetBrains Mono, monospace',
-                          background: 'oklch(0.55 0.15 300 / 0.2)',
-                          color: 'oklch(0.75 0.15 300)',
-                          border: '1px solid oklch(0.55 0.15 300 / 0.3)',
+                          background: tab.badgeRed ? 'oklch(0.65 0.22 25 / 0.2)' : 'oklch(0.55 0.15 300 / 0.2)',
+                          color: tab.badgeRed ? 'oklch(0.75 0.22 25)' : 'oklch(0.75 0.15 300)',
+                          border: tab.badgeRed ? '1px solid oklch(0.65 0.22 25 / 0.5)' : '1px solid oklch(0.55 0.15 300 / 0.3)',
                         }}
                       >
                         {tab.badge}
