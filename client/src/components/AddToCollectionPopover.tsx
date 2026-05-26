@@ -88,7 +88,7 @@ export default function AddToCollectionPopover({
             </p>
           </div>
         )}
-        {collections.map(col => {
+        {[...collections].sort((a, b) => a.name.localeCompare(b.name)).map(col => {
           const active = isInCollection(col.id as number, characterId);
           return (
             <button
