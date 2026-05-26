@@ -82,7 +82,7 @@ export default function CharacterCard({ character, onClick, onEdit, onDelete, se
     onDelete(character);
   };
 
-  const imageUrl = character.display_headshot_url || character.headshot_url || FALLBACK_IMAGE;
+  const imageUrl = character.headshot_url || character.display_headshot_url || FALLBACK_IMAGE;
 
   return (
     <div
