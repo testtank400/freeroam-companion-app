@@ -1283,9 +1283,18 @@ export default function Home() {
             updateCollection(editingCollection.id as number, { name, coverImage, description, parentId });
           } else {
             // Pass all fields in one shot so the image is saved atomically
-            // parentId from the modal takes precedence; fall back to activeParentCollectionId
-            const resolvedParentId = parentId !== undefined ? parentId : (activeParentCollectionId ?? null);
+            // parentId from the modal takes precedence.
+            // If no parentId from modal, use activeParentCollectionId.
+            // If that's also null but we're inside a collection, use activeCollectionId as the parent
+            // (so creating a collection while inside a parent creates a sub-collection).
+            const resolvedParentId = parentId !== undefined
+              ? parentId
+              : (activeParentCollectionId ?? (activeCollectionId ?? null));
             await createCollection(name, coverImage, description, resolvedParentId);
+            // If we just created a sub-collection, make sure the parent tracking is set
+            if (resolvedParentId && !activeParentCollectionId) {
+              setActiveParentCollectionId(resolvedParentId);
+            }
           }
         }}
       />
