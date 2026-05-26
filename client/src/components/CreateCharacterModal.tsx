@@ -79,6 +79,9 @@ export default function CreateCharacterModal({
   const [name, setName] = useState('');
   const [backstory, setBackstory] = useState('');
   const [appearance, setAppearance] = useState('');
+  // Extended (local DB only) fields — editable independently of Freeroam
+  const [backstoryExtended, setBackstoryExtended] = useState('');
+  const [appearanceExtended, setAppearanceExtended] = useState('');
   const [privacy, setPrivacy] = useState<PrivacyStatus>('private');
   const [headshotUrl, setHeadshotUrl] = useState('');
   const [headshotMode, setHeadshotMode] = useState<'url' | 'upload'>('url');
@@ -91,6 +94,7 @@ export default function CreateCharacterModal({
   const uploadHeadshotMutation = trpc.characters.uploadHeadshot.useMutation();
   const createMutation = trpc.characters.create.useMutation();
   const updateMutation = trpc.characters.update.useMutation();
+  const saveExtendedMutation = trpc.characters.saveExtended.useMutation();
 
   const isSubmitting = createMutation.isPending || updateMutation.isPending || isUploading;
 
@@ -100,8 +104,12 @@ export default function CreateCharacterModal({
       const src = fullEditData ?? editCharacter;
       setName(src?.name ?? '');
       // Use extended DB content if available (may be longer than Freeroam's copy)
-      setBackstory(extendedData?.backstoryFull ?? fullEditData?.backstory ?? editCharacter?.backstory ?? '');
-      setAppearance(extendedData?.appearanceFull ?? fullEditData?.appearance ?? '');
+      // Freeroam fields: seed from Freeroam data (not extended)
+      setBackstory(fullEditData?.backstory ?? editCharacter?.backstory ?? '');
+      setAppearance(fullEditData?.appearance ?? '');
+      // Extended fields: seed from our DB (may be longer than Freeroam's copy)
+      setBackstoryExtended(extendedData?.backstoryFull ?? fullEditData?.backstory ?? editCharacter?.backstory ?? '');
+      setAppearanceExtended(extendedData?.appearanceFull ?? fullEditData?.appearance ?? '');
       setPrivacy((src?.privacy_status as PrivacyStatus) ?? 'private');
       const existingUrl = src?.headshot_url ?? src?.display_headshot_url ?? '';
       setHeadshotUrl(existingUrl);
@@ -224,6 +232,17 @@ export default function CreateCharacterModal({
         }
         if (updated.trimmedAppearance) {
           toast.warning(`Appearance trimmed to ${updated.trimmedAppearance.toLocaleString()} characters on Freeroam. Full version saved here.`, { duration: 6000 });
+        }
+        // Save extended fields to our DB independently of Freeroam
+        if (isEditMode && editCharacter) {
+          const hasExtended = backstoryExtended.trim() || appearanceExtended.trim();
+          if (hasExtended) {
+            await saveExtendedMutation.mutateAsync({
+              characterId: editCharacter.external_id,
+              backstoryFull: backstoryExtended.trim() || null,
+              appearanceFull: appearanceExtended.trim() || null,
+            });
+          }
         }
         if (!updated.trimmedBackstory && !updated.trimmedAppearance) {
           toast.success(`${name} updated successfully!`);
@@ -538,6 +557,58 @@ export default function CreateCharacterModal({
             })()}
 
           </div>
+
+          {/* Extended fields — only shown in edit mode, stored in local DB only */}
+          {isEditMode && (
+            <div className="px-6 pb-6 space-y-5" style={{ borderTop: '1px solid oklch(1 0 0 / 0.06)', paddingTop: '20px' }}>
+              <div>
+                <p className="text-[10px] uppercase tracking-widest mb-3" style={{ fontFamily: 'Rajdhani, sans-serif', color: 'oklch(0.769 0.188 70.08 / 0.6)', fontWeight: 600 }}>
+                  Extended Content — Local DB Only
+                </p>
+                <p className="text-[10px] mb-4" style={{ fontFamily: 'JetBrains Mono, monospace', color: 'oklch(0.4 0.01 264)' }}>
+                  These fields are stored only here, not on Freeroam. Edit them independently to preserve content that exceeds Freeroam's limits.
+                </p>
+              </div>
+
+              {/* Extended Backstory */}
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label style={{ ...LABEL_STYLE, color: 'oklch(0.55 0.1 264)' }}>Extended Backstory</label>
+                  <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '10px', color: 'oklch(0.45 0.01 264)' }}>
+                    {backstoryExtended.length.toLocaleString()} chars
+                  </span>
+                </div>
+                <textarea
+                  value={backstoryExtended}
+                  onChange={(e) => setBackstoryExtended(e.target.value)}
+                  placeholder="Full backstory (no character limit — stored locally only)..."
+                  rows={5}
+                  style={{ ...FIELD_STYLE, borderColor: 'oklch(0.55 0.1 264 / 0.3)' }}
+                  onFocus={(e) => (e.target.style.borderColor = 'oklch(0.55 0.1 264 / 0.7)')}
+                  onBlur={(e) => (e.target.style.borderColor = 'oklch(0.55 0.1 264 / 0.3)')}
+                />
+              </div>
+
+              {/* Extended Appearance */}
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label style={{ ...LABEL_STYLE, color: 'oklch(0.55 0.1 264)' }}>Extended Appearance</label>
+                  <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '10px', color: 'oklch(0.45 0.01 264)' }}>
+                    {appearanceExtended.length.toLocaleString()} chars
+                  </span>
+                </div>
+                <textarea
+                  value={appearanceExtended}
+                  onChange={(e) => setAppearanceExtended(e.target.value)}
+                  placeholder="Full appearance (no character limit — stored locally only)..."
+                  rows={4}
+                  style={{ ...FIELD_STYLE, borderColor: 'oklch(0.55 0.1 264 / 0.3)' }}
+                  onFocus={(e) => (e.target.style.borderColor = 'oklch(0.55 0.1 264 / 0.7)')}
+                  onBlur={(e) => (e.target.style.borderColor = 'oklch(0.55 0.1 264 / 0.3)')}
+                />
+              </div>
+            </div>
+          )}
 
           {/* Footer */}
           <div

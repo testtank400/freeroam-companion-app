@@ -609,6 +609,23 @@ export const appRouter = router({
       .query(async ({ input, ctx }) => {
         return getCharacterExtended(input.characterId);
       }),
+
+    // Save extended backstory/appearance directly to our DB without touching Freeroam.
+    // Used when the user wants to edit the local extended version independently.
+    saveExtended: publicProcedure
+      .input(z.object({
+        characterId: z.string(),
+        backstoryFull: z.string().nullable().optional(),
+        appearanceFull: z.string().nullable().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        await upsertCharacterExtended(
+          input.characterId,
+          input.backstoryFull ?? null,
+          input.appearanceFull ?? null
+        );
+        return { success: true };
+      }),
   }),
 
   // ─── Collections (DB-backed) ──────────────────────────────────────────────────────────
