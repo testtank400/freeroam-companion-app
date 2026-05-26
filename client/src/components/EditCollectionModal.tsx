@@ -340,8 +340,9 @@ export default function EditCollectionModal({ open, onClose, collection, allColl
             </button>
             <button
               type="submit"
-              disabled={!name.trim()}
+              disabled={!name.trim() || isUploading}
               className="px-5 py-2 rounded-sm text-xs font-semibold tracking-wider uppercase transition-all disabled:opacity-50 hover:brightness-110"
+              title={isUploading ? 'Please wait for the image to finish uploading' : undefined}
               style={{
                 fontFamily: 'Rajdhani, sans-serif',
                 background: 'oklch(0.769 0.188 70.08 / 0.15)',
@@ -349,7 +350,7 @@ export default function EditCollectionModal({ open, onClose, collection, allColl
                 color: 'oklch(0.769 0.188 70.08)',
               }}
             >
-              {isEditing ? 'Save Changes' : 'Create Collection'}
+              {isUploading ? 'Uploading Image...' : isEditing ? 'Save Changes' : 'Create Collection'}
             </button>
           </div>
         </form>

@@ -1,0 +1,15 @@
+{
+  "query": "SELECT id, name, coverImage FROM collections WHERE name LIKE '%Blacklight%' OR name LIKE '%blacklight%';",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway06.us-east-1.prod.aws.tidbcloud.com --port 4000 --user o5X5dUuHaxxkex7.root --database cxwoV3UVdPSrRocF96aWqA --execute SELECT id, name, coverImage FROM collections WHERE name LIKE '%Blacklight%' OR name LIKE '%blacklight%';",
+  "rows": [
+    {
+      "id": "180001",
+      "name": "Blacklight",
+      "coverImage": "NULL"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tname\tcoverImage\n180001\tBlacklight\tNULL\n",
+  "stderr": "",
+  "execution_time_ms": 324
+}
