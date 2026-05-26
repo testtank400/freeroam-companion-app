@@ -200,6 +200,9 @@ export default function CharacterProfile({ character, onClose, onUpdated, collec
   const backstory = extendedCharacter?.backstoryFull ?? fullCharacter?.backstory ?? displayCharacter.backstory;
   // description from library endpoint = appearance; fall back to full character fetch
   const appearance = extendedCharacter?.appearanceFull ?? (displayCharacter.description) ?? fullCharacter?.appearance ?? null;
+  // Freeroam's actual copy (used for limit checks — NOT the extended version)
+  const freeroamBackstory = fullCharacter?.backstory ?? displayCharacter.backstory;
+  const freeroamAppearance = (displayCharacter.description) ?? fullCharacter?.appearance ?? null;
 
   return (
     <>
@@ -409,8 +412,8 @@ export default function CharacterProfile({ character, onClose, onUpdated, collec
           {(() => {
             const BACKSTORY_LIMIT = 2000;
             const APPEARANCE_LIMIT = 1000;
-            const backstoryExceeds = (backstory?.length ?? 0) > BACKSTORY_LIMIT;
-            const appearanceExceeds = (appearance?.length ?? 0) > APPEARANCE_LIMIT;
+            const backstoryExceeds = (freeroamBackstory?.length ?? 0) > BACKSTORY_LIMIT;
+            const appearanceExceeds = (freeroamAppearance?.length ?? 0) > APPEARANCE_LIMIT;
             const tabs: { id: Tab; label: string; badge?: string; badgeRed?: boolean }[] = [
               { id: 'about', label: 'About', ...(backstoryExceeds ? { badge: `${(backstory?.length ?? 0).toLocaleString()} chars`, badgeRed: true } : {}) },
               { id: 'appearance', label: 'Appearance', ...(appearanceExceeds ? { badge: `${(appearance?.length ?? 0).toLocaleString()} chars`, badgeRed: true } : {}) },
