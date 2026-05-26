@@ -796,8 +796,8 @@ export default function Home() {
           );
         })()}
 
-        {/* Section label + filter chips */}
-        <div className="mb-6">
+        {/* Section label + filter chips — hidden when browsing sub-collections list */}
+        {!(!activeCollectionId && activeParentCollectionId) && <div className="mb-6">
           {/* On mobile: 3-col grid so row 1 = All/Private/Public, row 2 = Unlisted/Favorites.
               On sm+: single flex row with all chips side by side. */}
           <div className="grid grid-cols-3 sm:flex sm:flex-row gap-2">
@@ -965,9 +965,10 @@ export default function Home() {
             })()}
 
           </div>
-        </div>
+        </div>}
 
-        {/* Initial loading skeleton */}
+        {/* Initial loading skeleton — hidden when browsing sub-collections list */}
+        {!(!activeCollectionId && activeParentCollectionId) && <>
         {isLoading && (
           <div className="grid grid-cols-1 min-[400px]:grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-4">
             {Array.from({ length: 10 }).map((_, i) => (
@@ -1247,6 +1248,7 @@ export default function Home() {
             <div className="h-px flex-1" style={{ background: 'oklch(1 0 0 / 0.05)' }} />
           </div>
         )}
+        </>}
       </main>
 
       {/* Character profile modal */}
