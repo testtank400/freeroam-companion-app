@@ -151,7 +151,7 @@ export default function Home() {
   const [showSettings, setShowSettings] = useState(false);
 
   const { isSaved, toggleSave, initFromApi } = useSavedCharacters();
-  const { collections, createCollection, renameCollection, updateCollection, deleteCollection, toggleInCollection, isInCollection } = useCollections();
+  const { collections, createCollection, renameCollection, updateCollection, deleteCollection, addToCollection, toggleInCollection, isInCollection } = useCollections();
   const [activeCollectionId, setActiveCollectionId] = useState<number | null>(null);
   // When viewing sub-collections of a parent, this tracks the parent collection ID
   const [activeParentCollectionId, setActiveParentCollectionId] = useState<number | null>(null);
@@ -236,7 +236,18 @@ export default function Home() {
   const handleCharacterSaved = async (character: ApiCharacter, mode: 'create' | 'edit') => {
     if (mode === 'create') {
       // New character: full refresh to get server-assigned IDs and library metadata
-      fetchAll(sort);
+      await fetchAll(sort);
+      // If we're inside a collection view, auto-add the new character to that collection
+      // so it appears immediately where the user expects it
+      if (activeCollectionId && character.external_id) {
+        try {
+          // Add the new character to the current collection so it appears immediately
+          addToCollection(activeCollectionId, character.external_id);
+          await utils.collections.list.invalidate();
+        } catch {
+          // Non-fatal — character was created, just not auto-added to collection
+        }
+      }
       return;
     }
     // Edit or duplicate: fetch only the updated character and patch/prepend in-place
