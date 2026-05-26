@@ -387,14 +387,30 @@ export default function Home() {
                 ? 'Loading...'
                 : (() => {
                     const q = searchQuery.trim().toLowerCase();
+                    const loadingSuffix = isFetching ? '...' : '';
+                    if (activeCollectionId) {
+                      // Inside a collection: show only that collection's direct character count
+                      const col = collections.find(c => c.id === activeCollectionId);
+                      const colTotal = col?.characterIds.length ?? 0;
+                      const colVisible = col?.characterIds.filter(id => {
+                        const char = allCharacters.find(c => c.external_id === id);
+                        if (!char) return false;
+                        const matchesPrivacy = !privacyFilter || char.privacy_status === privacyFilter;
+                        const matchesSearch = !q || char.name.toLowerCase().includes(q);
+                        return matchesPrivacy && matchesSearch;
+                      }).length ?? 0;
+                      const isFiltered = privacyFilter || q;
+                      return isFiltered
+                        ? `${colVisible} of ${colTotal}${loadingSuffix} unit${colTotal !== 1 ? 's' : ''}`
+                        : `${colTotal}${loadingSuffix} unit${colTotal !== 1 ? 's' : ''} in collection`;
+                    }
+                    const total = allCharacters.length;
                     const visible = allCharacters.filter(c => {
                       const matchesPrivacy = !privacyFilter || c.privacy_status === privacyFilter;
                       const matchesSearch = !q || c.name.toLowerCase().includes(q);
                       return matchesPrivacy && matchesSearch;
                     }).length;
-                    const total = allCharacters.length;
                     const isFiltered = privacyFilter || q;
-                    const loadingSuffix = isFetching ? '...' : '';
                     return isFiltered
                       ? `${visible} of ${total}${loadingSuffix} unit${total !== 1 ? 's' : ''}`
                       : `${total}${loadingSuffix} unit${total !== 1 ? 's' : ''} on record`;
