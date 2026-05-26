@@ -1045,6 +1045,10 @@ export default function Home() {
           const activeCol = activeCollectionId != null ? collections.find(c => c.id === activeCollectionId) : null;
           // IDs of characters that belong to ANY collection
           const allCollectionIds = new Set(collections.flatMap(col => col.characterIds));
+          // IDs of characters that belong to sub-collections of the active parent
+          const subCollectionCharIds = activeParentCollectionId
+            ? new Set(collections.filter(c => c.parentId === activeParentCollectionId).flatMap(c => c.characterIds))
+            : new Set<string>();
           const visibleCharacters = allCharacters.filter(c => {
             const matchesPrivacy = !privacyFilter || c.privacy_status === privacyFilter;
             // When inside a collection, search only within that collection's members
@@ -1059,8 +1063,12 @@ export default function Home() {
             const notInOtherCollection = activeCol
               ? activeCol.characterIds.includes(c.external_id)
               : (q ? true : !allCollectionIds.has(c.external_id));
+            // When viewing a parent collection, hide characters that belong to its sub-collections
+            const notInSubCollection = !activeParentCollectionId || activeCollectionId !== activeParentCollectionId
+              ? true
+              : !subCollectionCharIds.has(c.external_id);
             const matchesNsfw = !sfwOnly || !nsfwMap[c.external_id];
-            return matchesPrivacy && matchesSearch && matchesPersona && matchesFavorites && matchesCollection && notInOtherCollection && matchesNsfw;
+            return matchesPrivacy && matchesSearch && matchesPersona && matchesFavorites && matchesCollection && notInOtherCollection && notInSubCollection && matchesNsfw;
           });
 
           const filteredEmpty = !isLoading && !isError && allCharacters.length > 0 && visibleCharacters.length === 0;
@@ -1114,6 +1122,9 @@ export default function Home() {
           const q = searchQuery.trim().toLowerCase();
           const activeCol = activeCollectionId != null ? collections.find(col => col.id === activeCollectionId) : null;
           const allCollectionIds = new Set(collections.flatMap(col => col.characterIds));
+          const subCollectionCharIds2 = activeParentCollectionId
+            ? new Set(collections.filter(sc => sc.parentId === activeParentCollectionId).flatMap(sc => sc.characterIds))
+            : new Set<string>();
           const matchesPrivacy = !privacyFilter || c.privacy_status === privacyFilter;
           // When inside a collection, search only within that collection's members
           const matchesSearch = !q || (activeCol
@@ -1126,8 +1137,12 @@ export default function Home() {
           const notInOtherCollection = activeCol
             ? activeCol.characterIds.includes(c.external_id)
             : (q ? true : !allCollectionIds.has(c.external_id));
+          // When viewing a parent collection, hide characters that belong to its sub-collections
+          const notInSubCollection2 = !activeParentCollectionId || activeCollectionId !== activeParentCollectionId
+            ? true
+            : !subCollectionCharIds2.has(c.external_id);
           const matchesNsfw = !sfwOnly || !nsfwMap[c.external_id];
-          return matchesPrivacy && matchesSearch && matchesPersona && matchesFavorites && matchesCollection && notInOtherCollection && matchesNsfw;
+          return matchesPrivacy && matchesSearch && matchesPersona && matchesFavorites && matchesCollection && notInOtherCollection && notInSubCollection2 && matchesNsfw;
         }).map((character) => (
               <CharacterCard
                 key={character.external_id}
