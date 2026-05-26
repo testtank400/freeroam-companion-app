@@ -412,13 +412,17 @@ export default function CharacterProfile({ character, onClose, onUpdated, collec
           {(() => {
             const BACKSTORY_LIMIT = 2000;
             const APPEARANCE_LIMIT = 1000;
-            const backstoryExceeds = (freeroamBackstory?.length ?? 0) > BACKSTORY_LIMIT;
-            const appearanceExceeds = (freeroamAppearance?.length ?? 0) > APPEARANCE_LIMIT;
+            // Red badge: Freeroam's copy exceeds the limit (needs trimming on Freeroam)
+            const freeroamBackstoryExceeds = (freeroamBackstory?.length ?? 0) > BACKSTORY_LIMIT;
+            const freeroamAppearanceExceeds = (freeroamAppearance?.length ?? 0) > APPEARANCE_LIMIT;
+            // Full tabs: extended DB content exists and is longer than Freeroam's limit
+            const extendedBackstoryExceeds = (backstory?.length ?? 0) > BACKSTORY_LIMIT;
+            const extendedAppearanceExceeds = (appearance?.length ?? 0) > APPEARANCE_LIMIT;
             const tabs: { id: Tab; label: string; badge?: string; badgeRed?: boolean }[] = [
-              { id: 'about', label: 'About', ...(backstoryExceeds ? { badge: `${(backstory?.length ?? 0).toLocaleString()} chars`, badgeRed: true } : {}) },
-              { id: 'appearance', label: 'Appearance', ...(appearanceExceeds ? { badge: `${(appearance?.length ?? 0).toLocaleString()} chars`, badgeRed: true } : {}) },
-              ...(backstoryExceeds ? [{ id: 'full-backstory' as Tab, label: 'Full Backstory', badge: `${(backstory?.length ?? 0).toLocaleString()} chars` }] : []),
-              ...(appearanceExceeds ? [{ id: 'full-appearance' as Tab, label: 'Full Appearance', badge: `${(appearance?.length ?? 0).toLocaleString()} chars` }] : []),
+              { id: 'about', label: 'About', ...(freeroamBackstoryExceeds ? { badge: `${(freeroamBackstory?.length ?? 0).toLocaleString()} chars`, badgeRed: true } : {}) },
+              { id: 'appearance', label: 'Appearance', ...(freeroamAppearanceExceeds ? { badge: `${(freeroamAppearance?.length ?? 0).toLocaleString()} chars`, badgeRed: true } : {}) },
+              ...(extendedBackstoryExceeds ? [{ id: 'full-backstory' as Tab, label: 'Full Backstory', badge: `${(backstory?.length ?? 0).toLocaleString()} chars` }] : []),
+              ...(extendedAppearanceExceeds ? [{ id: 'full-appearance' as Tab, label: 'Full Appearance', badge: `${(appearance?.length ?? 0).toLocaleString()} chars` }] : []),
             ];
             return (
               <div className="flex-shrink-0 flex overflow-x-auto" style={{ borderBottom: '1px solid oklch(1 0 0 / 0.08)', scrollbarWidth: 'none' }}>
