@@ -103,7 +103,7 @@ export default function CreateCharacterModal({
       setBackstory(extendedData?.backstoryFull ?? fullEditData?.backstory ?? editCharacter?.backstory ?? '');
       setAppearance(extendedData?.appearanceFull ?? fullEditData?.appearance ?? '');
       setPrivacy((src?.privacy_status as PrivacyStatus) ?? 'private');
-      const existingUrl = src?.display_headshot_url ?? src?.headshot_url ?? '';
+      const existingUrl = src?.headshot_url ?? src?.display_headshot_url ?? '';
       setHeadshotUrl(existingUrl);
       setHeadshotMode('url');
       setUploadedFile(null);
@@ -120,7 +120,7 @@ export default function CreateCharacterModal({
       // description carries appearance data in the ApiCharacter shape (set by handleDuplicate in CharacterProfile)
       setAppearance(duplicateSource.description ?? '');
       setPrivacy((duplicateSource.privacy_status as PrivacyStatus) ?? 'private');
-      const url = duplicateSource.display_headshot_url ?? duplicateSource.headshot_url ?? '';
+      const url = duplicateSource.headshot_url ?? duplicateSource.display_headshot_url ?? '';
       setHeadshotUrl(url);
       setHeadshotMode('url');
       setUploadedFile(null);
@@ -205,7 +205,7 @@ export default function CreateCharacterModal({
 
     const finalHeadshotUrl =
       headshotMode === 'upload'
-        ? (uploadedHeadshotUrl ?? (editCharacter?.display_headshot_url ?? editCharacter?.headshot_url ?? undefined))
+        ? (uploadedHeadshotUrl ?? (editCharacter?.headshot_url ?? editCharacter?.display_headshot_url ?? undefined))
         : headshotUrl.trim() || undefined;
 
     try {
