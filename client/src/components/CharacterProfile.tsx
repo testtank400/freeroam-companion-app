@@ -181,9 +181,9 @@ export default function CharacterProfile({ character, onClose, onUpdated, collec
       name: `Copy of ${displayCharacter.name}`,
       display_headshot_url: fullCharacter?.display_headshot_url ?? displayCharacter.display_headshot_url,
       headshot_url: fullCharacter?.headshot_url ?? displayCharacter.headshot_url,
-      backstory: extendedCharacter?.backstoryFull ?? fullCharacter?.backstory ?? displayCharacter.backstory,
+      backstory: backstory ?? displayCharacter.backstory,
       // description field carries appearance data in the ApiCharacter shape
-      description: extendedCharacter?.appearanceFull ?? fullCharacter?.appearance ?? fullCharacter?.description ?? displayCharacter.description,
+      description: appearance ?? fullCharacter?.description ?? displayCharacter.description,
     };
     setDuplicateSource(source);
     setShowDuplicateModal(true);
@@ -197,13 +197,19 @@ export default function CharacterProfile({ character, onClose, onUpdated, collec
   const displayPrivacy = fullCharacter?.privacy_status ?? displayCharacter.privacy_status;
   const imageUrl = fullCharacter?.display_headshot_url ?? fullCharacter?.headshot_url
     ?? displayCharacter.display_headshot_url ?? displayCharacter.headshot_url ?? FALLBACK_IMAGE;
-  // Prefer extended DB content (full, unlimited) over Freeroam's potentially truncated copy
-  const backstory = extendedCharacter?.backstoryFull ?? fullCharacter?.backstory ?? displayCharacter.backstory;
-  // description from library endpoint = appearance; fall back to full character fetch
-  const appearance = extendedCharacter?.appearanceFull ?? (displayCharacter.description) ?? fullCharacter?.appearance ?? null;
-  // Freeroam's actual copy (used for limit checks — NOT the extended version)
+  // Freeroam's actual copy
   const freeroamBackstory = fullCharacter?.backstory ?? displayCharacter.backstory;
   const freeroamAppearance = (displayCharacter.description) ?? fullCharacter?.appearance ?? null;
+  // Use extended DB content only if it's longer than Freeroam's copy (i.e. it has extra content beyond the limit)
+  // If Freeroam's copy is newer/different but shorter, prefer Freeroam's version
+  const extBackstory = extendedCharacter?.backstoryFull;
+  const extAppearance = extendedCharacter?.appearanceFull;
+  const backstory = (extBackstory && extBackstory.length > (freeroamBackstory?.length ?? 0))
+    ? extBackstory
+    : (freeroamBackstory ?? null);
+  const appearance = (extAppearance && extAppearance.length > (freeroamAppearance?.length ?? 0))
+    ? extAppearance
+    : (freeroamAppearance ?? null);
 
   return (
     <>
