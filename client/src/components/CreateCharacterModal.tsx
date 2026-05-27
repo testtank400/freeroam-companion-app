@@ -20,6 +20,9 @@ interface CreateCharacterModalProps {
   editCharacter?: ApiCharacter | null;
   /** When provided, the modal opens in create mode pre-filled from this source (duplicate flow) */
   duplicateSource?: ApiCharacter | null;
+  /** Extended content to copy to the new character's DB entry when duplicating */
+  duplicateExtendedBackstory?: string | null;
+  duplicateExtendedAppearance?: string | null;
 }
 
 const PRIVACY_OPTIONS: { value: PrivacyStatus; label: string; icon: React.ReactNode }[] = [
@@ -58,6 +61,8 @@ export default function CreateCharacterModal({
   onSaved,
   editCharacter,
   duplicateSource,
+  duplicateExtendedBackstory,
+  duplicateExtendedAppearance,
 }: CreateCharacterModalProps) {
   const isEditMode = !!editCharacter;
   const [visible, setVisible] = useState(false);
@@ -128,6 +133,9 @@ export default function CreateCharacterModal({
       setBackstory(duplicateSource.backstory ?? '');
       // description carries appearance data in the ApiCharacter shape (set by handleDuplicate in CharacterProfile)
       setAppearance(duplicateSource.description ?? '');
+      // Seed extended fields from the source character's extended content
+      setBackstoryExtended(duplicateExtendedBackstory ?? duplicateSource.backstory ?? '');
+      setAppearanceExtended(duplicateExtendedAppearance ?? duplicateSource.description ?? '');
       setPrivacy((duplicateSource.privacy_status as PrivacyStatus) ?? 'private');
       const url = duplicateSource.headshot_url ?? duplicateSource.display_headshot_url ?? '';
       setHeadshotUrl(url);
@@ -279,6 +287,18 @@ export default function CreateCharacterModal({
         }
         if (created.trimmedAppearance) {
           toast.warning(`Appearance trimmed to ${created.trimmedAppearance.toLocaleString()} characters on Freeroam. Full version saved here.`, { duration: 6000 });
+        }
+        // Save extended content to DB for the new character (duplicate flow)
+        if (duplicateSource && (backstoryExtended.trim() || appearanceExtended.trim())) {
+          try {
+            await saveExtendedMutation.mutateAsync({
+              characterId: created.external_id,
+              backstoryFull: backstoryExtended.trim() || null,
+              appearanceFull: appearanceExtended.trim() || null,
+            });
+          } catch {
+            // Non-fatal — character was created, extended content just wasn't copied
+          }
         }
         if (!created.trimmedBackstory && !created.trimmedAppearance) {
           toast.success(`${name} created successfully!`);

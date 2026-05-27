@@ -174,16 +174,16 @@ export default function CharacterProfile({ character, onClose, onUpdated, collec
   // Open the duplicate form pre-filled with current character data
   const handleDuplicate = () => {
     if (!displayCharacter) return;
-    // Build a synthetic ApiCharacter with "Copy of" prefix and the full data we have.
-    // Prefer extended DB content (full, unlimited) over Freeroam's truncated copy.
+    // Build a synthetic ApiCharacter with "Copy of" prefix.
+    // Use Freeroam's backstory/appearance for the Freeroam fields (not extended)
     const source: ApiCharacter = {
       ...displayCharacter,
       name: `Copy of ${displayCharacter.name}`,
       display_headshot_url: fullCharacter?.display_headshot_url ?? displayCharacter.display_headshot_url,
       headshot_url: fullCharacter?.headshot_url ?? displayCharacter.headshot_url,
-      backstory: backstory ?? displayCharacter.backstory,
+      backstory: freeroamBackstory ?? displayCharacter.backstory,
       // description field carries appearance data in the ApiCharacter shape
-      description: appearance ?? fullCharacter?.description ?? displayCharacter.description,
+      description: freeroamAppearance ?? fullCharacter?.description ?? displayCharacter.description,
     };
     setDuplicateSource(source);
     setShowDuplicateModal(true);
@@ -251,8 +251,8 @@ export default function CharacterProfile({ character, onClose, onUpdated, collec
               />
             </div>
 
-            {/* Top-right action buttons: Duplicate + Edit + Close */}
-            <div className="absolute top-3 right-3 flex items-center gap-2">
+            {/* Top-right action buttons: scrollable on mobile */}
+            <div className="absolute top-3 left-3 right-3 flex items-center gap-2 overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
               {/* Favorite button */}
               {onToggleSave && (
                 <button
@@ -643,6 +643,8 @@ export default function CharacterProfile({ character, onClose, onUpdated, collec
               setDuplicateSource(null);
             }}
             duplicateSource={duplicateSource}
+            duplicateExtendedBackstory={extBackstory ?? null}
+            duplicateExtendedAppearance={extAppearance ?? null}
           />
         </div>
       )}
