@@ -678,8 +678,8 @@ export default function Home() {
       {/* Main content */}
       <main className="container py-4 sm:py-8">
 
-        {/* Collections section — only shown when NOT in character-collection view */}
-        {!activeCollectionId && (
+        {/* Collections section — only shown when NOT in character-collection view and no search query */}
+        {!activeCollectionId && !searchQuery.trim() && (
           <div className="mb-8">
             {/* Header row: label + back button (when in sub-collection view) + add sub-collection */}
             <div className="flex items-center justify-between mb-3">

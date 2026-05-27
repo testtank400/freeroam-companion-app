@@ -127,7 +127,7 @@ export default function CharacterProfile({ character, onClose, onUpdated, collec
   );
 
   // Fetch extended (unlimited) content from our DB — overrides Freeroam's truncated copy
-  const { data: extendedCharacter } = trpc.characters.getExtended.useQuery(
+  const { data: extendedCharacter, refetch: refetchExtended } = trpc.characters.getExtended.useQuery(
     { characterId: displayCharacter?.external_id ?? '' },
     { enabled: !!displayCharacter?.external_id, staleTime: 5 * 60_000 }
   );
@@ -167,6 +167,7 @@ export default function CharacterProfile({ character, onClose, onUpdated, collec
     if (mode !== 'edit') return;
     setLocalCharacter(updated);
     refetchFull();
+    refetchExtended(); // also refresh extended content so appearance updates immediately
     onUpdated?.(updated);
   };
 
