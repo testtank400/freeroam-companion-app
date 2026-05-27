@@ -257,7 +257,7 @@ export default function CharacterProfile({ character, onClose, onUpdated, collec
               {onToggleSave && (
                 <button
                   onClick={onToggleSave}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-sm transition-all hover:brightness-110"
+                  className="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-sm transition-all hover:brightness-110"
                   style={{
                     background: isSaved ? 'oklch(0.65 0.22 25 / 0.2)' : 'oklch(0.18 0.01 264 / 0.85)',
                     border: isSaved ? '1px solid oklch(0.65 0.22 25 / 0.5)' : '1px solid oklch(1 0 0 / 0.15)',
@@ -281,7 +281,7 @@ export default function CharacterProfile({ character, onClose, onUpdated, collec
                 <div className="relative">
                   <button
                     onClick={() => setShowCollectionPopover(v => !v)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-sm transition-all hover:brightness-110"
+                    className="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-sm transition-all hover:brightness-110"
                     style={{
                       background: showCollectionPopover ? 'oklch(0.22 0.01 264)' : 'oklch(0.18 0.01 264 / 0.85)',
                       border: '1px solid oklch(1 0 0 / 0.15)',
@@ -336,7 +336,7 @@ export default function CharacterProfile({ character, onClose, onUpdated, collec
               {/* Duplicate button */}
               <button
                 onClick={handleDuplicate}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-sm transition-all hover:brightness-110"
+                className="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-sm transition-all hover:brightness-110"
                 style={{
                   background: 'oklch(0.18 0.01 264 / 0.85)',
                   border: '1px solid oklch(1 0 0 / 0.15)',
@@ -357,7 +357,7 @@ export default function CharacterProfile({ character, onClose, onUpdated, collec
               {/* Edit button */}
               <button
                 onClick={() => setShowEditModal(true)}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-sm transition-all hover:brightness-110"
+                className="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-sm transition-all hover:brightness-110"
                 style={{
                   background: 'oklch(0.769 0.188 70.08 / 0.15)',
                   border: '1px solid oklch(0.769 0.188 70.08 / 0.4)',
@@ -378,7 +378,7 @@ export default function CharacterProfile({ character, onClose, onUpdated, collec
               {/* Close button */}
               <button
                 onClick={handleClose}
-                className="w-8 h-8 flex items-center justify-center rounded-sm transition-colors hover:bg-white/10"
+                className="flex-shrink-0 w-8 h-8 flex items-center justify-center rounded-sm transition-colors hover:bg-white/10"
                 style={{
                   background: 'oklch(0.13 0.01 264 / 0.8)',
                   border: '1px solid oklch(1 0 0 / 0.12)',
