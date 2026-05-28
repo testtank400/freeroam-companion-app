@@ -252,7 +252,7 @@ export default function CharacterProfile({ character, onClose, onUpdated, collec
             </div>
 
             {/* Top-right action buttons: scrollable on mobile */}
-            <div className="absolute top-3 left-3 right-3 flex items-center gap-2 overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
+            <div className="absolute top-3 left-3 right-3 flex items-center justify-end gap-2 overflow-x-auto" style={{ scrollbarWidth: 'none', direction: 'rtl' }}>
               {/* Favorite button */}
               {onToggleSave && (
                 <button
@@ -262,7 +262,7 @@ export default function CharacterProfile({ character, onClose, onUpdated, collec
                     background: isSaved ? 'oklch(0.65 0.22 25 / 0.2)' : 'oklch(0.18 0.01 264 / 0.85)',
                     border: isSaved ? '1px solid oklch(0.65 0.22 25 / 0.5)' : '1px solid oklch(1 0 0 / 0.15)',
                     color: isSaved ? 'oklch(0.75 0.18 25)' : 'oklch(0.65 0.01 264)',
-                    backdropFilter: 'blur(4px)',
+                    backdropFilter: 'blur(4px)', direction: 'ltr',
                     fontFamily: 'Rajdhani, sans-serif',
                     fontSize: '11px',
                     fontWeight: 700,
@@ -286,7 +286,7 @@ export default function CharacterProfile({ character, onClose, onUpdated, collec
                       background: showCollectionPopover ? 'oklch(0.22 0.01 264)' : 'oklch(0.18 0.01 264 / 0.85)',
                       border: '1px solid oklch(1 0 0 / 0.15)',
                       color: 'oklch(0.65 0.01 264)',
-                      backdropFilter: 'blur(4px)',
+                      backdropFilter: 'blur(4px)', direction: 'ltr',
                       fontFamily: 'Rajdhani, sans-serif',
                       fontSize: '11px',
                       fontWeight: 700,
@@ -315,12 +315,12 @@ export default function CharacterProfile({ character, onClose, onUpdated, collec
               <button
                 onClick={() => displayCharacter && nsfwToggleMutation.mutate({ characterId: displayCharacter.external_id })}
                 disabled={nsfwToggleMutation.isPending}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-sm transition-all hover:brightness-110 disabled:opacity-50"
+                className="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-sm transition-all hover:brightness-110 disabled:opacity-50"
                 style={{
                   background: isNsfw ? 'oklch(0.55 0.15 300 / 0.2)' : 'oklch(0.18 0.01 264 / 0.85)',
                   border: isNsfw ? '1px solid oklch(0.55 0.15 300 / 0.5)' : '1px solid oklch(1 0 0 / 0.15)',
                   color: isNsfw ? 'oklch(0.75 0.15 300)' : 'oklch(0.65 0.01 264)',
-                  backdropFilter: 'blur(4px)',
+                  backdropFilter: 'blur(4px)', direction: 'ltr',
                   fontFamily: 'Rajdhani, sans-serif',
                   fontSize: '11px',
                   fontWeight: 700,
@@ -341,7 +341,7 @@ export default function CharacterProfile({ character, onClose, onUpdated, collec
                   background: 'oklch(0.18 0.01 264 / 0.85)',
                   border: '1px solid oklch(1 0 0 / 0.15)',
                   color: 'oklch(0.65 0.01 264)',
-                  backdropFilter: 'blur(4px)',
+                  backdropFilter: 'blur(4px)', direction: 'ltr',
                   fontFamily: 'Rajdhani, sans-serif',
                   fontSize: '11px',
                   fontWeight: 700,
@@ -362,7 +362,7 @@ export default function CharacterProfile({ character, onClose, onUpdated, collec
                   background: 'oklch(0.769 0.188 70.08 / 0.15)',
                   border: '1px solid oklch(0.769 0.188 70.08 / 0.4)',
                   color: 'oklch(0.769 0.188 70.08)',
-                  backdropFilter: 'blur(4px)',
+                  backdropFilter: 'blur(4px)', direction: 'ltr',
                   fontFamily: 'Rajdhani, sans-serif',
                   fontSize: '11px',
                   fontWeight: 700,
@@ -383,7 +383,7 @@ export default function CharacterProfile({ character, onClose, onUpdated, collec
                   background: 'oklch(0.13 0.01 264 / 0.8)',
                   border: '1px solid oklch(1 0 0 / 0.12)',
                   color: 'oklch(0.7 0.005 65)',
-                  backdropFilter: 'blur(4px)',
+                  backdropFilter: 'blur(4px)', direction: 'ltr',
                 }}
                 title="Close"
               >
