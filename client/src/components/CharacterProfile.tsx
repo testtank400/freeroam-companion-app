@@ -260,7 +260,7 @@ export default function CharacterProfile({ character, onClose, onUpdated, collec
             </div>
 
             {/* Top-right action buttons: scrollable on mobile, starts scrolled to the right */}
-            <div ref={actionBarRef} className="absolute top-3 left-3 right-3 flex items-center gap-2 overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
+            <div ref={actionBarRef} className="absolute top-3 left-3 right-3 flex items-center gap-2 overflow-x-auto sm:justify-end" style={{ scrollbarWidth: 'none' }}>
               {/* Favorite button */}
               {onToggleSave && (
                 <button
