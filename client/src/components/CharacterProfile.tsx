@@ -10,7 +10,7 @@ import { Collection } from '@/hooks/useCollections';
 import { trpc } from '@/lib/trpc';
 import { ApiCharacter } from '@/pages/Home';
 import { Copy, EyeOff, FolderPlus, Globe, Heart, Link, Lock, Pencil, X } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 interface CharacterProfileProps {
   character: ApiCharacter | null;
@@ -86,6 +86,14 @@ export default function CharacterProfile({ character, onClose, onUpdated, collec
   const [visible, setVisible] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showDuplicateModal, setShowDuplicateModal] = useState(false);
+  const actionBarRef = useRef<HTMLDivElement>(null);
+
+  // Scroll action bar to the right on open so Edit/Close are immediately visible
+  useEffect(() => {
+    if (visible && actionBarRef.current) {
+      actionBarRef.current.scrollLeft = actionBarRef.current.scrollWidth;
+    }
+  }, [visible]);
   // Pre-filled character for the duplicate form
   const [duplicateSource, setDuplicateSource] = useState<ApiCharacter | null>(null);
   const [showCollectionPopover, setShowCollectionPopover] = useState(false);
@@ -251,8 +259,8 @@ export default function CharacterProfile({ character, onClose, onUpdated, collec
               />
             </div>
 
-            {/* Top-right action buttons: scrollable on mobile */}
-            <div className="absolute top-3 left-3 right-3 flex items-center justify-end gap-2 overflow-x-auto" style={{ scrollbarWidth: 'none', direction: 'rtl' }}>
+            {/* Top-right action buttons: scrollable on mobile, starts scrolled to the right */}
+            <div ref={actionBarRef} className="absolute top-3 left-3 right-3 flex items-center gap-2 overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
               {/* Favorite button */}
               {onToggleSave && (
                 <button
@@ -262,7 +270,7 @@ export default function CharacterProfile({ character, onClose, onUpdated, collec
                     background: isSaved ? 'oklch(0.65 0.22 25 / 0.2)' : 'oklch(0.18 0.01 264 / 0.85)',
                     border: isSaved ? '1px solid oklch(0.65 0.22 25 / 0.5)' : '1px solid oklch(1 0 0 / 0.15)',
                     color: isSaved ? 'oklch(0.75 0.18 25)' : 'oklch(0.65 0.01 264)',
-                    backdropFilter: 'blur(4px)', direction: 'ltr',
+                    backdropFilter: 'blur(4px)',
                     fontFamily: 'Rajdhani, sans-serif',
                     fontSize: '11px',
                     fontWeight: 700,
@@ -286,7 +294,7 @@ export default function CharacterProfile({ character, onClose, onUpdated, collec
                       background: showCollectionPopover ? 'oklch(0.22 0.01 264)' : 'oklch(0.18 0.01 264 / 0.85)',
                       border: '1px solid oklch(1 0 0 / 0.15)',
                       color: 'oklch(0.65 0.01 264)',
-                      backdropFilter: 'blur(4px)', direction: 'ltr',
+                      backdropFilter: 'blur(4px)',
                       fontFamily: 'Rajdhani, sans-serif',
                       fontSize: '11px',
                       fontWeight: 700,
@@ -320,7 +328,7 @@ export default function CharacterProfile({ character, onClose, onUpdated, collec
                   background: isNsfw ? 'oklch(0.55 0.15 300 / 0.2)' : 'oklch(0.18 0.01 264 / 0.85)',
                   border: isNsfw ? '1px solid oklch(0.55 0.15 300 / 0.5)' : '1px solid oklch(1 0 0 / 0.15)',
                   color: isNsfw ? 'oklch(0.75 0.15 300)' : 'oklch(0.65 0.01 264)',
-                  backdropFilter: 'blur(4px)', direction: 'ltr',
+                  backdropFilter: 'blur(4px)',
                   fontFamily: 'Rajdhani, sans-serif',
                   fontSize: '11px',
                   fontWeight: 700,
@@ -341,7 +349,7 @@ export default function CharacterProfile({ character, onClose, onUpdated, collec
                   background: 'oklch(0.18 0.01 264 / 0.85)',
                   border: '1px solid oklch(1 0 0 / 0.15)',
                   color: 'oklch(0.65 0.01 264)',
-                  backdropFilter: 'blur(4px)', direction: 'ltr',
+                  backdropFilter: 'blur(4px)',
                   fontFamily: 'Rajdhani, sans-serif',
                   fontSize: '11px',
                   fontWeight: 700,
@@ -362,7 +370,7 @@ export default function CharacterProfile({ character, onClose, onUpdated, collec
                   background: 'oklch(0.769 0.188 70.08 / 0.15)',
                   border: '1px solid oklch(0.769 0.188 70.08 / 0.4)',
                   color: 'oklch(0.769 0.188 70.08)',
-                  backdropFilter: 'blur(4px)', direction: 'ltr',
+                  backdropFilter: 'blur(4px)',
                   fontFamily: 'Rajdhani, sans-serif',
                   fontSize: '11px',
                   fontWeight: 700,
@@ -383,7 +391,7 @@ export default function CharacterProfile({ character, onClose, onUpdated, collec
                   background: 'oklch(0.13 0.01 264 / 0.8)',
                   border: '1px solid oklch(1 0 0 / 0.12)',
                   color: 'oklch(0.7 0.005 65)',
-                  backdropFilter: 'blur(4px)', direction: 'ltr',
+                  backdropFilter: 'blur(4px)',
                 }}
                 title="Close"
               >
