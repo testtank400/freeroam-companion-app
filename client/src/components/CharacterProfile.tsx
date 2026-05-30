@@ -286,37 +286,25 @@ export default function CharacterProfile({ character, onClose, onUpdated, collec
 
               {/* Add to Collection button */}
               {onToggleInCollection && (
-                <div className="relative">
-                  <button
-                    onClick={() => setShowCollectionPopover(v => !v)}
-                    className="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-sm transition-all hover:brightness-110"
-                    style={{
-                      background: showCollectionPopover ? 'oklch(0.22 0.01 264)' : 'oklch(0.18 0.01 264 / 0.85)',
-                      border: '1px solid oklch(1 0 0 / 0.15)',
-                      color: 'oklch(0.65 0.01 264)',
-                      backdropFilter: 'blur(4px)',
-                      fontFamily: 'Rajdhani, sans-serif',
-                      fontSize: '11px',
-                      fontWeight: 700,
-                      letterSpacing: '0.1em',
-                      textTransform: 'uppercase',
-                    }}
-                    title="Add to collection"
-                  >
-                    <FolderPlus size={12} strokeWidth={2.5} />
-                    Collect
-                  </button>
-                  {showCollectionPopover && displayCharacter && (
-                    <AddToCollectionPopover
-                      characterId={displayCharacter.external_id}
-                      collections={collections}
-                      isInCollection={isInCollection ?? (() => false)}
-                      onToggle={(colId, charId) => onToggleInCollection(colId, charId)}
-                      onCreate={(name) => { onCreateCollection?.(name); }}
-                      onClose={() => setShowCollectionPopover(false)}
-                    />
-                  )}
-                </div>
+                <button
+                  onClick={() => setShowCollectionPopover(v => !v)}
+                  className="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-sm transition-all hover:brightness-110"
+                  style={{
+                    background: showCollectionPopover ? 'oklch(0.22 0.01 264)' : 'oklch(0.18 0.01 264 / 0.85)',
+                    border: '1px solid oklch(1 0 0 / 0.15)',
+                    color: 'oklch(0.65 0.01 264)',
+                    backdropFilter: 'blur(4px)',
+                    fontFamily: 'Rajdhani, sans-serif',
+                    fontSize: '11px',
+                    fontWeight: 700,
+                    letterSpacing: '0.1em',
+                    textTransform: 'uppercase',
+                  }}
+                  title="Add to collection"
+                >
+                  <FolderPlus size={12} strokeWidth={2.5} />
+                  Collect
+                </button>
               )}
 
               {/* NSFW toggle button */}
@@ -398,6 +386,20 @@ export default function CharacterProfile({ character, onClose, onUpdated, collec
                 <X size={16} strokeWidth={2} />
               </button>
             </div>
+
+            {/* Collection popover — rendered outside action bar to avoid layout shift */}
+            {showCollectionPopover && displayCharacter && onToggleInCollection && (
+              <div className="absolute top-12 right-3 z-50" onClick={(e) => e.stopPropagation()}>
+                <AddToCollectionPopover
+                  characterId={displayCharacter.external_id}
+                  collections={collections}
+                  isInCollection={isInCollection ?? (() => false)}
+                  onToggle={(colId, charId) => onToggleInCollection(colId, charId)}
+                  onCreate={(name) => { onCreateCollection?.(name); }}
+                  onClose={() => setShowCollectionPopover(false)}
+                />
+              </div>
+            )}
 
             {/* Name + creator + badge */}
             <div className="absolute bottom-0 left-0 right-0 px-6 pb-4">
