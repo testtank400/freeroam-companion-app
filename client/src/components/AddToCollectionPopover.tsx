@@ -26,7 +26,9 @@ export default function AddToCollectionPopover({
 }: AddToCollectionPopoverProps) {
   const [isCreating, setIsCreating] = useState(false);
   const [newName, setNewName] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
   const newInputRef = useRef<HTMLInputElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -78,6 +80,24 @@ export default function AddToCollectionPopover({
         </button>
       </div>
 
+      {/* Search bar */}
+      {collections.length > 5 && (
+        <div
+          className="px-3 py-2"
+          style={{ borderBottom: '1px solid oklch(1 0 0 / 0.08)' }}
+        >
+          <input
+            ref={searchInputRef}
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search collections..."
+            className="w-full bg-transparent outline-none text-[11px]"
+            style={{ fontFamily: 'JetBrains Mono, monospace', color: 'oklch(0.88 0.005 65)' }}
+          />
+        </div>
+      )}
+
       {/* Collection list */}
       <div className="overflow-y-auto" style={{ maxHeight: 'min(300px, 50vh)' }}>
         {collections.length === 0 && !isCreating && (
@@ -88,7 +108,9 @@ export default function AddToCollectionPopover({
             </p>
           </div>
         )}
-        {[...collections].sort((a, b) => a.name.localeCompare(b.name)).map(col => {
+        {[...collections]
+          .filter(col => !searchQuery.trim() || col.name.toLowerCase().includes(searchQuery.trim().toLowerCase()))
+          .sort((a, b) => a.name.localeCompare(b.name)).map(col => {
           const active = isInCollection(col.id as number, characterId);
           return (
             <button
