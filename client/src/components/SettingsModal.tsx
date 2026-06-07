@@ -6,6 +6,7 @@
 import { useFreeroamCookie } from '@/hooks/useFreeroamCookie';
 import { trpc } from '@/lib/trpc';
 import { CheckCircle, Download, Loader2, Settings, User, X, XCircle } from 'lucide-react';
+// Note: bulk export uses direct fetch to /api/export/bulk (not tRPC) to handle large responses
 import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
@@ -48,43 +49,56 @@ export default function SettingsModal({ open, onClose, characterIds = [], charac
     },
   });
 
-  const exportMutation = trpc.export.bulk.useMutation({
-    onSuccess: (data) => {
-      // Convert base64 to blob and trigger download
-      const byteCharacters = atob(data.zipBase64);
-      const byteNumbers = new Array(byteCharacters.length);
-      for (let i = 0; i < byteCharacters.length; i++) {
-        byteNumbers[i] = byteCharacters.charCodeAt(i);
-      }
-      const byteArray = new Uint8Array(byteNumbers);
-      const blob = new Blob([byteArray], { type: 'application/zip' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = data.fileName;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-      setExportStatus('done');
-      setExportProgress(`Exported ${data.exportedCount} characters${data.failedCount > 0 ? ` (${data.failedCount} failed)` : ''}`);
-      toast.success(`Exported ${data.exportedCount} characters`);
-    },
-    onError: (err) => {
-      setExportStatus('error');
-      setExportProgress(`Export failed: ${err.message}`);
-      toast.error(`Export failed: ${err.message}`);
-    },
-  });
-
-  const handleBulkExport = () => {
+  const handleBulkExport = async () => {
     if (characterIds.length === 0) {
       toast.error('No characters loaded to export');
       return;
     }
     setExportStatus('exporting');
     setExportProgress(`Exporting ${characterIds.length} characters... This may take a while.`);
-    exportMutation.mutate({ characterIds });
+
+    try {
+      // Use direct Express endpoint instead of tRPC to avoid response size limits
+      const response = await fetch('/api/export/bulk', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-freeroam-cookie': localStorage.getItem('freeroam_cookie') || '',
+          'x-freeroam-account-id': localStorage.getItem('freeroam_account_id') || '',
+        },
+        body: JSON.stringify({ characterIds }),
+      });
+
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({ error: 'Export failed' }));
+        throw new Error(err.error || `HTTP ${response.status}`);
+      }
+
+      const blob = await response.blob();
+      const exportedCount = parseInt(response.headers.get('X-Export-Count') || '0', 10);
+      const failedCount = parseInt(response.headers.get('X-Export-Failed') || '0', 10);
+      const disposition = response.headers.get('Content-Disposition') || '';
+      const fileNameMatch = disposition.match(/filename="(.+)"/);
+      const fileName = fileNameMatch ? fileNameMatch[1] : 'freeroam-companion-export.zip';
+
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      setExportStatus('done');
+      setExportProgress(`Exported ${exportedCount} characters${failedCount > 0 ? ` (${failedCount} failed)` : ''}`);
+      toast.success(`Exported ${exportedCount} characters`);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Export failed';
+      setExportStatus('error');
+      setExportProgress(`Export failed: ${message}`);
+      toast.error(`Export failed: ${message}`);
+    }
   };
 
   useEffect(() => {

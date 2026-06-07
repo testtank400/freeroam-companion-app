@@ -116,67 +116,55 @@ async function downloadHeadshot(
 }
 
 /**
- * Build the about.md file content.
- * Freeroam version first, then Extended (if exists).
- * If neither exists, show placeholder.
+ * Build the about-freeroam.md file content.
+ * Returns null if no content exists.
  */
-function buildAboutMarkdown(
-  freeroamBackstory: string | null | undefined,
-  extendedBackstory: string | null | undefined
+function buildAboutFreeroamMarkdown(
+  freeroamBackstory: string | null | undefined
 ): string {
-  const hasFreeroam = freeroamBackstory && freeroamBackstory.trim().length > 0;
-  const hasExtended = extendedBackstory && extendedBackstory.trim().length > 0;
-
-  if (!hasFreeroam && !hasExtended) {
-    return "# About (Freeroam)\n\n*No content on Freeroam.*\n";
+  const hasContent = freeroamBackstory && freeroamBackstory.trim().length > 0;
+  if (!hasContent) {
+    return "# About\n\n*No content on Freeroam.*\n";
   }
-
-  let content = "";
-
-  if (hasFreeroam) {
-    content += `# About (Freeroam)\n\n${freeroamBackstory}\n`;
-  }
-
-  if (hasExtended) {
-    if (hasFreeroam) {
-      content += "\n---\n\n";
-    }
-    content += `# About (Extended)\n\n${extendedBackstory}\n`;
-  }
-
-  return content;
+  return `# About\n\n${freeroamBackstory}\n`;
 }
 
 /**
- * Build the appearance.md file content.
- * Freeroam version first, then Extended (if exists).
- * If neither exists, show placeholder.
+ * Build the about-extended.md file content.
+ * Returns null if no extended content exists.
  */
-function buildAppearanceMarkdown(
-  freeroamAppearance: string | null | undefined,
-  extendedAppearance: string | null | undefined
+function buildAboutExtendedMarkdown(
+  extendedBackstory: string | null | undefined
+): string | null {
+  const hasContent = extendedBackstory && extendedBackstory.trim().length > 0;
+  if (!hasContent) return null;
+  return `# About (Extended)\n\n${extendedBackstory}\n`;
+}
+
+/**
+ * Build the appearance-freeroam.md file content.
+ * Returns null if no content exists.
+ */
+function buildAppearanceFreeroamMarkdown(
+  freeroamAppearance: string | null | undefined
 ): string {
-  const hasFreeroam = freeroamAppearance && freeroamAppearance.trim().length > 0;
-  const hasExtended = extendedAppearance && extendedAppearance.trim().length > 0;
-
-  if (!hasFreeroam && !hasExtended) {
-    return "# Appearance (Freeroam)\n\n*No content on Freeroam.*\n";
+  const hasContent = freeroamAppearance && freeroamAppearance.trim().length > 0;
+  if (!hasContent) {
+    return "# Appearance\n\n*No content on Freeroam.*\n";
   }
+  return `# Appearance\n\n${freeroamAppearance}\n`;
+}
 
-  let content = "";
-
-  if (hasFreeroam) {
-    content += `# Appearance (Freeroam)\n\n${freeroamAppearance}\n`;
-  }
-
-  if (hasExtended) {
-    if (hasFreeroam) {
-      content += "\n---\n\n";
-    }
-    content += `# Appearance (Extended)\n\n${extendedAppearance}\n`;
-  }
-
-  return content;
+/**
+ * Build the appearance-extended.md file content.
+ * Returns null if no extended content exists.
+ */
+function buildAppearanceExtendedMarkdown(
+  extendedAppearance: string | null | undefined
+): string | null {
+  const hasContent = extendedAppearance && extendedAppearance.trim().length > 0;
+  if (!hasContent) return null;
+  return `# Appearance (Extended)\n\n${extendedAppearance}\n`;
 }
 
 /**
@@ -229,17 +217,23 @@ export async function exportSingleCharacter(
   const folderName = sanitizeFolderName(charData.name);
   const folder = zip.folder(folderName)!;
 
-  // about.md
-  folder.file(
-    "about.md",
-    buildAboutMarkdown(charData.backstory, extended?.backstoryFull)
-  );
+  // about-freeroam.md (always present)
+  folder.file("about-freeroam.md", buildAboutFreeroamMarkdown(charData.backstory));
 
-  // appearance.md
-  folder.file(
-    "appearance.md",
-    buildAppearanceMarkdown(charData.appearance, extended?.appearanceFull)
-  );
+  // about-extended.md (only if extended content exists)
+  const aboutExtended = buildAboutExtendedMarkdown(extended?.backstoryFull);
+  if (aboutExtended) {
+    folder.file("about-extended.md", aboutExtended);
+  }
+
+  // appearance-freeroam.md (always present)
+  folder.file("appearance-freeroam.md", buildAppearanceFreeroamMarkdown(charData.appearance));
+
+  // appearance-extended.md (only if extended content exists)
+  const appearanceExtended = buildAppearanceExtendedMarkdown(extended?.appearanceFull);
+  if (appearanceExtended) {
+    folder.file("appearance-extended.md", appearanceExtended);
+  }
 
   // character-data.json (raw Freeroam response)
   folder.file("character-data.json", JSON.stringify(charData, null, 2));
@@ -328,17 +322,23 @@ export async function exportAllCharacters(
 
       const charFolder = rootFolder.folder(uniqueName)!;
 
-      // about.md
-      charFolder.file(
-        "about.md",
-        buildAboutMarkdown(charData.backstory, extended?.backstoryFull)
-      );
+      // about-freeroam.md (always present)
+      charFolder.file("about-freeroam.md", buildAboutFreeroamMarkdown(charData.backstory));
 
-      // appearance.md
-      charFolder.file(
-        "appearance.md",
-        buildAppearanceMarkdown(charData.appearance, extended?.appearanceFull)
-      );
+      // about-extended.md (only if extended content exists)
+      const aboutExtended = buildAboutExtendedMarkdown(extended?.backstoryFull);
+      if (aboutExtended) {
+        charFolder.file("about-extended.md", aboutExtended);
+      }
+
+      // appearance-freeroam.md (always present)
+      charFolder.file("appearance-freeroam.md", buildAppearanceFreeroamMarkdown(charData.appearance));
+
+      // appearance-extended.md (only if extended content exists)
+      const appearanceExtended = buildAppearanceExtendedMarkdown(extended?.appearanceFull);
+      if (appearanceExtended) {
+        charFolder.file("appearance-extended.md", appearanceExtended);
+      }
 
       // character-data.json
       charFolder.file("character-data.json", JSON.stringify(charData, null, 2));

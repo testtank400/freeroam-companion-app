@@ -54,7 +54,7 @@
 - [ ] Headshot upload/linking for characters
 - [ ] Cover image upload/linking for collections (partially done - URL input works)
 - [ ] Advanced filtering options
-- [ ] Character export/import
+- [x] Character export (import scoped out per user decision)
 - [ ] Collection sharing
 - [x] Install jszip dependency for ZIP generation
 - [x] Add server-side export procedure: single character export (fetch Freeroam data, headshot, build ZIP)
@@ -62,3 +62,6 @@
 - [x] Add Export button to CharacterProfile action bar (single character download)
 - [x] Add Export All Characters section to SettingsModal (bulk export with progress)
 - [x] Write tests for export procedures
+- [x] Fix bulk export: response too large for tRPC — use Express streaming endpoint instead
+- [x] Separate markdown files: about-freeroam.md + about-extended.md (instead of combined)
+- [x] Update single export to use separate files too
