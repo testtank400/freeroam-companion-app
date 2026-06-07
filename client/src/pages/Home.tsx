@@ -1370,7 +1370,7 @@ export default function Home() {
       <SettingsModal
         open={showSettings}
         onClose={() => setShowSettings(false)}
-        characterIds={allCharacters.map(c => c.external_id)}
+        characters={allCharacters}
         characterCount={allCharacters.length}
       />
     </div>

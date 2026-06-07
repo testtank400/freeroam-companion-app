@@ -17,6 +17,23 @@ interface FreeroamCharacterData {
   [key: string]: unknown;
 }
 
+/** Character data as it comes from the library endpoint (description = appearance) */
+export interface LibraryCharacterData {
+  external_id: string;
+  name: string;
+  backstory: string | null;
+  description: string | null; // This IS the appearance field
+  headshot_url: string | null;
+  display_headshot_url: string | null;
+  privacy_status: string;
+  created_at?: string;
+  creator_username?: string;
+  is_yours?: boolean;
+  is_saved?: boolean;
+  tags?: Array<{ name: string; is_fandom: boolean; emoji: string }>;
+  [key: string]: unknown;
+}
+
 interface CompanionData {
   characterId: string;
   characterName: string;
@@ -43,6 +60,7 @@ const FREEROAM_HEADERS = {
 
 /**
  * Fetch a single character's full data from Freeroam API.
+ * Used only for single-character export (profile modal).
  * Includes retry with exponential backoff for 429 rate limits.
  */
 async function fetchCharacterData(
@@ -117,7 +135,6 @@ async function downloadHeadshot(
 
 /**
  * Build the about-freeroam.md file content.
- * Returns null if no content exists.
  */
 function buildAboutFreeroamMarkdown(
   freeroamBackstory: string | null | undefined
@@ -143,7 +160,6 @@ function buildAboutExtendedMarkdown(
 
 /**
  * Build the appearance-freeroam.md file content.
- * Returns null if no content exists.
  */
 function buildAppearanceFreeroamMarkdown(
   freeroamAppearance: string | null | undefined
@@ -183,6 +199,7 @@ function sanitizeFolderName(name: string): string {
 
 /**
  * Export a single character as a ZIP buffer.
+ * Fetches fresh data from the individual character endpoint.
  * Returns the ZIP as a base64 string.
  */
 export async function exportSingleCharacter(
@@ -273,18 +290,20 @@ export async function exportSingleCharacter(
 
 /**
  * Export all characters as a ZIP buffer.
+ * Uses library data passed from the client — NO individual API calls needed.
+ * Only downloads headshot images from the CDN (not rate-limited).
  * Each character gets its own subfolder.
- * Returns the ZIP as a base64 string.
  */
 export async function exportAllCharacters(
-  characterIds: string[],
-  cookie: string,
+  characters: LibraryCharacterData[],
   freeroamAccountId: number | null
 ): Promise<{ zipBase64: string; fileName: string; exportedCount: number; failedCount: number }> {
   const zip = new JSZip();
   const dateStr = new Date().toISOString().split("T")[0]; // YYYY-MM-DD
   const rootFolderName = `freeroam-companion-export-${dateStr}`;
   const rootFolder = zip.folder(rootFolderName)!;
+
+  const characterIds = characters.map((c) => c.external_id);
 
   // Get all NSFW flags at once
   let nsfwMap: Record<string, boolean> = {};
@@ -302,16 +321,15 @@ export async function exportAllCharacters(
   let exportedCount = 0;
   let failedCount = 0;
 
-  for (const characterId of characterIds) {
+  for (const char of characters) {
     try {
-      // Fetch character data with polite delay
-      const charData = await fetchCharacterData(characterId, cookie);
+      const characterId = char.external_id;
 
-      // Get extended content
+      // Get extended content from our DB
       const extended = await getCharacterExtended(characterId);
 
       // Determine unique folder name
-      let folderName = sanitizeFolderName(charData.name);
+      let folderName = sanitizeFolderName(char.name);
       let counter = 1;
       let uniqueName = folderName;
       while (usedFolderNames.has(uniqueName)) {
@@ -322,8 +340,12 @@ export async function exportAllCharacters(
 
       const charFolder = rootFolder.folder(uniqueName)!;
 
+      // Library endpoint: backstory = backstory, description = appearance
+      const backstory = char.backstory;
+      const appearance = char.description; // description IS the appearance field
+
       // about-freeroam.md (always present)
-      charFolder.file("about-freeroam.md", buildAboutFreeroamMarkdown(charData.backstory));
+      charFolder.file("about-freeroam.md", buildAboutFreeroamMarkdown(backstory));
 
       // about-extended.md (only if extended content exists)
       const aboutExtended = buildAboutExtendedMarkdown(extended?.backstoryFull);
@@ -332,7 +354,7 @@ export async function exportAllCharacters(
       }
 
       // appearance-freeroam.md (always present)
-      charFolder.file("appearance-freeroam.md", buildAppearanceFreeroamMarkdown(charData.appearance));
+      charFolder.file("appearance-freeroam.md", buildAppearanceFreeroamMarkdown(appearance));
 
       // appearance-extended.md (only if extended content exists)
       const appearanceExtended = buildAppearanceExtendedMarkdown(extended?.appearanceFull);
@@ -340,8 +362,8 @@ export async function exportAllCharacters(
         charFolder.file("appearance-extended.md", appearanceExtended);
       }
 
-      // character-data.json
-      charFolder.file("character-data.json", JSON.stringify(charData, null, 2));
+      // character-data.json — the library data for this character
+      charFolder.file("character-data.json", JSON.stringify(char, null, 2));
 
       // companion-data.json
       const characterCollections = allCollections
@@ -350,7 +372,7 @@ export async function exportAllCharacters(
 
       const companionData: CompanionData = {
         characterId,
-        characterName: charData.name,
+        characterName: char.name,
         collections: characterCollections,
         isNsfw: nsfwMap[characterId] || false,
         extendedBackstory: extended?.backstoryFull || null,
@@ -362,20 +384,17 @@ export async function exportAllCharacters(
       };
       charFolder.file("companion-data.json", JSON.stringify(companionData, null, 2));
 
-      // headshot
+      // headshot — download from CDN (not rate-limited by Freeroam API)
       const headshot = await downloadHeadshot(
-        charData.headshot_url || charData.display_headshot_url
+        char.headshot_url || char.display_headshot_url
       );
       if (headshot) {
         charFolder.file(`headshot.${headshot.ext}`, headshot.buffer);
       }
 
       exportedCount++;
-
-      // Polite delay between characters to avoid rate limiting
-      await new Promise((resolve) => setTimeout(resolve, 400));
     } catch (err) {
-      console.warn(`[Export] Failed to export character ${characterId}:`, err);
+      console.warn(`[Export] Failed to export character ${char.external_id}:`, err);
       failedCount++;
     }
   }

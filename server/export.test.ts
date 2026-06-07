@@ -162,60 +162,51 @@ describe("export.single", () => {
   });
 });
 
-describe("export.bulk", () => {
+describe("export.bulk (direct function call — uses Express route, not tRPC)", () => {
   beforeEach(() => {
     vi.resetAllMocks();
     process.env.cookie = "session=test-session-cookie";
     setupDbMocks();
   });
 
-  it("returns a ZIP with exportedCount and failedCount", async () => {
-    // First character succeeds
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({
+  it("returns a ZIP with exportedCount using library data directly", async () => {
+    // No fetch mocks needed for character data — library data is passed directly.
+    // Only headshot downloads would trigger fetch, but these chars have no headshot.
+    const { exportAllCharacters } = await import("./export");
+
+    const characters = [
+      {
         external_id: "char-001",
         name: "Character One",
         backstory: "Story one.",
-        appearance: "Looks one.",
+        description: "Looks one.",
         headshot_url: null,
         display_headshot_url: null,
         privacy_status: "private",
-        owner: { username: "TestUser" },
-      }),
-    });
+      },
+      {
+        external_id: "char-002",
+        name: "Character Two",
+        backstory: "Story two.",
+        description: "Looks two.",
+        headshot_url: null,
+        display_headshot_url: null,
+        privacy_status: "public",
+      },
+    ];
 
-    // Second character fails (404)
-    mockFetch.mockResolvedValueOnce({
-      ok: false,
-      status: 404,
-      text: async () => "Not found",
-    });
-    // Retry 1
-    mockFetch.mockResolvedValueOnce({
-      ok: false,
-      status: 404,
-      text: async () => "Not found",
-    });
-    // Retry 2
-    mockFetch.mockResolvedValueOnce({
-      ok: false,
-      status: 404,
-      text: async () => "Not found",
-    });
+    const result = await exportAllCharacters(characters, 12345);
 
-    const caller = appRouter.createCaller(createCtx());
-    const result = await caller.export.bulk({ characterIds: ["char-001", "char-002"] });
-
-    expect(result.exportedCount).toBe(1);
-    expect(result.failedCount).toBe(1);
+    expect(result.exportedCount).toBe(2);
+    expect(result.failedCount).toBe(0);
     expect(result.fileName).toMatch(/^freeroam-companion-export-\d{4}-\d{2}-\d{2}\.zip$/);
     expect(result.zipBase64).toBeTruthy();
   });
 
-  it("handles empty characterIds array", async () => {
-    const caller = appRouter.createCaller(createCtx());
-    const result = await caller.export.bulk({ characterIds: [] });
+  it("handles empty characters array", async () => {
+    const { exportAllCharacters } = await import("./export");
+
+    const result = await exportAllCharacters([], 12345);
 
     expect(result.exportedCount).toBe(0);
     expect(result.failedCount).toBe(0);

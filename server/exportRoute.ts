@@ -4,22 +4,15 @@
  * (which has response size limits that fail with large rosters like 1000+ characters).
  */
 import type { Express, Request, Response } from "express";
-import { exportAllCharacters } from "./export";
+import { exportAllCharacters, LibraryCharacterData } from "./export";
 
 export function registerExportRoute(app: Express) {
   app.post("/api/export/bulk", async (req: Request, res: Response) => {
     try {
-      const { characterIds } = req.body as { characterIds?: string[] };
+      const { characters } = req.body as { characters?: LibraryCharacterData[] };
 
-      if (!characterIds || !Array.isArray(characterIds) || characterIds.length === 0) {
-        res.status(400).json({ error: "characterIds array is required" });
-        return;
-      }
-
-      // Get cookie from header (same pattern as tRPC procedures)
-      const cookie = (req.headers["x-freeroam-cookie"] as string) || process.env.cookie || "";
-      if (!cookie) {
-        res.status(401).json({ error: "No Freeroam cookie provided" });
+      if (!characters || !Array.isArray(characters) || characters.length === 0) {
+        res.status(400).json({ error: "characters array is required" });
         return;
       }
 
@@ -27,8 +20,8 @@ export function registerExportRoute(app: Express) {
       const accountIdHeader = req.headers["x-freeroam-account-id"] as string;
       const accountId = accountIdHeader ? parseInt(accountIdHeader, 10) : null;
 
-      // Generate the ZIP
-      const result = await exportAllCharacters(characterIds, cookie, isNaN(accountId!) ? null : accountId);
+      // Generate the ZIP — no individual API calls needed, uses library data directly
+      const result = await exportAllCharacters(characters, isNaN(accountId!) ? null : accountId);
 
       // Send as binary download
       const zipBuffer = Buffer.from(result.zipBase64, "base64");

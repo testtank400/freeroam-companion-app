@@ -10,16 +10,31 @@ import { CheckCircle, Download, Loader2, Settings, User, X, XCircle } from 'luci
 import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
+interface ExportCharacter {
+  external_id: string;
+  name: string;
+  backstory: string | null;
+  description: string | null;
+  headshot_url: string | null;
+  display_headshot_url: string | null;
+  privacy_status: string;
+  created_at?: string;
+  creator_username?: string;
+  is_yours?: boolean;
+  is_saved?: boolean;
+  tags?: Array<{ name: string; is_fandom: boolean; emoji: string }>;
+}
+
 interface SettingsModalProps {
   open: boolean;
   onClose: () => void;
-  /** All character IDs currently loaded in the roster (for bulk export) */
-  characterIds?: string[];
+  /** All characters currently loaded in the roster (for bulk export) */
+  characters?: ExportCharacter[];
   /** Total character count for display */
   characterCount?: number;
 }
 
-export default function SettingsModal({ open, onClose, characterIds = [], characterCount = 0 }: SettingsModalProps) {
+export default function SettingsModal({ open, onClose, characters = [], characterCount = 0 }: SettingsModalProps) {
   const { hasCookie, identity, saveIdentity, clearCookie } = useFreeroamCookie();
   const [visible, setVisible] = useState(false);
   const [input, setInput] = useState('');
@@ -50,23 +65,22 @@ export default function SettingsModal({ open, onClose, characterIds = [], charac
   });
 
   const handleBulkExport = async () => {
-    if (characterIds.length === 0) {
+    if (characters.length === 0) {
       toast.error('No characters loaded to export');
       return;
     }
     setExportStatus('exporting');
-    setExportProgress(`Exporting ${characterIds.length} characters... This may take a while.`);
+    setExportProgress(`Exporting ${characters.length} characters...`);
 
     try {
-      // Use direct Express endpoint instead of tRPC to avoid response size limits
+      // Pass full character data to avoid individual API calls per character
       const response = await fetch('/api/export/bulk', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'x-freeroam-cookie': localStorage.getItem('freeroam_cookie') || '',
           'x-freeroam-account-id': localStorage.getItem('freeroam_account_id') || '',
         },
-        body: JSON.stringify({ characterIds }),
+        body: JSON.stringify({ characters }),
       });
 
       if (!response.ok) {
@@ -329,7 +343,7 @@ export default function SettingsModal({ open, onClose, characterIds = [], charac
 
               <button
                 onClick={handleBulkExport}
-                disabled={exportStatus === 'exporting' || characterIds.length === 0}
+                disabled={exportStatus === 'exporting' || characters.length === 0}
                 className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-sm text-xs font-semibold tracking-wider uppercase transition-all disabled:opacity-40 hover:brightness-110"
                 style={{
                   fontFamily: 'Rajdhani, sans-serif',
@@ -377,7 +391,7 @@ export default function SettingsModal({ open, onClose, characterIds = [], charac
                 </div>
               )}
 
-              {characterIds.length === 0 && (
+              {characters.length === 0 && (
                 <p className="mt-2 text-[10px]" style={{ fontFamily: 'JetBrains Mono, monospace', color: 'oklch(0.45 0.01 264)' }}>
                   Load your characters first by closing this modal and waiting for the roster to load.
                 </p>

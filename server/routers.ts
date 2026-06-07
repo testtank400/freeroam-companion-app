@@ -749,15 +749,8 @@ export const appRouter = router({
         return exportSingleCharacter(input.characterId, cookie, accountId);
       }),
 
-    /** Export all characters as a ZIP file (base64-encoded). */
-    bulk: publicProcedure
-      .input(z.object({ characterIds: z.array(z.string()) }))
-      .mutation(async ({ input, ctx }) => {
-        const cookie = getFreeroamCookie(ctx);
-        if (!cookie) throw new Error("Cookie not configured in environment");
-        const accountId = getFreeroamAccountId(ctx);
-        return exportAllCharacters(input.characterIds, cookie, accountId);
-      }),
+    // Bulk export is handled by the Express route at /api/export/bulk
+    // (tRPC has response size limits that fail with large rosters)
   }),
 
   // ─── Freeroam Cookie Verification ──────────────────────────────────────────────────────────
