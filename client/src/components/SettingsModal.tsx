@@ -96,45 +96,66 @@ export default function SettingsModal({ open, onClose, characters = [], characte
     }, 5000);
   };
 
-  // On mount, check if there's a running job from before a refresh
-  // Check job status immediately on mount (handles page refresh / modal reopen)
+  // On mount: check localStorage for a running job, OR check server for a completed export
   useEffect(() => {
     const savedJobId = localStorage.getItem('export_job_id');
-    if (!savedJobId) return;
 
-    setExportJobId(savedJobId);
-    setExportStatus('exporting');
-    setExportProgress('Checking export status...');
+    if (savedJobId) {
+      // We have a job ID — check its status directly
+      setExportJobId(savedJobId);
+      setExportStatus('exporting');
+      setExportProgress('Checking export status...');
 
-    // Immediately fetch status instead of waiting 5s for first poll
-    fetch(`/api/export/status/${savedJobId}`)
-      .then(r => r.json())
-      .then(data => {
-        if (data.status === 'done') {
-          setExportStatus('done');
-          setExportDownloadUrl(data.downloadUrl);
-          setExportProgress(`Exported ${data.exportedCount} characters${data.failedCount > 0 ? ` (${data.failedCount} failed)` : ''}`);
-          localStorage.removeItem('export_job_id');
-        } else if (data.status === 'error') {
-          setExportStatus('error');
-          setExportProgress(`Export failed: ${data.errorMessage || 'Unknown error'}`);
-          localStorage.removeItem('export_job_id');
-        } else if (data.error === 'Job not found') {
-          // Job ID is stale — clear it
-          localStorage.removeItem('export_job_id');
-          setExportStatus('idle');
-          setExportProgress('');
-        } else {
-          // Still processing — start polling
+      fetch(`/api/export/status/${savedJobId}`)
+        .then(r => r.json())
+        .then(data => {
+          if (data.status === 'done') {
+            setExportStatus('done');
+            setExportDownloadUrl(data.downloadUrl);
+            setExportProgress(`Exported ${data.exportedCount} characters${data.failedCount > 0 ? ` (${data.failedCount} failed)` : ''}`);
+            localStorage.removeItem('export_job_id');
+          } else if (data.status === 'error') {
+            setExportStatus('error');
+            setExportProgress(`Export failed: ${data.errorMessage || 'Unknown error'}`);
+            localStorage.removeItem('export_job_id');
+          } else if (data.error === 'Job not found') {
+            localStorage.removeItem('export_job_id');
+            setExportStatus('idle');
+            setExportProgress('');
+          } else {
+            setExportProgress('Export in progress...');
+            startPolling(savedJobId);
+          }
+        })
+        .catch(() => {
           setExportProgress('Export in progress...');
           startPolling(savedJobId);
-        }
-      })
-      .catch(() => {
-        // Network error — start polling anyway
-        setExportProgress('Export in progress...');
-        startPolling(savedJobId);
-      });
+        });
+    } else {
+      // No saved job — check server for any recent completed export
+      const accountId = localStorage.getItem('freeroam_account_id');
+      if (accountId) {
+        fetch('/api/export/latest', {
+          headers: { 'x-freeroam-account-id': accountId },
+        })
+          .then(r => r.json())
+          .then(data => {
+            if (data.hasExport) {
+              setExportStatus('done');
+              setExportDownloadUrl(data.downloadUrl);
+              setExportProgress(`Exported ${data.exportedCount} characters${data.failedCount > 0 ? ` (${data.failedCount} failed)` : ''}`);
+            } else if (data.runningJobId) {
+              // There's a running job we didn't know about
+              setExportJobId(data.runningJobId);
+              localStorage.setItem('export_job_id', data.runningJobId);
+              setExportStatus('exporting');
+              setExportProgress('Export in progress...');
+              startPolling(data.runningJobId);
+            }
+          })
+          .catch(() => { /* ignore */ });
+      }
+    }
 
     return () => {
       if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
@@ -196,8 +217,8 @@ export default function SettingsModal({ open, onClose, characters = [], characte
       setInput('');
       setStatus('idle');
       setErrorMsg('');
-      // Don't reset export state on open — preserve polling state across modal open/close
-      if (exportStatus !== 'exporting') {
+      // Don't reset export state on open — preserve polling/done state across modal open/close
+      if (exportStatus !== 'exporting' && exportStatus !== 'done') {
         setExportStatus('idle');
         setExportProgress('');
         setExportDownloadUrl(null);

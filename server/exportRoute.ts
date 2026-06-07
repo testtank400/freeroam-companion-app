@@ -91,6 +91,67 @@ export function registerExportRoute(app: Express) {
   });
 
   /**
+   * Get the latest completed export for the current user.
+   * Used on modal open to show the download button if a recent export exists.
+   */
+  app.get("/api/export/latest", async (req: Request, res: Response) => {
+    try {
+      const accountIdHeader = req.headers["x-freeroam-account-id"] as string;
+      const accountId = accountIdHeader ? parseInt(accountIdHeader, 10) : null;
+      if (!accountId || isNaN(accountId)) {
+        res.json({ hasExport: false });
+        return;
+      }
+
+      const db = await getDb();
+      if (!db) {
+        res.json({ hasExport: false });
+        return;
+      }
+
+      const rows = await db
+        .select()
+        .from(exportJobs)
+        .where(eq(exportJobs.freeroamAccountId, accountId))
+        .orderBy(exportJobs.createdAt);
+
+      // Find the most recent done job that hasn't expired
+      const doneJob = [...rows].reverse().find(
+        (j) => j.status === "done" && j.downloadUrl && j.expiresAt && new Date(j.expiresAt) > new Date()
+      );
+
+      // Also check for any running job
+      const runningJob = rows.find(
+        (j) => (j.status === "pending" || j.status === "processing") &&
+          Date.now() - new Date(j.createdAt).getTime() < 15 * 60 * 1000
+      );
+
+      if (runningJob) {
+        res.json({
+          hasExport: false,
+          runningJobId: runningJob.id,
+          status: runningJob.status,
+          totalCount: runningJob.totalCount,
+        });
+      } else if (doneJob) {
+        res.json({
+          hasExport: true,
+          jobId: doneJob.id,
+          downloadUrl: doneJob.downloadUrl,
+          exportedCount: doneJob.exportedCount,
+          failedCount: doneJob.failedCount,
+          createdAt: doneJob.createdAt,
+        });
+      } else {
+        res.json({ hasExport: false });
+      }
+    } catch (err) {
+      console.error("[Export Route] Latest error:", err);
+      res.json({ hasExport: false });
+    }
+  });
+
+  /**
    * Poll the status of an export job.
    */
   app.get("/api/export/status/:jobId", async (req: Request, res: Response) => {
