@@ -45,6 +45,9 @@ export default function SettingsModal({ open, onClose, characters = [], characte
   // Export state
   const [exportStatus, setExportStatus] = useState<'idle' | 'exporting' | 'done' | 'error'>('idle');
   const [exportProgress, setExportProgress] = useState('');
+  const [exportDownloadUrl, setExportDownloadUrl] = useState<string | null>(null);
+  const [exportJobId, setExportJobId] = useState<string | null>(null);
+  const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const verifyMutation = trpc.freeroam.verifySession.useMutation({
     onSuccess: (data) => {
@@ -64,17 +67,69 @@ export default function SettingsModal({ open, onClose, characters = [], characte
     },
   });
 
+  // Poll for job status
+  const startPolling = (jobId: string) => {
+    if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+    pollIntervalRef.current = setInterval(async () => {
+      try {
+        const resp = await fetch(`/api/export/status/${jobId}`);
+        if (!resp.ok) return;
+        const data = await resp.json();
+
+        if (data.status === 'done') {
+          if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+          setExportStatus('done');
+          setExportDownloadUrl(data.downloadUrl);
+          setExportProgress(`Exported ${data.exportedCount} characters${data.failedCount > 0 ? ` (${data.failedCount} failed)` : ''}`);
+          toast.success(`Export ready — ${data.exportedCount} characters`);
+          localStorage.removeItem('export_job_id');
+        } else if (data.status === 'error') {
+          if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+          setExportStatus('error');
+          setExportProgress(`Export failed: ${data.errorMessage || 'Unknown error'}`);
+          localStorage.removeItem('export_job_id');
+        }
+        // else still processing — keep polling
+      } catch {
+        // Network error — keep polling
+      }
+    }, 5000);
+  };
+
+  // On mount, check if there's a running job from before a refresh
+  useEffect(() => {
+    const savedJobId = localStorage.getItem('export_job_id');
+    if (savedJobId) {
+      setExportJobId(savedJobId);
+      setExportStatus('exporting');
+      setExportProgress('Export in progress...');
+      startPolling(savedJobId);
+    }
+    return () => {
+      if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+    };
+  }, []);
+
+  const handleCancelExport = () => {
+    if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+    localStorage.removeItem('export_job_id');
+    setExportStatus('idle');
+    setExportProgress('');
+    setExportDownloadUrl(null);
+    setExportJobId(null);
+  };
+
   const handleBulkExport = async () => {
     if (characters.length === 0) {
       toast.error('No characters loaded to export');
       return;
     }
     setExportStatus('exporting');
-    setExportProgress(`Exporting ${characters.length} characters...`);
+    setExportProgress(`Starting export of ${characters.length} characters...`);
+    setExportDownloadUrl(null);
 
     try {
-      // Pass full character data to avoid individual API calls per character
-      const response = await fetch('/api/export/bulk', {
+      const response = await fetch('/api/export/start', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -88,25 +143,14 @@ export default function SettingsModal({ open, onClose, characters = [], characte
         throw new Error(err.error || `HTTP ${response.status}`);
       }
 
-      const blob = await response.blob();
-      const exportedCount = parseInt(response.headers.get('X-Export-Count') || '0', 10);
-      const failedCount = parseInt(response.headers.get('X-Export-Failed') || '0', 10);
-      const disposition = response.headers.get('Content-Disposition') || '';
-      const fileNameMatch = disposition.match(/filename="(.+)"/);
-      const fileName = fileNameMatch ? fileNameMatch[1] : 'freeroam-companion-export.zip';
+      const data = await response.json();
+      const jobId = data.jobId;
+      setExportJobId(jobId);
+      localStorage.setItem('export_job_id', jobId);
+      setExportProgress('Export in progress... You can close this modal or refresh the page.');
 
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = fileName;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-
-      setExportStatus('done');
-      setExportProgress(`Exported ${exportedCount} characters${failedCount > 0 ? ` (${failedCount} failed)` : ''}`);
-      toast.success(`Exported ${exportedCount} characters`);
+      // Start polling
+      startPolling(jobId);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Export failed';
       setExportStatus('error');
@@ -121,8 +165,12 @@ export default function SettingsModal({ open, onClose, characters = [], characte
       setInput('');
       setStatus('idle');
       setErrorMsg('');
-      setExportStatus('idle');
-      setExportProgress('');
+      // Don't reset export state on open — preserve polling state across modal open/close
+      if (exportStatus !== 'exporting') {
+        setExportStatus('idle');
+        setExportProgress('');
+        setExportDownloadUrl(null);
+      }
       setTimeout(() => inputRef.current?.focus(), 100);
     } else {
       setVisible(false);
@@ -338,32 +386,51 @@ export default function SettingsModal({ open, onClose, characters = [], characte
                 className="text-[11px] mb-3"
                 style={{ fontFamily: 'JetBrains Mono, monospace', color: 'oklch(0.5 0.01 264)' }}
               >
-                Download a ZIP containing all {characterCount} characters with their markdown files, headshots, Freeroam data, and Companion data.
+                Download a ZIP containing all your characters with their markdown files, headshots, Freeroam data, and Companion data.
               </p>
 
-              <button
-                onClick={handleBulkExport}
-                disabled={exportStatus === 'exporting' || characters.length === 0}
-                className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-sm text-xs font-semibold tracking-wider uppercase transition-all disabled:opacity-40 hover:brightness-110"
-                style={{
-                  fontFamily: 'Rajdhani, sans-serif',
-                  background: exportStatus === 'exporting' ? 'oklch(0.15 0.01 264)' : 'oklch(0.769 0.188 70.08 / 0.12)',
-                  border: exportStatus === 'exporting' ? '1px solid oklch(1 0 0 / 0.1)' : '1px solid oklch(0.769 0.188 70.08 / 0.4)',
-                  color: exportStatus === 'exporting' ? 'oklch(0.5 0.01 264)' : 'oklch(0.769 0.188 70.08)',
-                }}
-              >
-                {exportStatus === 'exporting' ? (
-                  <>
-                    <Loader2 size={13} className="animate-spin" />
-                    Exporting...
-                  </>
-                ) : (
-                  <>
-                    <Download size={13} strokeWidth={2.5} />
-                    Export All ({characterCount})
-                  </>
-                )}
-              </button>
+              {/* Export / Download button */}
+              {exportStatus === 'done' && exportDownloadUrl ? (
+                <a
+                  href={exportDownloadUrl}
+                  download
+                  className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-sm text-xs font-semibold tracking-wider uppercase transition-all hover:brightness-110"
+                  style={{
+                    fontFamily: 'Rajdhani, sans-serif',
+                    background: 'oklch(0.55 0.15 145 / 0.15)',
+                    border: '1px solid oklch(0.55 0.15 145 / 0.5)',
+                    color: 'oklch(0.65 0.15 145)',
+                    textDecoration: 'none',
+                  }}
+                >
+                  <Download size={13} strokeWidth={2.5} />
+                  Download Export
+                </a>
+              ) : (
+                <button
+                  onClick={handleBulkExport}
+                  disabled={exportStatus === 'exporting' || characters.length === 0}
+                  className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-sm text-xs font-semibold tracking-wider uppercase transition-all disabled:opacity-40 hover:brightness-110"
+                  style={{
+                    fontFamily: 'Rajdhani, sans-serif',
+                    background: exportStatus === 'exporting' ? 'oklch(0.15 0.01 264)' : 'oklch(0.769 0.188 70.08 / 0.12)',
+                    border: exportStatus === 'exporting' ? '1px solid oklch(1 0 0 / 0.1)' : '1px solid oklch(0.769 0.188 70.08 / 0.4)',
+                    color: exportStatus === 'exporting' ? 'oklch(0.5 0.01 264)' : 'oklch(0.769 0.188 70.08)',
+                  }}
+                >
+                  {exportStatus === 'exporting' ? (
+                    <>
+                      <Loader2 size={13} className="animate-spin" />
+                      Exporting...
+                    </>
+                  ) : (
+                    <>
+                      <Download size={13} strokeWidth={2.5} />
+                      {characterCount > 0 ? `Export All (${characterCount})` : 'Export All'}
+                    </>
+                  )}
+                </button>
+              )}
 
               {/* Progress / status */}
               {exportProgress && (
@@ -378,7 +445,7 @@ export default function SettingsModal({ open, onClose, characters = [], characte
                     <XCircle size={11} style={{ color: 'oklch(0.65 0.22 25)' }} />
                   )}
                   <p
-                    className="text-[11px]"
+                    className="text-[11px] flex-1"
                     style={{
                       fontFamily: 'JetBrains Mono, monospace',
                       color: exportStatus === 'done' ? 'oklch(0.65 0.15 145)'
@@ -388,10 +455,19 @@ export default function SettingsModal({ open, onClose, characters = [], characte
                   >
                     {exportProgress}
                   </p>
+                  {(exportStatus === 'exporting' || exportStatus === 'error') && (
+                    <button
+                      onClick={handleCancelExport}
+                      className="text-[10px] px-2 py-0.5 rounded-sm hover:bg-white/10 transition-colors flex-shrink-0"
+                      style={{ fontFamily: 'Rajdhani, sans-serif', color: 'oklch(0.5 0.01 264)', border: '1px solid oklch(1 0 0 / 0.1)' }}
+                    >
+                      {exportStatus === 'error' ? 'Retry' : 'Cancel'}
+                    </button>
+                  )}
                 </div>
               )}
 
-              {characters.length === 0 && (
+              {characters.length === 0 && exportStatus !== 'exporting' && (
                 <p className="mt-2 text-[10px]" style={{ fontFamily: 'JetBrains Mono, monospace', color: 'oklch(0.45 0.01 264)' }}>
                   Load your characters first by closing this modal and waiting for the roster to load.
                 </p>
@@ -419,19 +495,6 @@ export default function SettingsModal({ open, onClose, characters = [], characte
             Disconnect
           </button>
           <div className="flex gap-2">
-            <button
-              onClick={onClose}
-              disabled={status === 'verifying'}
-              className="px-4 py-1.5 rounded-sm text-xs font-semibold tracking-wider uppercase transition-all disabled:opacity-50"
-              style={{
-                fontFamily: 'Rajdhani, sans-serif',
-                background: 'transparent',
-                border: '1px solid oklch(1 0 0 / 0.12)',
-                color: 'oklch(0.5 0.01 264)',
-              }}
-            >
-              Cancel
-            </button>
             <button
               onClick={handleSave}
               disabled={!input.trim() || status === 'verifying'}

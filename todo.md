@@ -65,3 +65,8 @@
 - [x] Fix bulk export: response too large for tRPC — use Express streaming endpoint instead
 - [x] Separate markdown files: about-freeroam.md + about-extended.md (instead of combined)
 - [x] Update single export to use separate files too
+- [x] Add export_jobs DB table (id, accountId, status, downloadUrl, createdAt, expiresAt)
+- [x] Implement background export job runner with memory-safe batching (batch of 10)
+- [x] Upload finished ZIP to S3, return presigned download URL
+- [x] Update SettingsModal: start job, poll status, show download button, persist jobId in localStorage
+- [x] Add 24-hour expiry and stale job detection (15 min timeout)

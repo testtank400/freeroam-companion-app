@@ -200,7 +200,8 @@ describe("export.bulk (direct function call — uses Express route, not tRPC)", 
     expect(result.exportedCount).toBe(2);
     expect(result.failedCount).toBe(0);
     expect(result.fileName).toMatch(/^freeroam-companion-export-\d{4}-\d{2}-\d{2}\.zip$/);
-    expect(result.zipBase64).toBeTruthy();
+    expect(result.zipBuffer).toBeTruthy();
+    expect(result.zipBuffer).toBeInstanceOf(Buffer);
   });
 
   it("handles empty characters array", async () => {
@@ -210,6 +211,6 @@ describe("export.bulk (direct function call — uses Express route, not tRPC)", 
 
     expect(result.exportedCount).toBe(0);
     expect(result.failedCount).toBe(0);
-    expect(result.zipBase64).toBeTruthy();
+    expect(result.zipBuffer).toBeTruthy();
   });
 });

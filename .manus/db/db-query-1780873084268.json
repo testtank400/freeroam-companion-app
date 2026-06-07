@@ -1,0 +1,18 @@
+{
+  "query": "SELECT id, status, exportedCount, failedCount, createdAt, downloadUrl FROM export_jobs WHERE id = 'bd44d162-2119-4906-af99-b6cc864a7ae8';",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway06.us-east-1.prod.aws.tidbcloud.com --port 4000 --user o5X5dUuHaxxkex7.root --database cxwoV3UVdPSrRocF96aWqA --execute SELECT id, status, exportedCount, failedCount, createdAt, downloadUrl FROM export_jobs WHERE id = 'bd44d162-2119-4906-af99-b6cc864a7ae8';",
+  "rows": [
+    {
+      "id": "bd44d162-2119-4906-af99-b6cc864a7ae8",
+      "status": "processing",
+      "exportedCount": "0",
+      "failedCount": "0",
+      "createdAt": "2026-06-07 22:45:18",
+      "downloadUrl": "NULL"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tstatus\texportedCount\tfailedCount\tcreatedAt\tdownloadUrl\nbd44d162-2119-4906-af99-b6cc864a7ae8\tprocessing\t0\t0\t2026-06-07 22:45:18\tNULL\n",
+  "stderr": "",
+  "execution_time_ms": 261
+}

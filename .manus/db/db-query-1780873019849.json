@@ -1,0 +1,19 @@
+{
+  "query": "SELECT id, freeroamAccountId, status, exportedCount, failedCount, totalCount, createdAt FROM export_jobs ORDER BY createdAt DESC LIMIT 5;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway06.us-east-1.prod.aws.tidbcloud.com --port 4000 --user o5X5dUuHaxxkex7.root --database cxwoV3UVdPSrRocF96aWqA --execute SELECT id, freeroamAccountId, status, exportedCount, failedCount, totalCount, createdAt FROM export_jobs ORDER BY createdAt DESC LIMIT 5;",
+  "rows": [
+    {
+      "id": "bd44d162-2119-4906-af99-b6cc864a7ae8",
+      "freeroamAccountId": "113027",
+      "status": "processing",
+      "exportedCount": "0",
+      "failedCount": "0",
+      "totalCount": "1099",
+      "createdAt": "2026-06-07 22:45:18"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tfreeroamAccountId\tstatus\texportedCount\tfailedCount\ttotalCount\tcreatedAt\nbd44d162-2119-4906-af99-b6cc864a7ae8\t113027\tprocessing\t0\t0\t1099\t2026-06-07 22:45:18\n",
+  "stderr": "",
+  "execution_time_ms": 404
+}

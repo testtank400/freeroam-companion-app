@@ -297,7 +297,7 @@ export async function exportSingleCharacter(
 export async function exportAllCharacters(
   characters: LibraryCharacterData[],
   freeroamAccountId: number | null
-): Promise<{ zipBase64: string; fileName: string; exportedCount: number; failedCount: number }> {
+): Promise<{ zipBuffer: Buffer; fileName: string; exportedCount: number; failedCount: number }> {
   const zip = new JSZip();
   const dateStr = new Date().toISOString().split("T")[0]; // YYYY-MM-DD
   const rootFolderName = `freeroam-companion-export-${dateStr}`;
@@ -320,6 +320,14 @@ export async function exportAllCharacters(
   const usedFolderNames = new Set<string>();
   let exportedCount = 0;
   let failedCount = 0;
+
+  // Phase 1: Build all text content (fast — no network calls)
+  // Also collect headshot URLs for parallel download
+  interface PendingHeadshot {
+    url: string;
+    folderName: string;
+  }
+  const pendingHeadshots: PendingHeadshot[] = [];
 
   for (const char of characters) {
     try {
@@ -384,12 +392,10 @@ export async function exportAllCharacters(
       };
       charFolder.file("companion-data.json", JSON.stringify(companionData, null, 2));
 
-      // headshot — download from CDN (not rate-limited by Freeroam API)
-      const headshot = await downloadHeadshot(
-        char.headshot_url || char.display_headshot_url
-      );
-      if (headshot) {
-        charFolder.file(`headshot.${headshot.ext}`, headshot.buffer);
+      // Queue headshot for parallel download
+      const headshotUrl = char.headshot_url || char.display_headshot_url;
+      if (headshotUrl) {
+        pendingHeadshots.push({ url: headshotUrl, folderName: uniqueName });
       }
 
       exportedCount++;
@@ -399,12 +405,32 @@ export async function exportAllCharacters(
     }
   }
 
-  // Generate ZIP
+  // Phase 2: Download all headshots in parallel (batches of 20)
+  const BATCH_SIZE = 20;
+  for (let i = 0; i < pendingHeadshots.length; i += BATCH_SIZE) {
+    const batch = pendingHeadshots.slice(i, i + BATCH_SIZE);
+    const results = await Promise.allSettled(
+      batch.map(async ({ url, folderName }) => {
+        const headshot = await downloadHeadshot(url);
+        if (headshot) {
+          const charFolder = rootFolder.folder(folderName)!;
+          charFolder.file(`headshot.${headshot.ext}`, headshot.buffer);
+        }
+      })
+    );
+    // Log failures but don't count them as export failures
+    for (const result of results) {
+      if (result.status === "rejected") {
+        console.warn(`[Export] Headshot download failed:`, result.reason);
+      }
+    }
+  }
+
+  // Generate ZIP — return raw buffer to avoid base64 string length limits
   const zipBuffer = await zip.generateAsync({ type: "nodebuffer" });
-  const zipBase64 = zipBuffer.toString("base64");
 
   return {
-    zipBase64,
+    zipBuffer,
     fileName: `${rootFolderName}.zip`,
     exportedCount,
     failedCount,

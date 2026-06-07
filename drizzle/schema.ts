@@ -108,3 +108,28 @@ export const characterNsfw = mysqlTable("character_nsfw", {
 
 export type CharacterNsfw = typeof characterNsfw.$inferSelect;
 export type InsertCharacterNsfw = typeof characterNsfw.$inferInsert;
+
+// Export jobs — tracks background export processes
+export const exportJobs = mysqlTable("export_jobs", {
+  id: varchar("id", { length: 64 }).primaryKey(), // UUID
+  /** Freeroam account_id of the user who started the export */
+  freeroamAccountId: int("freeroamAccountId").notNull(),
+  /** Job status: pending, processing, done, error */
+  status: mysqlEnum("status", ["pending", "processing", "done", "error"]).notNull().default("pending"),
+  /** S3 download URL (set when done) */
+  downloadUrl: text("downloadUrl"),
+  /** Error message (set when error) */
+  errorMessage: text("errorMessage"),
+  /** Number of characters exported */
+  exportedCount: int("exportedCount").default(0),
+  /** Number of characters that failed */
+  failedCount: int("failedCount").default(0),
+  /** Total characters to export */
+  totalCount: int("totalCount").default(0),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  /** When the download link expires */
+  expiresAt: timestamp("expiresAt"),
+});
+
+export type ExportJob = typeof exportJobs.$inferSelect;
+export type InsertExportJob = typeof exportJobs.$inferInsert;

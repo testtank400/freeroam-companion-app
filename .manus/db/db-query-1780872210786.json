@@ -1,0 +1,9 @@
+{
+  "query": "CREATE TABLE IF NOT EXISTS `export_jobs` (\n  `id` varchar(64) NOT NULL,\n  `freeroamAccountId` int NOT NULL,\n  `status` enum('pending','processing','done','error') NOT NULL DEFAULT 'pending',\n  `downloadUrl` text,\n  `errorMessage` text,\n  `exportedCount` int DEFAULT 0,\n  `failedCount` int DEFAULT 0,\n  `totalCount` int DEFAULT 0,\n  `createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,\n  `expiresAt` timestamp NULL,\n  PRIMARY KEY (`id`)\n);",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway06.us-east-1.prod.aws.tidbcloud.com --port 4000 --user o5X5dUuHaxxkex7.root --database cxwoV3UVdPSrRocF96aWqA --execute CREATE TABLE IF NOT EXISTS `export_jobs` (\n  `id` varchar(64) NOT NULL,\n  `freeroamAccountId` int NOT NULL,\n  `status` enum('pending','processing','done','error') NOT NULL DEFAULT 'pending',\n  `downloadUrl` text,\n  `errorMessage` text,\n  `exportedCount` int DEFAULT 0,\n  `failedCount` int DEFAULT 0,\n  `totalCount` int DEFAULT 0,\n  `createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,\n  `expiresAt` timestamp NULL,\n  PRIMARY KEY (`id`)\n);",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 404
+}
