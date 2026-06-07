@@ -97,14 +97,45 @@ export default function SettingsModal({ open, onClose, characters = [], characte
   };
 
   // On mount, check if there's a running job from before a refresh
+  // Check job status immediately on mount (handles page refresh / modal reopen)
   useEffect(() => {
     const savedJobId = localStorage.getItem('export_job_id');
-    if (savedJobId) {
-      setExportJobId(savedJobId);
-      setExportStatus('exporting');
-      setExportProgress('Export in progress...');
-      startPolling(savedJobId);
-    }
+    if (!savedJobId) return;
+
+    setExportJobId(savedJobId);
+    setExportStatus('exporting');
+    setExportProgress('Checking export status...');
+
+    // Immediately fetch status instead of waiting 5s for first poll
+    fetch(`/api/export/status/${savedJobId}`)
+      .then(r => r.json())
+      .then(data => {
+        if (data.status === 'done') {
+          setExportStatus('done');
+          setExportDownloadUrl(data.downloadUrl);
+          setExportProgress(`Exported ${data.exportedCount} characters${data.failedCount > 0 ? ` (${data.failedCount} failed)` : ''}`);
+          localStorage.removeItem('export_job_id');
+        } else if (data.status === 'error') {
+          setExportStatus('error');
+          setExportProgress(`Export failed: ${data.errorMessage || 'Unknown error'}`);
+          localStorage.removeItem('export_job_id');
+        } else if (data.error === 'Job not found') {
+          // Job ID is stale — clear it
+          localStorage.removeItem('export_job_id');
+          setExportStatus('idle');
+          setExportProgress('');
+        } else {
+          // Still processing — start polling
+          setExportProgress('Export in progress...');
+          startPolling(savedJobId);
+        }
+      })
+      .catch(() => {
+        // Network error — start polling anyway
+        setExportProgress('Export in progress...');
+        startPolling(savedJobId);
+      });
+
     return () => {
       if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
     };

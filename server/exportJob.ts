@@ -48,7 +48,15 @@ function buildAppearanceExtendedMarkdown(extendedAppearance: string | null | und
 async function downloadHeadshot(url: string | null | undefined): Promise<{ buffer: Buffer; ext: string } | null> {
   if (!url) return null;
   try {
-    const response = await fetch(url);
+    // 8-second timeout per image — fail fast instead of blocking the batch
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8000);
+    let response: Response;
+    try {
+      response = await fetch(url, { signal: controller.signal });
+    } finally {
+      clearTimeout(timeout);
+    }
     if (!response.ok) return null;
     const arrayBuffer = await response.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
@@ -206,8 +214,8 @@ export async function runExportJob(
 
     console.log(`[ExportJob ${jobId}] Phase 1 done: ${exportedCount} text packages built, ${pendingHeadshots.length} headshots queued.`);
 
-    // Phase 2: Download headshots in memory-safe batches of 10
-    const BATCH_SIZE = 10;
+    // Phase 2: Download headshots in parallel batches of 50 with 8s per-image timeout
+    const BATCH_SIZE = 50;
     const totalBatches = Math.ceil(pendingHeadshots.length / BATCH_SIZE);
     console.log(`[ExportJob ${jobId}] Phase 2: Downloading ${pendingHeadshots.length} headshots in ${totalBatches} batches of ${BATCH_SIZE}...`);
 
