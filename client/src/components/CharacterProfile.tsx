@@ -9,7 +9,8 @@ import CreateCharacterModal from '@/components/CreateCharacterModal';
 import { Collection } from '@/hooks/useCollections';
 import { trpc } from '@/lib/trpc';
 import { ApiCharacter } from '@/pages/Home';
-import { Copy, EyeOff, FolderPlus, Globe, Heart, Link, Lock, Pencil, X } from 'lucide-react';
+import { Copy, Download, EyeOff, FolderPlus, Globe, Heart, Link, Lock, Pencil, X } from 'lucide-react';
+import { toast } from 'sonner';
 import { useEffect, useRef, useState } from 'react';
 
 interface CharacterProfileProps {
@@ -97,6 +98,41 @@ export default function CharacterProfile({ character, onClose, onUpdated, collec
   // Pre-filled character for the duplicate form
   const [duplicateSource, setDuplicateSource] = useState<ApiCharacter | null>(null);
   const [showCollectionPopover, setShowCollectionPopover] = useState(false);
+
+  // Export state
+  const [isExporting, setIsExporting] = useState(false);
+  const exportMutation = trpc.export.single.useMutation({
+    onSuccess: (data) => {
+      // Convert base64 to blob and trigger download
+      const byteCharacters = atob(data.zipBase64);
+      const byteNumbers = new Array(byteCharacters.length);
+      for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i);
+      }
+      const byteArray = new Uint8Array(byteNumbers);
+      const blob = new Blob([byteArray], { type: 'application/zip' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = data.fileName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      setIsExporting(false);
+      toast.success(`Exported ${displayCharacter?.name ?? 'character'}`);
+    },
+    onError: (err) => {
+      setIsExporting(false);
+      toast.error(`Export failed: ${err.message}`);
+    },
+  });
+
+  const handleExport = () => {
+    if (!displayCharacter || isExporting) return;
+    setIsExporting(true);
+    exportMutation.mutate({ characterId: displayCharacter.external_id });
+  };
 
   // Local override so profile reflects edits immediately without closing
   const [localCharacter, setLocalCharacter] = useState<ApiCharacter | null>(null);
@@ -327,6 +363,28 @@ export default function CharacterProfile({ character, onClose, onUpdated, collec
               >
                 <EyeOff size={12} strokeWidth={2} />
                 {isNsfw ? 'NSFW' : 'SFW'}
+              </button>
+
+              {/* Export button */}
+              <button
+                onClick={handleExport}
+                disabled={isExporting}
+                className="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-sm transition-all hover:brightness-110 disabled:opacity-50"
+                style={{
+                  background: 'oklch(0.18 0.01 264 / 0.85)',
+                  border: '1px solid oklch(1 0 0 / 0.15)',
+                  color: 'oklch(0.65 0.01 264)',
+                  backdropFilter: 'blur(4px)',
+                  fontFamily: 'Rajdhani, sans-serif',
+                  fontSize: '11px',
+                  fontWeight: 700,
+                  letterSpacing: '0.1em',
+                  textTransform: 'uppercase',
+                }}
+                title="Export character as ZIP"
+              >
+                <Download size={12} strokeWidth={2.5} />
+                {isExporting ? 'Exporting...' : 'Export'}
               </button>
 
               {/* Duplicate button */}

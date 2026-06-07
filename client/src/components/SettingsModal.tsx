@@ -1,25 +1,34 @@
 // SettingsModal.tsx
-// Settings panel for per-user Freeroam cookie configuration.
+// Settings panel for per-user Freeroam cookie configuration and bulk export.
 // On save, calls verifySession to validate the cookie and get the user's accountId.
 // The cookie value is NEVER read back or displayed — only a status indicator is shown.
 
 import { useFreeroamCookie } from '@/hooks/useFreeroamCookie';
 import { trpc } from '@/lib/trpc';
-import { CheckCircle, Loader2, Settings, User, X, XCircle } from 'lucide-react';
+import { CheckCircle, Download, Loader2, Settings, User, X, XCircle } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
+import { toast } from 'sonner';
 
 interface SettingsModalProps {
   open: boolean;
   onClose: () => void;
+  /** All character IDs currently loaded in the roster (for bulk export) */
+  characterIds?: string[];
+  /** Total character count for display */
+  characterCount?: number;
 }
 
-export default function SettingsModal({ open, onClose }: SettingsModalProps) {
+export default function SettingsModal({ open, onClose, characterIds = [], characterCount = 0 }: SettingsModalProps) {
   const { hasCookie, identity, saveIdentity, clearCookie } = useFreeroamCookie();
   const [visible, setVisible] = useState(false);
   const [input, setInput] = useState('');
   const [status, setStatus] = useState<'idle' | 'verifying' | 'success' | 'error' | 'expired'>('idle');
   const [errorMsg, setErrorMsg] = useState('');
   const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  // Export state
+  const [exportStatus, setExportStatus] = useState<'idle' | 'exporting' | 'done' | 'error'>('idle');
+  const [exportProgress, setExportProgress] = useState('');
 
   const verifyMutation = trpc.freeroam.verifySession.useMutation({
     onSuccess: (data) => {
@@ -39,12 +48,53 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
     },
   });
 
+  const exportMutation = trpc.export.bulk.useMutation({
+    onSuccess: (data) => {
+      // Convert base64 to blob and trigger download
+      const byteCharacters = atob(data.zipBase64);
+      const byteNumbers = new Array(byteCharacters.length);
+      for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i);
+      }
+      const byteArray = new Uint8Array(byteNumbers);
+      const blob = new Blob([byteArray], { type: 'application/zip' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = data.fileName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      setExportStatus('done');
+      setExportProgress(`Exported ${data.exportedCount} characters${data.failedCount > 0 ? ` (${data.failedCount} failed)` : ''}`);
+      toast.success(`Exported ${data.exportedCount} characters`);
+    },
+    onError: (err) => {
+      setExportStatus('error');
+      setExportProgress(`Export failed: ${err.message}`);
+      toast.error(`Export failed: ${err.message}`);
+    },
+  });
+
+  const handleBulkExport = () => {
+    if (characterIds.length === 0) {
+      toast.error('No characters loaded to export');
+      return;
+    }
+    setExportStatus('exporting');
+    setExportProgress(`Exporting ${characterIds.length} characters... This may take a while.`);
+    exportMutation.mutate({ characterIds });
+  };
+
   useEffect(() => {
     if (open) {
       requestAnimationFrame(() => setVisible(true));
       setInput('');
       setStatus('idle');
       setErrorMsg('');
+      setExportStatus('idle');
+      setExportProgress('');
       setTimeout(() => inputRef.current?.focus(), 100);
     } else {
       setVisible(false);
@@ -199,7 +249,7 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
             </div>
 
             <p className="text-[10px] mb-3 px-2 py-1.5 rounded-sm" style={{ fontFamily: 'JetBrains Mono, monospace', color: 'oklch(0.5 0.15 220)', background: 'oklch(0.55 0.15 220 / 0.08)', border: '1px solid oklch(0.55 0.15 220 / 0.2)' }}>
-              📱 On mobile? Get your cookie on a desktop browser first, then paste it here.
+              On mobile? Get your cookie on a desktop browser first, then paste it here.
             </p>
 
             <textarea
@@ -246,6 +296,80 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
               </p>
             )}
           </div>
+
+          {/* Section: Export All Characters */}
+          {hasCookie && (
+            <div style={{ borderTop: '1px solid oklch(1 0 0 / 0.07)', paddingTop: '1.25rem' }}>
+              <p
+                className="text-[11px] uppercase tracking-widest mb-1"
+                style={{ fontFamily: 'Rajdhani, sans-serif', color: 'oklch(0.769 0.188 70.08)', fontWeight: 600 }}
+              >
+                Export All Characters
+              </p>
+              <p
+                className="text-[11px] mb-3"
+                style={{ fontFamily: 'JetBrains Mono, monospace', color: 'oklch(0.5 0.01 264)' }}
+              >
+                Download a ZIP containing all {characterCount} characters with their markdown files, headshots, Freeroam data, and Companion data.
+              </p>
+
+              <button
+                onClick={handleBulkExport}
+                disabled={exportStatus === 'exporting' || characterIds.length === 0}
+                className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-sm text-xs font-semibold tracking-wider uppercase transition-all disabled:opacity-40 hover:brightness-110"
+                style={{
+                  fontFamily: 'Rajdhani, sans-serif',
+                  background: exportStatus === 'exporting' ? 'oklch(0.15 0.01 264)' : 'oklch(0.769 0.188 70.08 / 0.12)',
+                  border: exportStatus === 'exporting' ? '1px solid oklch(1 0 0 / 0.1)' : '1px solid oklch(0.769 0.188 70.08 / 0.4)',
+                  color: exportStatus === 'exporting' ? 'oklch(0.5 0.01 264)' : 'oklch(0.769 0.188 70.08)',
+                }}
+              >
+                {exportStatus === 'exporting' ? (
+                  <>
+                    <Loader2 size={13} className="animate-spin" />
+                    Exporting...
+                  </>
+                ) : (
+                  <>
+                    <Download size={13} strokeWidth={2.5} />
+                    Export All ({characterCount})
+                  </>
+                )}
+              </button>
+
+              {/* Progress / status */}
+              {exportProgress && (
+                <div className="flex items-center gap-1.5 mt-2">
+                  {exportStatus === 'exporting' && (
+                    <Loader2 size={11} className="animate-spin" style={{ color: 'oklch(0.769 0.188 70.08)' }} />
+                  )}
+                  {exportStatus === 'done' && (
+                    <CheckCircle size={11} style={{ color: 'oklch(0.65 0.15 145)' }} />
+                  )}
+                  {exportStatus === 'error' && (
+                    <XCircle size={11} style={{ color: 'oklch(0.65 0.22 25)' }} />
+                  )}
+                  <p
+                    className="text-[11px]"
+                    style={{
+                      fontFamily: 'JetBrains Mono, monospace',
+                      color: exportStatus === 'done' ? 'oklch(0.65 0.15 145)'
+                        : exportStatus === 'error' ? 'oklch(0.65 0.22 25)'
+                        : 'oklch(0.769 0.188 70.08)',
+                    }}
+                  >
+                    {exportProgress}
+                  </p>
+                </div>
+              )}
+
+              {characterIds.length === 0 && (
+                <p className="mt-2 text-[10px]" style={{ fontFamily: 'JetBrains Mono, monospace', color: 'oklch(0.45 0.01 264)' }}>
+                  Load your characters first by closing this modal and waiting for the roster to load.
+                </p>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Footer */}

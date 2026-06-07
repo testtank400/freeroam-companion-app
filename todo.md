@@ -56,3 +56,9 @@
 - [ ] Advanced filtering options
 - [ ] Character export/import
 - [ ] Collection sharing
+- [x] Install jszip dependency for ZIP generation
+- [x] Add server-side export procedure: single character export (fetch Freeroam data, headshot, build ZIP)
+- [x] Add server-side export procedure: bulk export (all characters, progress tracking)
+- [x] Add Export button to CharacterProfile action bar (single character download)
+- [x] Add Export All Characters section to SettingsModal (bulk export with progress)
+- [x] Write tests for export procedures

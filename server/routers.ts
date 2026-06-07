@@ -19,6 +19,7 @@ import {
   upsertCharacterExtended,
   upsertFreeroamUser,
 } from "./db";
+import { exportSingleCharacter, exportAllCharacters } from "./export";
 
 /**
  * Get the Freeroam session cookie to use for API calls.
@@ -733,6 +734,29 @@ export const appRouter = router({
         if (!accountId) throw new Error('No Freeroam account ID — please set your cookie in Settings');
         const newValue = await toggleCharacterNsfw(input.characterId, accountId);
         return { characterId: input.characterId, isNsfw: newValue };
+      }),
+  }),
+
+  // ─── Export ──────────────────────────────────────────────────────────────────────────────────
+  export: router({
+    /** Export a single character as a ZIP file (base64-encoded). */
+    single: publicProcedure
+      .input(z.object({ characterId: z.string() }))
+      .mutation(async ({ input, ctx }) => {
+        const cookie = getFreeroamCookie(ctx);
+        if (!cookie) throw new Error("Cookie not configured in environment");
+        const accountId = getFreeroamAccountId(ctx);
+        return exportSingleCharacter(input.characterId, cookie, accountId);
+      }),
+
+    /** Export all characters as a ZIP file (base64-encoded). */
+    bulk: publicProcedure
+      .input(z.object({ characterIds: z.array(z.string()) }))
+      .mutation(async ({ input, ctx }) => {
+        const cookie = getFreeroamCookie(ctx);
+        if (!cookie) throw new Error("Cookie not configured in environment");
+        const accountId = getFreeroamAccountId(ctx);
+        return exportAllCharacters(input.characterIds, cookie, accountId);
       }),
   }),
 
