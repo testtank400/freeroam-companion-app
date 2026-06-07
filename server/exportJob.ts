@@ -7,7 +7,7 @@ import JSZip from "jszip";
 import { eq } from "drizzle-orm";
 import { exportJobs } from "../drizzle/schema";
 import { getCharacterExtended, getCharactersNsfw, getCollectionsByAccountId, getDb } from "./db";
-import { storagePut } from "./storage";
+import { storagePut, storageGetSignedUrl } from "./storage";
 import type { LibraryCharacterData } from "./export";
 
 // ─── Helpers (duplicated from export.ts to keep this module self-contained) ──
@@ -248,8 +248,10 @@ export async function runExportJob(
 
     // Phase 4: Upload to S3
     const s3Key = `exports/${jobId}/${rootFolderName}.zip`;
-    const { url: downloadUrl } = await storagePut(s3Key, zipBuffer, "application/zip");
-    console.log(`[ExportJob ${jobId}] Phase 4 done. Download URL: ${downloadUrl}`);
+    const { key } = await storagePut(s3Key, zipBuffer, "application/zip");
+    // Get a presigned URL valid for 24 hours (works anywhere, not just on the site)
+    const downloadUrl = await storageGetSignedUrl(key);
+    console.log(`[ExportJob ${jobId}] Phase 4 done. Presigned download URL generated.`);
 
     // Phase 5: Update job as done
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
