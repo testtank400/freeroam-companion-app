@@ -70,3 +70,4 @@
 - [x] Upload finished ZIP to S3, return presigned download URL
 - [x] Update SettingsModal: start job, poll status, show download button, persist jobId in localStorage
 - [x] Add 24-hour expiry and stale job detection (15 min timeout)
+- [ ] Add visual badge on character cards to indicate extended content availability
