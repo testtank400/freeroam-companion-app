@@ -753,6 +753,262 @@ export const appRouter = router({
     // (tRPC has response size limits that fail with large rosters)
   }),
 
+  // ─── Worlds (Freeroam API proxy, no local DB) ──────────────────────────────────────────────────
+  worlds: router({
+    /** Paginated list of worlds for a given user */
+    list: publicProcedure
+      .input(
+        z.object({
+          username: z.string().default("Test Tank"),
+          limit: z.number().default(20),
+          sort: z.string().default("recent"),
+          cursor: z.string().optional(),
+        })
+      )
+      .query(async ({ input, ctx }) => {
+        if (!hasUserCookie(ctx)) return { worlds: [], has_more: false, next_cursor: null };
+
+        const cookie = getFreeroamCookie(ctx);
+        if (!cookie) throw new Error("Cookie not configured in environment");
+
+        const encodedUsername = encodeURIComponent(input.username);
+        const url = `https://getfreeroam.com/api/user/${encodedUsername}/worlds?limit=${input.limit}&sort=${input.sort}&cursor=${input.cursor ?? ""}`;
+
+        const response = await fetch(url, {
+          headers: {
+            accept: "*/*",
+            "accept-language": "en-US,en;q=0.9",
+            cookie: cookie,
+            origin: "https://getfreeroam.com",
+            referer: "https://getfreeroam.com",
+            "user-agent":
+              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36",
+          },
+        });
+
+        if (!response.ok) {
+          const text = await response.text();
+          throw new Error(`Worlds API responded with status ${response.status}: ${text}`);
+        }
+
+        const data = await response.json() as {
+          worlds: Array<{
+            external_id: string;
+            name: string;
+            cover_image_url: string | null;
+            avg_color: { r: number; g: number; b: number } | null;
+            logline: string;
+            description: string;
+            interaction_count: number;
+            owner: { username: string; is_verified: boolean };
+            privacy_status: string;
+            is_draft: boolean;
+          }>;
+          has_more: boolean;
+          next_cursor: string | null;
+        };
+
+        // Coerce privacy_status to known values
+        const worlds = data.worlds.map(w => ({
+          ...w,
+          privacy_status: (["private", "public", "unlisted"].includes(w.privacy_status)
+            ? w.privacy_status
+            : "private") as "private" | "public" | "unlisted",
+        }));
+
+        return { worlds, has_more: data.has_more, next_cursor: data.next_cursor };
+      }),
+
+    /** Fetch all worlds at once (loads all pages) for the grid view */
+    listAll: publicProcedure
+      .input(
+        z.object({
+          username: z.string().default("Test Tank"),
+          sort: z.string().default("recent"),
+        })
+      )
+      .query(async ({ input, ctx }) => {
+        if (!hasUserCookie(ctx)) return [];
+
+        const cookie = getFreeroamCookie(ctx);
+        if (!cookie) throw new Error("Cookie not configured in environment");
+
+        const encodedUsername = encodeURIComponent(input.username);
+        const allWorlds: Array<{
+          external_id: string;
+          name: string;
+          cover_image_url: string | null;
+          avg_color: { r: number; g: number; b: number } | null;
+          logline: string;
+          description: string;
+          interaction_count: number;
+          owner: { username: string; is_verified: boolean };
+          privacy_status: "private" | "public" | "unlisted";
+          is_draft: boolean;
+        }> = [];
+
+        let cursor = "";
+        let hasMore = true;
+
+        while (hasMore) {
+          const url = `https://getfreeroam.com/api/user/${encodedUsername}/worlds?limit=20&sort=${input.sort}&cursor=${cursor}`;
+
+          // Retry up to 3 times with backoff for 429
+          let response: Response | null = null;
+          for (let attempt = 0; attempt < 3; attempt++) {
+            if (attempt > 0) {
+              await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, attempt - 1)));
+            }
+            response = await fetch(url, {
+              headers: {
+                accept: "*/*",
+                "accept-language": "en-US,en;q=0.9",
+                cookie: cookie,
+                origin: "https://getfreeroam.com",
+                referer: "https://getfreeroam.com",
+                "user-agent":
+                  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36",
+              },
+            });
+            if (response.status !== 429) break;
+          }
+
+          if (!response || !response.ok) {
+            const text = response ? await response.text() : 'No response';
+            if (response?.status === 429) {
+              throw new Error('Rate limit exceeded. Please wait a moment and try again.');
+            }
+            if (response?.status === 401) {
+              throw new Error('SESSION_EXPIRED');
+            }
+            throw new Error(`Worlds fetch failed (${response?.status}): ${text}`);
+          }
+
+          const data = await response.json() as {
+            worlds: Array<{
+              external_id: string;
+              name: string;
+              cover_image_url: string | null;
+              avg_color: { r: number; g: number; b: number } | null;
+              logline: string;
+              description: string;
+              interaction_count: number;
+              owner: { username: string; is_verified: boolean };
+              privacy_status: string;
+              is_draft: boolean;
+            }>;
+            has_more: boolean;
+            next_cursor: string | null;
+          };
+
+          const coerced = data.worlds.map(w => ({
+            ...w,
+            privacy_status: (["private", "public", "unlisted"].includes(w.privacy_status)
+              ? w.privacy_status
+              : "private") as "private" | "public" | "unlisted",
+          }));
+
+          allWorlds.push(...coerced);
+          hasMore = data.has_more;
+          cursor = data.next_cursor ?? "";
+        }
+
+        return allWorlds;
+      }),
+
+    /** Get a single world (story) with full details: characters, tags, related worlds */
+    get: publicProcedure
+      .input(z.object({ worldId: z.string() }))
+      .query(async ({ input, ctx }) => {
+        const cookie = getFreeroamCookie(ctx);
+        if (!cookie) throw new Error("Cookie not configured in environment");
+
+        const url = `https://getfreeroam.com/internal-world-story-json/${encodeURIComponent(input.worldId)}`;
+
+        const response = await fetch(url, {
+          headers: {
+            accept: "*/*",
+            "accept-language": "en-US,en;q=0.9",
+            cookie: cookie,
+            origin: "https://getfreeroam.com",
+            referer: "https://getfreeroam.com",
+            "user-agent":
+              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36",
+          },
+        });
+
+        if (!response.ok) {
+          const text = await response.text();
+          throw new Error(`World detail API responded with status ${response.status}: ${text}`);
+        }
+
+        const data = await response.json() as {
+          world: {
+            id: number;
+            external_id: string;
+            name: string;
+            logline: string;
+            cover_image_url: string | null;
+            author_note: string | null;
+            author_note_mentions: unknown[];
+            owner: {
+              username: string;
+              is_verified: boolean;
+              display_name: string | null;
+              avatar_url: string | null;
+            };
+            comment_count: number;
+          };
+          tags: Array<{
+            id: number;
+            name: string;
+            is_fandom: boolean;
+            emoji: string | null;
+          }>;
+          characters: Array<{
+            id: number;
+            external_id: string;
+            name: string;
+            backstory: string;
+            appearance: string;
+            headshot_url: string | null;
+            display_headshot_url: string | null;
+            is_main: boolean;
+          }>;
+          related_worlds: Array<{
+            external_id: string;
+            name: string;
+            logline: string;
+            cover_image_url: string | null;
+            owner: { username: string; is_verified: boolean; avatar_url: string | null };
+            interaction_count: number;
+            avg_color: { r: number; g: number; b: number } | null;
+            tag_name: string;
+            tag_is_fandom: boolean;
+          }>;
+          is_liked: boolean;
+          is_saved: boolean;
+          like_count: number;
+          world_privacy_status: string;
+          is_world_owner: boolean;
+        };
+
+        return {
+          world: data.world,
+          tags: data.tags,
+          characters: data.characters,
+          related_worlds: data.related_worlds,
+          is_liked: data.is_liked,
+          is_saved: data.is_saved,
+          like_count: data.like_count,
+          world_privacy_status: (["private", "public", "unlisted"].includes(data.world_privacy_status)
+            ? data.world_privacy_status
+            : "private") as "private" | "public" | "unlisted",
+          is_world_owner: data.is_world_owner,
+        };
+      }),
+  }),
+
   // ─── Freeroam Cookie Verification ──────────────────────────────────────────────────────────
   freeroam: router({
     /**
