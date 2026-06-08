@@ -443,21 +443,38 @@ export default function SettingsModal({ open, onClose, characters = [], characte
 
               {/* Export / Download button */}
               {exportStatus === 'done' && exportDownloadUrl ? (
-                <a
-                  href={exportDownloadUrl}
-                  download
-                  className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-sm text-xs font-semibold tracking-wider uppercase transition-all hover:brightness-110"
-                  style={{
-                    fontFamily: 'Rajdhani, sans-serif',
-                    background: 'oklch(0.55 0.15 145 / 0.15)',
-                    border: '1px solid oklch(0.55 0.15 145 / 0.5)',
-                    color: 'oklch(0.65 0.15 145)',
-                    textDecoration: 'none',
-                  }}
-                >
-                  <Download size={13} strokeWidth={2.5} />
-                  Download Export
-                </a>
+                <div className="space-y-2">
+                  <a
+                    href={exportDownloadUrl}
+                    download
+                    className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-sm text-xs font-semibold tracking-wider uppercase transition-all hover:brightness-110"
+                    style={{
+                      fontFamily: 'Rajdhani, sans-serif',
+                      background: 'oklch(0.55 0.15 145 / 0.15)',
+                      border: '1px solid oklch(0.55 0.15 145 / 0.5)',
+                      color: 'oklch(0.65 0.15 145)',
+                      textDecoration: 'none',
+                    }}
+                  >
+                    <Download size={13} strokeWidth={2.5} />
+                    Download Export
+                  </a>
+                  <p className="text-[10px]" style={{ fontFamily: 'JetBrains Mono, monospace', color: 'oklch(0.45 0.01 264)' }}>
+                    This download link expires in 24 hours.
+                  </p>
+                  <button
+                    onClick={handleCancelExport}
+                    className="w-full flex items-center justify-center gap-2 px-3 py-1.5 rounded-sm text-[11px] font-semibold tracking-wider uppercase transition-all hover:brightness-110"
+                    style={{
+                      fontFamily: 'Rajdhani, sans-serif',
+                      background: 'transparent',
+                      border: '1px solid oklch(1 0 0 / 0.12)',
+                      color: 'oklch(0.5 0.01 264)',
+                    }}
+                  >
+                    New Export
+                  </button>
+                </div>
               ) : (
                 <button
                   onClick={handleBulkExport}
