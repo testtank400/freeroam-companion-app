@@ -551,7 +551,7 @@ export default function Home() {
               title="View Characters"
             >
               <Users size={12} strokeWidth={2} />
-              Characters
+              <span className="hidden sm:inline">Characters</span>
             </button>
             <button
               onClick={() => setViewMode('worlds')}
@@ -564,7 +564,7 @@ export default function Home() {
               title="View Worlds"
             >
               <Globe size={12} strokeWidth={2} />
-              Worlds
+              <span className="hidden sm:inline">Worlds</span>
             </button>
           </div>
 
