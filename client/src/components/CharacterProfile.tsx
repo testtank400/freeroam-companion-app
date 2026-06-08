@@ -241,19 +241,12 @@ export default function CharacterProfile({ character, onClose, onUpdated, collec
   const displayPrivacy = fullCharacter?.privacy_status ?? displayCharacter.privacy_status;
   const imageUrl = fullCharacter?.display_headshot_url ?? fullCharacter?.headshot_url
     ?? displayCharacter.display_headshot_url ?? displayCharacter.headshot_url ?? FALLBACK_IMAGE;
-  // Freeroam's actual copy
-  const freeroamBackstory = fullCharacter?.backstory ?? displayCharacter.backstory;
+  // Freeroam's actual copy — always shown in About / Appearance tabs
+  const freeroamBackstory = fullCharacter?.backstory ?? displayCharacter.backstory ?? null;
   const freeroamAppearance = (displayCharacter.description) ?? fullCharacter?.appearance ?? null;
-  // Use extended DB content only if it's longer than Freeroam's copy (i.e. it has extra content beyond the limit)
-  // If Freeroam's copy is newer/different but shorter, prefer Freeroam's version
-  const extBackstory = extendedCharacter?.backstoryFull;
-  const extAppearance = extendedCharacter?.appearanceFull;
-  const backstory = (extBackstory && extBackstory.length > (freeroamBackstory?.length ?? 0))
-    ? extBackstory
-    : (freeroamBackstory ?? null);
-  const appearance = (extAppearance && extAppearance.length > (freeroamAppearance?.length ?? 0))
-    ? extAppearance
-    : (freeroamAppearance ?? null);
+  // Extended DB content — shown only in Full Backstory / Full Appearance tabs
+  const extBackstory = extendedCharacter?.backstoryFull ?? null;
+  const extAppearance = extendedCharacter?.appearanceFull ?? null;
 
   return (
     <>
@@ -490,14 +483,11 @@ export default function CharacterProfile({ character, onClose, onUpdated, collec
             // Red badge: Freeroam's copy exceeds the limit (needs trimming on Freeroam)
             const freeroamBackstoryExceeds = (freeroamBackstory?.length ?? 0) > BACKSTORY_LIMIT;
             const freeroamAppearanceExceeds = (freeroamAppearance?.length ?? 0) > APPEARANCE_LIMIT;
-            // Full tabs: extended DB content exists and is longer than Freeroam's limit
-            const extendedBackstoryExceeds = (backstory?.length ?? 0) > BACKSTORY_LIMIT;
-            const extendedAppearanceExceeds = (appearance?.length ?? 0) > APPEARANCE_LIMIT;
             const tabs: { id: Tab; label: string; badge?: string; badgeRed?: boolean }[] = [
               { id: 'about', label: 'About', ...(freeroamBackstoryExceeds ? { badge: `${(freeroamBackstory?.length ?? 0).toLocaleString()} chars`, badgeRed: true } : {}) },
               { id: 'appearance', label: 'Appearance', ...(freeroamAppearanceExceeds ? { badge: `${(freeroamAppearance?.length ?? 0).toLocaleString()} chars`, badgeRed: true } : {}) },
-              ...(extendedBackstoryExceeds ? [{ id: 'full-backstory' as Tab, label: 'Full Backstory', badge: `${(backstory?.length ?? 0).toLocaleString()} chars` }] : []),
-              ...(extendedAppearanceExceeds ? [{ id: 'full-appearance' as Tab, label: 'Full Appearance', badge: `${(appearance?.length ?? 0).toLocaleString()} chars` }] : []),
+              ...(extBackstory ? [{ id: 'full-backstory' as Tab, label: 'Full Backstory', badge: `${extBackstory.length.toLocaleString()} chars` }] : []),
+              ...(extAppearance ? [{ id: 'full-appearance' as Tab, label: 'Full Appearance', badge: `${extAppearance.length.toLocaleString()} chars` }] : []),
             ];
             return (
               <div className="flex-shrink-0 flex overflow-x-auto" style={{ borderBottom: '1px solid oklch(1 0 0 / 0.08)', scrollbarWidth: 'none' }}>
@@ -595,7 +585,7 @@ export default function CharacterProfile({ character, onClose, onUpdated, collec
                     className="leading-loose whitespace-pre-wrap"
                     style={{ fontFamily: 'JetBrains Mono, monospace', color: 'oklch(0.72 0.008 264)', fontSize: '12px' }}
                   >
-                    {backstory || 'No backstory provided.'}
+                    {freeroamBackstory || 'No backstory provided.'}
                   </p>
                 </div>
               </div>
@@ -609,13 +599,13 @@ export default function CharacterProfile({ character, onClose, onUpdated, collec
                     This is the full backstory stored locally. Freeroam only received the first 2,000 characters.
                   </p>
                 </div>
-                <div className="py-2">
-                  <SectionLabel label="Full Backstory" />
+                  <div className="py-2">
+                    <SectionLabel label="Full Backstory" />
                   <p
                     className="leading-loose whitespace-pre-wrap"
                     style={{ fontFamily: 'JetBrains Mono, monospace', color: 'oklch(0.72 0.008 264)', fontSize: '12px' }}
                   >
-                    {backstory}
+                    {extBackstory}
                   </p>
                 </div>
               </div>
@@ -629,13 +619,13 @@ export default function CharacterProfile({ character, onClose, onUpdated, collec
                     This is the full appearance stored locally. Freeroam only received the first 1,000 characters.
                   </p>
                 </div>
-                <div className="py-2">
-                  <SectionLabel label="Full Appearance" />
+                  <div className="py-2">
+                    <SectionLabel label="Full Appearance" />
                   <p
                     className="leading-loose whitespace-pre-wrap"
                     style={{ fontFamily: 'JetBrains Mono, monospace', color: 'oklch(0.72 0.008 264)', fontSize: '12px' }}
                   >
-                    {appearance}
+                    {extAppearance}
                   </p>
                 </div>
               </div>
@@ -644,14 +634,14 @@ export default function CharacterProfile({ character, onClose, onUpdated, collec
             {/* Appearance tab */}
             {!isLoadingFull && activeTab === 'appearance' && (
               <div className="p-6">
-                {appearance ? (
+                {freeroamAppearance ? (
                   <div className="py-2">
                     <SectionLabel label="Appearance" />
                     <p
                       className="leading-loose whitespace-pre-wrap"
                       style={{ fontFamily: 'JetBrains Mono, monospace', color: 'oklch(0.72 0.008 264)', fontSize: '12px' }}
                     >
-                      {appearance}
+                      {freeroamAppearance}
                     </p>
                   </div>
                 ) : (
