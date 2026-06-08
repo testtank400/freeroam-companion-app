@@ -815,7 +815,7 @@ export default function Home() {
                         color: isActive ? 'oklch(0.88 0.005 65)' : 'oklch(0.45 0.01 264)',
                       }}
                     >
-                      \uD83D\uDD12 Private
+                      🔒 Private
                       {!isLoadingWorlds && count > 0 && (
                         <span className="inline-flex items-center justify-center rounded-sm px-1 min-w-[18px] h-[16px] text-[9px] font-bold" style={{ fontFamily: 'JetBrains Mono, monospace', background: 'oklch(1 0 0 / 0.12)', color: 'inherit' }}>
                           {count}
@@ -840,7 +840,7 @@ export default function Home() {
                         color: isActive ? 'oklch(0.75 0.15 220)' : 'oklch(0.45 0.01 264)',
                       }}
                     >
-                      \uD83D\uDD17 Unlisted
+                      🔗 Unlisted
                       {!isLoadingWorlds && count > 0 && (
                         <span className="inline-flex items-center justify-center rounded-sm px-1 min-w-[18px] h-[16px] text-[9px] font-bold" style={{ fontFamily: 'JetBrains Mono, monospace', background: 'oklch(1 0 0 / 0.12)', color: 'inherit' }}>
                           {count}
@@ -866,7 +866,7 @@ export default function Home() {
                         color: isActive ? 'oklch(0.75 0.15 50)' : 'oklch(0.45 0.01 264)',
                       }}
                     >
-                      \u270F\uFE0F Drafts
+                      ✏️ Drafts
                       <span className="inline-flex items-center justify-center rounded-sm px-1 min-w-[18px] h-[16px] text-[9px] font-bold" style={{ fontFamily: 'JetBrains Mono, monospace', background: 'oklch(1 0 0 / 0.12)', color: 'inherit' }}>
                         {draftCount}
                       </span>
@@ -992,7 +992,7 @@ export default function Home() {
                   className="text-[10px] uppercase tracking-[0.2em] px-3"
                   style={{ fontFamily: 'Rajdhani, sans-serif', color: 'oklch(0.3 0.01 264)', fontWeight: 600 }}
                 >
-                  End of Roster \u2014 {allWorlds.length} world{allWorlds.length !== 1 ? 's' : ''}
+                  End of Roster — {allWorlds.length} world{allWorlds.length !== 1 ? 's' : ''}
                 </span>
                 <div className="h-px flex-1" style={{ background: 'oklch(1 0 0 / 0.05)' }} />
               </div>
