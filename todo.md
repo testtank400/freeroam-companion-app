@@ -51,11 +51,7 @@
 - [x] Update useFreeroamCookie hook to also store/retrieve account_id
 - [x] Fix collections leak: gate collections.list by account_id from localStorage header
 - [x] Handle cookie expiry: show 'Session expired' message when Freeroam returns 401
-- [ ] Headshot upload/linking for characters
-- [ ] Cover image upload/linking for collections (partially done - URL input works)
-- [ ] Advanced filtering options
 - [x] Character export (import scoped out per user decision)
-- [ ] Collection sharing
 - [x] Install jszip dependency for ZIP generation
 - [x] Add server-side export procedure: single character export (fetch Freeroam data, headshot, build ZIP)
 - [x] Add server-side export procedure: bulk export (all characters, progress tracking)
@@ -70,4 +66,3 @@
 - [x] Upload finished ZIP to S3, return presigned download URL
 - [x] Update SettingsModal: start job, poll status, show download button, persist jobId in localStorage
 - [x] Add 24-hour expiry and stale job detection (15 min timeout)
-- [ ] Add visual badge on character cards to indicate extended content availability
