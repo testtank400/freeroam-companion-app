@@ -483,11 +483,13 @@ export default function CharacterProfile({ character, onClose, onUpdated, collec
             // Red badge: Freeroam's copy exceeds the limit (needs trimming on Freeroam)
             const freeroamBackstoryExceeds = (freeroamBackstory?.length ?? 0) > BACKSTORY_LIMIT;
             const freeroamAppearanceExceeds = (freeroamAppearance?.length ?? 0) > APPEARANCE_LIMIT;
+            const extBackstoryExceedsLimit = (extBackstory?.length ?? 0) > BACKSTORY_LIMIT;
+            const extAppearanceExceedsLimit = (extAppearance?.length ?? 0) > APPEARANCE_LIMIT;
             const tabs: { id: Tab; label: string; badge?: string; badgeRed?: boolean }[] = [
               { id: 'about', label: 'About', ...(freeroamBackstoryExceeds ? { badge: `${(freeroamBackstory?.length ?? 0).toLocaleString()} chars`, badgeRed: true } : {}) },
               { id: 'appearance', label: 'Appearance', ...(freeroamAppearanceExceeds ? { badge: `${(freeroamAppearance?.length ?? 0).toLocaleString()} chars`, badgeRed: true } : {}) },
-              ...(extBackstory ? [{ id: 'full-backstory' as Tab, label: 'Full Backstory', badge: `${extBackstory.length.toLocaleString()} chars` }] : []),
-              ...(extAppearance ? [{ id: 'full-appearance' as Tab, label: 'Full Appearance', badge: `${extAppearance.length.toLocaleString()} chars` }] : []),
+              { id: 'full-backstory', label: 'Full Backstory', ...(extBackstoryExceedsLimit ? { badge: `${extBackstory!.length.toLocaleString()} chars` } : {}) },
+              { id: 'full-appearance', label: 'Full Appearance', ...(extAppearanceExceedsLimit ? { badge: `${extAppearance!.length.toLocaleString()} chars` } : {}) },
             ];
             return (
               <div className="flex-shrink-0 flex overflow-x-auto" style={{ borderBottom: '1px solid oklch(1 0 0 / 0.08)', scrollbarWidth: 'none' }}>
