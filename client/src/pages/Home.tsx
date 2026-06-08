@@ -825,6 +825,31 @@ export default function Home() {
                   );
                 })()}
 
+                {/* Public */}
+                {(() => {
+                  const count = allWorlds.filter(w => w.privacy_status === 'public').length;
+                  const isActive = worldsPrivacyFilter === 'public';
+                  return (
+                    <button
+                      onClick={() => setWorldsPrivacyFilter(isActive ? null : 'public')}
+                      className="flex items-center justify-center sm:justify-start gap-1.5 px-3 py-1 rounded-sm text-[11px] font-semibold tracking-wider uppercase transition-all"
+                      style={{
+                        fontFamily: 'Rajdhani, sans-serif',
+                        background: isActive ? 'oklch(0.22 0.08 145 / 0.4)' : 'oklch(0.15 0.01 264)',
+                        border: isActive ? '1px solid oklch(0.55 0.15 145 / 0.6)' : '1px solid oklch(1 0 0 / 0.08)',
+                        color: isActive ? 'oklch(0.75 0.15 145)' : 'oklch(0.45 0.01 264)',
+                      }}
+                    >
+                      🌐 Public
+                      {!isLoadingWorlds && count > 0 && (
+                        <span className="inline-flex items-center justify-center rounded-sm px-1 min-w-[18px] h-[16px] text-[9px] font-bold" style={{ fontFamily: 'JetBrains Mono, monospace', background: 'oklch(1 0 0 / 0.12)', color: 'inherit' }}>
+                          {count}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })()}
+
                 {/* Unlisted */}
                 {(() => {
                   const count = allWorlds.filter(w => w.privacy_status === 'unlisted').length;
