@@ -541,30 +541,26 @@ export default function Home() {
           <div className="flex items-center rounded-sm overflow-hidden flex-shrink-0" style={{ border: '1px solid oklch(1 0 0 / 0.1)' }}>
             <button
               onClick={() => setViewMode('characters')}
-              className="flex items-center gap-1 px-2.5 py-1.5 text-[11px] font-semibold tracking-wider uppercase transition-all"
+              className="w-8 h-8 flex items-center justify-center transition-all"
               style={{
-                fontFamily: 'Rajdhani, sans-serif',
                 background: viewMode === 'characters' ? 'oklch(0.769 0.188 70.08 / 0.15)' : 'oklch(0.15 0.01 264)',
                 color: viewMode === 'characters' ? 'oklch(0.769 0.188 70.08)' : 'oklch(0.45 0.01 264)',
                 borderRight: '1px solid oklch(1 0 0 / 0.1)',
               }}
               title="View Characters"
             >
-              <Users size={12} strokeWidth={2} />
-              <span className="hidden sm:inline">Characters</span>
+              <Users size={14} strokeWidth={2} />
             </button>
             <button
               onClick={() => setViewMode('worlds')}
-              className="flex items-center gap-1 px-2.5 py-1.5 text-[11px] font-semibold tracking-wider uppercase transition-all"
+              className="w-8 h-8 flex items-center justify-center transition-all"
               style={{
-                fontFamily: 'Rajdhani, sans-serif',
                 background: viewMode === 'worlds' ? 'oklch(0.769 0.188 70.08 / 0.15)' : 'oklch(0.15 0.01 264)',
                 color: viewMode === 'worlds' ? 'oklch(0.769 0.188 70.08)' : 'oklch(0.45 0.01 264)',
               }}
               title="View Worlds"
             >
-              <Globe size={12} strokeWidth={2} />
-              <span className="hidden sm:inline">Worlds</span>
+              <Globe size={14} strokeWidth={2} />
             </button>
           </div>
 
