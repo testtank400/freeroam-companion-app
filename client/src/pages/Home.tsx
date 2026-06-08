@@ -13,6 +13,7 @@ import DeleteConfirmDialog from '@/components/DeleteConfirmDialog';
 import EditCollectionModal from '@/components/EditCollectionModal';
 import SettingsModal from '@/components/SettingsModal';
 import WorldCard, { ApiWorld } from '@/components/WorldCard';
+import WorldCollectionCard, { ApiWorldCollection } from '@/components/WorldCollectionCard';
 import WorldProfile from '@/components/WorldProfile';
 import { Collection, useCollections } from '@/hooks/useCollections';
 import { useSavedCharacters } from '@/hooks/useSavedCharacters';
@@ -94,6 +95,51 @@ export default function Home() {
       fetchAllWorlds();
     }
   }, [viewMode]);
+
+  // ─── World Collections State ──────────────────────────────────────────────═
+  const [worldCollections, setWorldCollections] = useState<ApiWorldCollection[]>([]);
+  const [activeWorldCollectionId, setActiveWorldCollectionId] = useState<string | null>(null);
+  const [worldCollectionWorlds, setWorldCollectionWorlds] = useState<ApiWorld[]>([]);
+  const [isLoadingCollectionWorlds, setIsLoadingCollectionWorlds] = useState(false);
+
+  // Fetch world collections list
+  const fetchWorldCollections = useCallback(async () => {
+    try {
+      const result = await utils.worldCollections.list.fetch({});
+      setWorldCollections(result as ApiWorldCollection[]);
+    } catch {
+      // Non-fatal — collections strip just won't show
+    }
+  }, [utils]);
+
+  // Load collections when worlds mode is first activated
+  useEffect(() => {
+    if (viewMode === 'worlds' && worldCollections.length === 0) {
+      fetchWorldCollections();
+    }
+  }, [viewMode]);
+
+  // Fetch worlds inside a specific collection when one is selected
+  const openWorldCollection = useCallback(async (collectionId: string) => {
+    setActiveWorldCollectionId(collectionId);
+    setIsLoadingCollectionWorlds(true);
+    setWorldCollectionWorlds([]);
+    try {
+      const result = await utils.worldCollections.get.fetch({ collectionId });
+      setWorldCollectionWorlds(result.worlds as ApiWorld[]);
+    } catch {
+      toast.error('Failed to load collection worlds.');
+    } finally {
+      setIsLoadingCollectionWorlds(false);
+    }
+  }, [utils]);
+
+  const closeWorldCollection = () => {
+    setActiveWorldCollectionId(null);
+    setWorldCollectionWorlds([]);
+  };
+
+  const activeWorldCollection = worldCollections.find(c => c.external_id === activeWorldCollectionId) ?? null;
 
   // ─── Characters State ─────────────────────────────────────────────────────────
   const [selectedCharacter, setSelectedCharacter] = useState<ApiCharacter | null>(null);
@@ -776,6 +822,134 @@ export default function Home() {
             ═══════════════════════════════════════════════════════════════════════════ */}
         {viewMode === 'worlds' && (
           <>
+            {/* World Collections strip — shown when not inside a collection and collections exist */}
+            {!activeWorldCollectionId && worldCollections.length > 0 && (
+              <div className="mb-8">
+                <span
+                  className="text-[10px] uppercase tracking-[0.2em] block mb-3"
+                  style={{ fontFamily: 'Rajdhani, sans-serif', color: 'oklch(0.4 0.01 264)', fontWeight: 600 }}
+                >
+                  Collections
+                </span>
+                <div className="grid grid-cols-1 min-[400px]:grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-4">
+                  {worldCollections.map(col => (
+                    <WorldCollectionCard
+                      key={col.external_id}
+                      collection={col}
+                      previewCovers={[]}
+                      onClick={(c) => openWorldCollection(c.external_id)}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Inside a collection: back button + collection header */}
+            {activeWorldCollectionId && activeWorldCollection && (
+              <div className="mb-6 flex items-center gap-3">
+                <button
+                  onClick={closeWorldCollection}
+                  className="w-8 h-8 flex items-center justify-center rounded-sm transition-colors hover:brightness-110"
+                  style={{
+                    background: 'oklch(0.769 0.188 70.08 / 0.12)',
+                    border: '1px solid oklch(0.769 0.188 70.08 / 0.3)',
+                    color: 'oklch(0.769 0.188 70.08)',
+                  }}
+                  title="Back to all worlds"
+                >
+                  <ArrowLeft size={16} strokeWidth={2} />
+                </button>
+                <div>
+                  <p
+                    className="text-[10px] uppercase tracking-widest leading-none"
+                    style={{ fontFamily: 'Rajdhani, sans-serif', color: 'oklch(0.45 0.01 264)', fontWeight: 600 }}
+                  >
+                    World Collection
+                  </p>
+                  <h2
+                    className="text-base font-bold tracking-widest uppercase leading-none mt-0.5"
+                    style={{ fontFamily: 'Rajdhani, sans-serif', color: 'oklch(0.769 0.188 70.08)' }}
+                  >
+                    {activeWorldCollection.name}
+                  </h2>
+                  {activeWorldCollection.description && (
+                    <p
+                      className="text-[10px] mt-0.5 truncate max-w-xs"
+                      style={{ fontFamily: 'JetBrains Mono, monospace', color: 'oklch(0.45 0.01 264)' }}
+                    >
+                      {activeWorldCollection.description}
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Collection worlds grid */}
+            {activeWorldCollectionId && (
+              <>
+                {isLoadingCollectionWorlds && (
+                  <div className="grid grid-cols-1 min-[400px]:grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-4">
+                    {Array.from({ length: 6 }).map((_, i) => (
+                      <div
+                        key={i}
+                        className="rounded-sm overflow-hidden animate-pulse"
+                        style={{ background: 'oklch(0.13 0.01 264)', border: '1px solid oklch(1 0 0 / 0.07)' }}
+                      >
+                        <div style={{ paddingBottom: '75%', background: 'oklch(0.16 0.01 264)' }} />
+                        <div className="p-3 space-y-2">
+                          <div className="h-4 rounded" style={{ background: 'oklch(0.18 0.01 264)', width: '70%' }} />
+                          <div className="h-2 rounded" style={{ background: 'oklch(0.15 0.01 264)' }} />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {!isLoadingCollectionWorlds && worldCollectionWorlds.length === 0 && (
+                  <div className="flex flex-col items-center justify-center py-16 gap-3">
+                    <p style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: '16px', fontWeight: 700, color: 'oklch(0.4 0.01 264)' }}>
+                      EMPTY COLLECTION
+                    </p>
+                    <p style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '12px', color: 'oklch(0.35 0.01 264)' }}>
+                      No worlds in this collection yet.
+                    </p>
+                  </div>
+                )}
+                {!isLoadingCollectionWorlds && worldCollectionWorlds.length > 0 && (
+                  <div className="grid grid-cols-1 min-[400px]:grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-4">
+                    {worldCollectionWorlds
+                      .filter(w => {
+                        const q = worldsSearchQuery.trim().toLowerCase();
+                        return !q || w.name.toLowerCase().includes(q) || w.logline.toLowerCase().includes(q);
+                      })
+                      .map(world => (
+                        <WorldCard
+                          key={world.external_id}
+                          world={world}
+                          onClick={setSelectedWorld}
+                          searchQuery={worldsSearchQuery}
+                        />
+                      ))}
+                  </div>
+                )}
+                {/* End of collection indicator */}
+                {!isLoadingCollectionWorlds && worldCollectionWorlds.length > 0 && (
+                  <div className="flex items-center gap-3 mt-6">
+                    <div className="h-px flex-1" style={{ background: 'oklch(1 0 0 / 0.05)' }} />
+                    <span
+                      className="text-[10px] uppercase tracking-[0.2em] px-3"
+                      style={{ fontFamily: 'Rajdhani, sans-serif', color: 'oklch(0.3 0.01 264)', fontWeight: 600 }}
+                    >
+                      {worldCollectionWorlds.length} world{worldCollectionWorlds.length !== 1 ? 's' : ''} in collection
+                    </span>
+                    <div className="h-px flex-1" style={{ background: 'oklch(1 0 0 / 0.05)' }} />
+                  </div>
+                )}
+              </>
+            )}
+
+            {/* Only show filter chips and main grid when NOT inside a collection */}
+            {!activeWorldCollectionId && <>
+
             {/* Worlds filter chips */}
             <div className="mb-6">
               <div className="grid grid-cols-3 sm:flex sm:flex-row gap-2">
@@ -1022,6 +1196,7 @@ export default function Home() {
                 <div className="h-px flex-1" style={{ background: 'oklch(1 0 0 / 0.05)' }} />
               </div>
             )}
+            </>}
           </>
         )}
 

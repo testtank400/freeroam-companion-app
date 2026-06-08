@@ -1009,6 +1009,130 @@ export const appRouter = router({
       }),
   }),
 
+  // ─── World Collections (Freeroam API proxy, no local DB) ──────────────────────────────────
+  worldCollections: router({
+    /** List all world collections for a user */
+    list: publicProcedure
+      .input(z.object({ username: z.string().default("Test Tank") }))
+      .query(async ({ input, ctx }) => {
+        if (!hasUserCookie(ctx)) return [];
+
+        const cookie = getFreeroamCookie(ctx);
+        if (!cookie) throw new Error("Cookie not configured in environment");
+
+        const encodedUsername = encodeURIComponent(input.username);
+        const url = `https://getfreeroam.com/api/user/${encodedUsername}/collections`;
+
+        const response = await fetch(url, {
+          headers: {
+            accept: "*/*",
+            "accept-language": "en-US,en;q=0.9",
+            cookie,
+            origin: "https://getfreeroam.com",
+            referer: "https://getfreeroam.com",
+            "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36",
+          },
+        });
+
+        if (!response.ok) {
+          const text = await response.text();
+          throw new Error(`Collections API responded with status ${response.status}: ${text}`);
+        }
+
+        const data = await response.json() as {
+          collections: Array<{
+            external_id: string;
+            name: string;
+            description: string | null;
+            cover_image_url: string | null;
+            privacy_status: string;
+            owner: { username: string; avatar_url: string | null; is_verified: boolean };
+            world_count: number;
+            is_owner: boolean;
+          }>;
+        };
+
+        return data.collections.map(c => ({
+          ...c,
+          privacy_status: (["private", "public", "unlisted"].includes(c.privacy_status)
+            ? c.privacy_status
+            : "private") as "private" | "public" | "unlisted",
+        }));
+      }),
+
+    /** Get a single collection with its worlds */
+    get: publicProcedure
+      .input(z.object({ collectionId: z.string() }))
+      .query(async ({ input, ctx }) => {
+        const cookie = getFreeroamCookie(ctx);
+        if (!cookie) throw new Error("Cookie not configured in environment");
+
+        const url = `https://getfreeroam.com/api/collections/${encodeURIComponent(input.collectionId)}`;
+
+        const response = await fetch(url, {
+          headers: {
+            accept: "*/*",
+            "accept-language": "en-US,en;q=0.9",
+            cookie,
+            origin: "https://getfreeroam.com",
+            referer: "https://getfreeroam.com",
+            "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36",
+          },
+        });
+
+        if (!response.ok) {
+          const text = await response.text();
+          throw new Error(`Collection detail API responded with status ${response.status}: ${text}`);
+        }
+
+        const data = await response.json() as {
+          collection: {
+            external_id: string;
+            name: string;
+            description: string | null;
+            cover_image_url: string | null;
+            privacy_status: string;
+            invite_token: string | null;
+            owner: { username: string; avatar_url: string | null; is_verified: boolean };
+          };
+          worlds: Array<{
+            external_id: string;
+            name: string;
+            cover_image_url: string | null;
+            avg_color: { r: number; g: number; b: number } | null;
+            logline: string;
+            description: string;
+            interaction_count: number;
+            owner: { username: string; is_verified: boolean };
+            privacy_status: string;
+            is_draft: boolean;
+          }>;
+          is_owner: boolean;
+          is_collaborator: boolean;
+          can_edit: boolean;
+          collaborators: unknown[];
+          collaborator_count: number;
+        };
+
+        return {
+          collection: {
+            ...data.collection,
+            privacy_status: (["private", "public", "unlisted"].includes(data.collection.privacy_status)
+              ? data.collection.privacy_status
+              : "private") as "private" | "public" | "unlisted",
+          },
+          worlds: data.worlds.map(w => ({
+            ...w,
+            privacy_status: (["private", "public", "unlisted"].includes(w.privacy_status)
+              ? w.privacy_status
+              : "private") as "private" | "public" | "unlisted",
+          })),
+          is_owner: data.is_owner,
+          can_edit: data.can_edit,
+        };
+      }),
+  }),
+
   // ─── Freeroam Cookie Verification ──────────────────────────────────────────────────────────
   freeroam: router({
     /**
