@@ -23,9 +23,10 @@ export interface ApiWorld {
 
 interface WorldCardProps {
   world: ApiWorld;
-  onClick: (world: ApiWorld) => void;
+  onClick: (world: ApiWorld, e: React.MouseEvent) => void;
   /** Active search query — matching portion of the name is highlighted in amber */
   searchQuery?: string;
+  isSelected?: boolean;
 }
 
 /** Splits text into segments and wraps the matching part in an amber span */
@@ -87,7 +88,7 @@ function formatCount(count: number): string {
 // Fallback placeholder image for worlds without a cover
 const FALLBACK_IMAGE = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCIgZmlsbD0iIzFhMWEyNCIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBmb250LWZhbWlseT0ibW9ub3NwYWNlIiBmb250LXNpemU9IjE0IiBmaWxsPSIjMzMzMzQ0IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkeT0iLjNlbSI+Tk8gQ09WRVI8L3RleHQ+PC9zdmc+';
 
-export default function WorldCard({ world, onClick, searchQuery = '' }: WorldCardProps) {
+export default function WorldCard({ world, onClick, searchQuery = '', isSelected = false }: WorldCardProps) {
   const imageUrl = world.cover_image_url || FALLBACK_IMAGE;
 
   return (
@@ -95,10 +96,32 @@ export default function WorldCard({ world, onClick, searchQuery = '' }: WorldCar
       className="char-card relative flex flex-col rounded-sm overflow-hidden cursor-pointer"
       style={{
         background: 'oklch(0.13 0.01 264)',
-        border: '1px solid oklch(1 0 0 / 0.07)',
+        border: isSelected ? '1px solid oklch(0.769 0.188 70.08 / 0.8)' : '1px solid oklch(1 0 0 / 0.07)',
+        boxShadow: isSelected ? '0 0 0 2px oklch(0.769 0.188 70.08 / 0.25)' : undefined,
       }}
-      onClick={() => onClick(world)}
+      onClick={(e) => onClick(world, e)}
     >
+      {/* Selection overlay */}
+      {isSelected && (
+        <div
+          className="absolute inset-0 z-20 pointer-events-none"
+          style={{ background: 'oklch(0.769 0.188 70.08 / 0.08)' }}
+        />
+      )}
+      {/* Selection checkbox */}
+      {isSelected && (
+        <div
+          className="absolute top-2 right-2 z-30 w-5 h-5 rounded-sm flex items-center justify-center"
+          style={{
+            background: 'oklch(0.769 0.188 70.08)',
+            border: '1px solid oklch(0.769 0.188 70.08)',
+          }}
+        >
+          <svg width="10" height="8" viewBox="0 0 10 8" fill="none">
+            <path d="M1 4L3.5 6.5L9 1" stroke="oklch(0.11 0.009 264)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+        </div>
+      )}
       {/* Image area — landscape aspect ratio for worlds */}
       <div className="relative w-full" style={{ paddingBottom: '75%' }}>
         <img

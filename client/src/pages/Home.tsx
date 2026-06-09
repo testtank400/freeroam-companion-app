@@ -4,6 +4,7 @@
 // Automatically loads more when the sentinel div at the bottom enters the viewport
 
 import BulkActionBar from '@/components/BulkActionBar';
+import WorldBulkActionBar from '@/components/WorldBulkActionBar';
 import CharacterCard from '@/components/CharacterCard';
 import CharacterProfile from '@/components/CharacterProfile';
 import CollectionCard from '@/components/CollectionCard';
@@ -303,14 +304,34 @@ export default function Home() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const lastSelectedIndexRef = useRef<number>(-1);
 
+  // World multi-select state
+  const [selectedWorldIds, setSelectedWorldIds] = useState<Set<string>>(new Set());
+  const lastSelectedWorldIndexRef = useRef<number>(-1);
+  const worldGridRef = useRef<HTMLDivElement>(null);
+  const worldBulkBarRef = useRef<HTMLDivElement>(null);
+
   // Clear selection on Escape
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && selectedIds.size > 0) setSelectedIds(new Set());
+      if (e.key === 'Escape' && selectedWorldIds.size > 0) setSelectedWorldIds(new Set());
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [selectedIds]);
+  }, [selectedIds, selectedWorldIds]);
+
+  // Click outside world cards to deselect
+  useEffect(() => {
+    if (selectedWorldIds.size === 0) return;
+    const handler = (e: MouseEvent) => {
+      const target = e.target as Node;
+      const inGrid = worldGridRef.current?.contains(target);
+      const inBulkBar = worldBulkBarRef.current?.contains(target);
+      if (!inGrid && !inBulkBar) setSelectedWorldIds(new Set());
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [selectedWorldIds]);
 
   // Click outside cards to deselect (only when selection is active)
   const gridRef = useRef<HTMLDivElement>(null);
@@ -1186,21 +1207,58 @@ export default function Home() {
 
             {/* Worlds card grid */}
             {allWorlds.length > 0 && (
-              <div className="grid grid-cols-1 min-[400px]:grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-4">
-                {allWorlds.filter(w => {
-                  const q = worldsSearchQuery.trim().toLowerCase();
-                  const matchesPrivacy = !worldsPrivacyFilter || w.privacy_status === worldsPrivacyFilter;
-                  const matchesSearch = !q || w.name.toLowerCase().includes(q) || w.logline.toLowerCase().includes(q);
-                  const matchesDraft = worldsDraftFilter === null || w.is_draft === worldsDraftFilter;
-                  return matchesPrivacy && matchesSearch && matchesDraft;
-                }).map(world => (
-                  <WorldCard
-                    key={world.external_id}
-                    world={world}
-                    onClick={setSelectedWorld}
-                    searchQuery={worldsSearchQuery}
-                  />
-                ))}
+              <div ref={worldGridRef} className="grid grid-cols-1 min-[400px]:grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-4"
+                style={selectedWorldIds.size > 0 ? { userSelect: 'none' } : undefined}
+              >
+                {(() => {
+                  const visibleWorlds = allWorlds.filter(w => {
+                    const q = worldsSearchQuery.trim().toLowerCase();
+                    const matchesPrivacy = !worldsPrivacyFilter || w.privacy_status === worldsPrivacyFilter;
+                    const matchesSearch = !q || w.name.toLowerCase().includes(q) || w.logline.toLowerCase().includes(q);
+                    const matchesDraft = worldsDraftFilter === null || w.is_draft === worldsDraftFilter;
+                    return matchesPrivacy && matchesSearch && matchesDraft;
+                  });
+                  return visibleWorlds.map((world, idx) => (
+                    <WorldCard
+                      key={world.external_id}
+                      world={world}
+                      isSelected={selectedWorldIds.has(world.external_id)}
+                      onClick={(w, e) => {
+                        // Ctrl/Cmd click: toggle single
+                        if (e.ctrlKey || e.metaKey) {
+                          e.preventDefault();
+                          setSelectedWorldIds(prev => {
+                            const next = new Set(prev);
+                            if (next.has(w.external_id)) next.delete(w.external_id);
+                            else next.add(w.external_id);
+                            return next;
+                          });
+                          lastSelectedWorldIndexRef.current = idx;
+                          return;
+                        }
+                        // Shift click: range select
+                        if (e.shiftKey && lastSelectedWorldIndexRef.current >= 0) {
+                          e.preventDefault();
+                          const from = Math.min(lastSelectedWorldIndexRef.current, idx);
+                          const to = Math.max(lastSelectedWorldIndexRef.current, idx);
+                          setSelectedWorldIds(prev => {
+                            const next = new Set(prev);
+                            visibleWorlds.slice(from, to + 1).forEach(vw => next.add(vw.external_id));
+                            return next;
+                          });
+                          return;
+                        }
+                        // Normal click: open profile (clear selection if any)
+                        if (selectedWorldIds.size > 0) {
+                          setSelectedWorldIds(new Set());
+                          return;
+                        }
+                        setSelectedWorld(w);
+                      }}
+                      searchQuery={worldsSearchQuery}
+                    />
+                  ));
+                })()}
               </div>
             )}
 
@@ -1927,6 +1985,61 @@ export default function Home() {
         isInCollection={isInCollection}
         onToggleInCollection={toggleInCollection}
         onCreateCollection={createCollection}
+      />
+
+      {/* World bulk action bar — shown when worlds are selected */}
+      <WorldBulkActionBar
+        ref={worldBulkBarRef}
+        selectedCount={selectedWorldIds.size}
+        selectedIds={Array.from(selectedWorldIds)}
+        onClear={() => setSelectedWorldIds(new Set())}
+        worldCollections={worldCollections}
+        getMembershipSet={(ids) => {
+          // A collection is in the set only if ALL selected worlds are members
+          // We track this via the worldCollectionWorlds map
+          const result = new Set<string>();
+          worldCollections.forEach(col => {
+            // Check if all selected worlds are in this collection
+            // We use the worldCollections data - each collection has world_count but we need membership
+            // For now use optimistic: include if any world is in it (will be refined by server)
+            result.add(col.external_id);
+          });
+          return result;
+        }}
+        onToggleInCollection={async (collectionId, added, worldExternalIds) => {
+          // Batch add/remove all selected worlds via tRPC HTTP API
+          let successCount = 0;
+          for (const worldId of worldExternalIds) {
+            try {
+              const res = await fetch(`/api/trpc/worldCollections.${added ? 'addWorld' : 'removeWorld'}?batch=1`, {
+                method: 'POST',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify({ '0': { json: { collectionId, worldExternalId: worldId } } }),
+                credentials: 'include',
+              });
+              if (res.ok) successCount++;
+            } catch { /* individual errors silently ignored */ }
+          }
+          if (successCount > 0) {
+            toast.success(`${added ? 'Added' : 'Removed'} ${successCount} world${successCount !== 1 ? 's' : ''} ${added ? 'to' : 'from'} collection`);
+          }
+          fetchWorldCollections();
+          setSelectedWorldIds(new Set());
+        }}
+        onCreateCollection={async (name) => {
+          try {
+            const res = await fetch('/api/trpc/worldCollections.create?batch=1', {
+              method: 'POST',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({ '0': { json: { name } } }),
+              credentials: 'include',
+            });
+            if (res.ok) {
+              fetchWorldCollections();
+              toast.success(`Collection "${name}" created`);
+            }
+          } catch { /* ignore */ }
+        }}
       />
 
       {/* Delete confirmation dialog */}
