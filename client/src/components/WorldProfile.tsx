@@ -256,11 +256,13 @@ export default function WorldProfile({ world, onClose, worldCollections = [], on
         {/* Scrollable content */}
         <div
           ref={scrollRef}
-          className="relative w-full overflow-y-auto"
+          className="relative w-full"
           style={{
             background: 'oklch(0.11 0.008 264)',
             borderLeft: '1px solid oklch(1 0 0 / 0.08)',
             flex: 1,
+            overflowY: 'auto',
+            overflowX: 'hidden',
           }}
         >
         {/* Cover image header */}
