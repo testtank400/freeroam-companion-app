@@ -31,7 +31,7 @@ function PrivacyBadgeLarge({ status }: { status: PrivacyStatus }) {
   const { label, icon, className } = config[status];
   return (
     <span
-      className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-sm text-xs font-semibold tracking-widest uppercase ${className}`}
+      className={`inline-flex items-center gap-1.5 px-3 h-7 rounded-sm text-xs font-semibold tracking-widest uppercase ${className}`}
       style={{ fontFamily: 'Rajdhani, sans-serif' }}
     >
       {icon}
@@ -201,7 +201,7 @@ export default function WorldProfile({ world, onClose, worldCollections = [], on
             <div ref={collectionBtnRef} className="relative">
               <button
                 onClick={() => setShowCollectionPopover(v => !v)}
-                className="flex items-center gap-1.5 px-3 py-1 rounded-sm transition-all hover:brightness-110"
+                className="flex items-center gap-1.5 px-3 h-7 rounded-sm transition-all hover:brightness-110"
                 style={{
                   background: membershipSet.size > 0
                     ? 'oklch(0.769 0.188 70.08 / 0.2)'
@@ -241,7 +241,7 @@ export default function WorldProfile({ world, onClose, worldCollections = [], on
             {/* Close button */}
             <button
               onClick={onClose}
-              className="flex items-center justify-center px-2.5 py-1 rounded-sm transition-colors hover:brightness-125"
+              className="flex items-center justify-center px-2.5 h-7 rounded-sm transition-colors hover:brightness-125"
               style={{
                 background: 'oklch(0.15 0.01 264 / 0.85)',
                 border: '1px solid oklch(1 0 0 / 0.15)',
@@ -257,7 +257,7 @@ export default function WorldProfile({ world, onClose, worldCollections = [], on
           <div className="absolute top-3 left-3 z-20 flex items-center gap-2">
             <PrivacyBadgeLarge status={world.privacy_status} />
             <span
-              className="inline-flex items-center gap-1.5 px-3 py-1 rounded-sm text-xs font-semibold"
+              className="inline-flex items-center gap-1.5 px-3 h-7 rounded-sm text-xs font-semibold"
               style={{
                 fontFamily: 'JetBrains Mono, monospace',
                 background: 'oklch(0.12 0.01 264 / 0.85)',
