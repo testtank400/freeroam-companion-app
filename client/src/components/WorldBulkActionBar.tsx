@@ -86,7 +86,7 @@ const WorldBulkActionBar = forwardRef<HTMLDivElement, WorldBulkActionBarProps>(
           </button>
 
           {showCollectionPopover && (
-            <div style={{ position: 'fixed', bottom: 80, left: '50%', transform: 'translateX(-50%)', zIndex: 60, width: 280 }}>
+            <div style={{ position: 'fixed', bottom: 80, left: '50%', transform: 'translateX(-50%)', zIndex: 60, width: 320 }}>
               <AddToWorldCollectionPopover
                 worldExternalId="__bulk__"
                 collections={worldCollections}

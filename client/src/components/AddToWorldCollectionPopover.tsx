@@ -77,13 +77,29 @@ export default function AddToWorldCollectionPopover({
   return (
     <div
       ref={ref}
-      className="absolute right-0 top-full mt-1 w-64 rounded-sm overflow-hidden z-50"
+      className="rounded-sm overflow-hidden"
       style={{
-        background: 'oklch(0.13 0.01 264)',
+        width: '100%',
+        background: 'oklch(0.16 0.01 264)',
         border: '1px solid oklch(1 0 0 / 0.12)',
-        boxShadow: '0 8px 32px rgba(0,0,0,0.6)',
+        boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
       }}
     >
+      {/* Header */}
+      <div
+        className="flex items-center justify-between px-3 py-2"
+        style={{ borderBottom: '1px solid oklch(1 0 0 / 0.08)' }}
+      >
+        <span
+          className="text-[10px] uppercase tracking-widest font-semibold"
+          style={{ fontFamily: 'Rajdhani, sans-serif', color: 'oklch(0.769 0.188 70.08)' }}
+        >
+          Add to Collection
+        </span>
+        <button onClick={onClose} style={{ color: 'oklch(0.45 0.01 264)' }}>
+          <X size={12} strokeWidth={2.5} />
+        </button>
+      </div>
       {/* Search */}
       {collections.length > 4 && (
         <div className="px-2.5 pt-2.5 pb-1">
@@ -114,7 +130,7 @@ export default function AddToWorldCollectionPopover({
       )}
 
       {/* Collection list */}
-      <div className="max-h-48 overflow-y-auto py-1">
+      <div className="overflow-y-auto py-1" style={{ maxHeight: 'min(300px, 50vh)' }}>
         {filtered.length === 0 && (
           <p className="px-3 py-2 text-[11px]" style={{ fontFamily: 'JetBrains Mono, monospace', color: 'oklch(0.4 0.01 264)' }}>
             No collections found.
