@@ -201,7 +201,7 @@ export default function WorldProfile({ world, onClose, worldCollections = [], on
             <div ref={collectionBtnRef} className="relative">
               <button
                 onClick={() => setShowCollectionPopover(v => !v)}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-sm transition-all hover:brightness-110"
+                className="flex items-center gap-1.5 px-3 py-1 rounded-sm transition-all hover:brightness-110"
                 style={{
                   background: membershipSet.size > 0
                     ? 'oklch(0.769 0.188 70.08 / 0.2)'
