@@ -4,6 +4,7 @@
 // Actions: Add to Collection, Clear Selection.
 
 import AddToWorldCollectionPopover from '@/components/AddToWorldCollectionPopover';
+import BulkWorldCollectionPopover from '@/components/BulkWorldCollectionPopover';
 import { ApiWorldCollection } from '@/components/WorldCollectionCard';
 import { FolderPlus, X } from 'lucide-react';
 import React, { forwardRef, useEffect, useRef, useState } from 'react';
@@ -85,10 +86,10 @@ const WorldBulkActionBar = forwardRef<HTMLDivElement, WorldBulkActionBarProps>(
             {worldCollections.length === 0 ? 'New Collection' : 'Add to Collection'}
           </button>
 
-          {showCollectionPopover && (
+          {showCollectionPopover && selectedIds.length > 0 && (
             <div style={{ position: 'fixed', bottom: 80, left: '50%', transform: 'translateX(-50%)', zIndex: 60, width: 320 }}>
-              <AddToWorldCollectionPopover
-                worldExternalId="__bulk__"
+              <BulkWorldCollectionPopover
+                selectedWorldIds={selectedIds}
                 collections={worldCollections}
                 membershipSet={bulkMembershipSet}
                 onToggle={handleBulkToggle}
