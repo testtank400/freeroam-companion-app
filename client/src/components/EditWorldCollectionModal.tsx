@@ -184,7 +184,7 @@ export default function EditWorldCollectionModal({ open, onClose, collection, on
 
   if (!open) return null;
 
-  const previewImage = coverMode === 'url' ? coverUrl : (uploadPreview ?? coverUrl ?? '');
+  const previewImage = uploadPreview ?? (coverUrl.startsWith('data:') ? '' : coverUrl) ?? '';
 
   return (
     <div
