@@ -156,7 +156,7 @@ export default function WorldCard({ world, onOpenModal, onSelect, searchQuery = 
               backdropFilter: 'blur(4px)',
             }}
           >
-            <Eye size={11} strokeWidth={2} style={{ color: 'oklch(0.769 0.188 70.08)' }} />
+            <BookOpen size={11} strokeWidth={2} style={{ color: 'oklch(0.769 0.188 70.08)' }} />
             {formatCount(world.interaction_count)}
           </span>
           {world.is_draft && (
@@ -191,7 +191,7 @@ export default function WorldCard({ world, onOpenModal, onSelect, searchQuery = 
             }}
             title="View details"
           >
-            <BookOpen size={13} strokeWidth={2} />
+            <Eye size={13} strokeWidth={2} />
           </button>
         )}
 
