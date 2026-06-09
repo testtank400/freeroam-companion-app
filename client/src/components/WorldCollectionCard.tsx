@@ -50,13 +50,16 @@ function CoverGrid({ covers }: { covers: (string | null)[] }) {
 
 function PrivacyDot({ status }: { status: 'private' | 'public' | 'unlisted' }) {
   const config = {
-    private: { icon: <Lock size={10} strokeWidth={2.5} />, className: 'badge-private' },
-    public:  { icon: <Globe size={10} strokeWidth={2.5} />, className: 'badge-public' },
-    unlisted: { icon: <Link size={10} strokeWidth={2.5} />, className: 'badge-linked' },
+    private: { icon: <Lock size={14} strokeWidth={2.5} />, className: 'badge-private' },
+    public:  { icon: <Globe size={14} strokeWidth={2.5} />, className: 'badge-public' },
+    unlisted: { icon: <Link size={14} strokeWidth={2.5} />, className: 'badge-linked' },
   };
   const { icon, className } = config[status];
   return (
-    <span className={`inline-flex items-center justify-center w-5 h-5 rounded-sm ${className}`}>
+    <span
+      className={`inline-flex items-center justify-center rounded-sm ${className}`}
+      style={{ width: '32px', height: '32px', minWidth: '32px' }}
+    >
       {icon}
     </span>
   );
