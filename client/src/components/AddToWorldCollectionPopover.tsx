@@ -180,7 +180,7 @@ export default function AddToWorldCollectionPopover({
             type="text"
             value={newName}
             onChange={(e) => setNewName(e.target.value)}
-            placeholder="New collection..."
+            placeholder="Jujutsu Kaisen Collection"
             className="flex-1 px-2 py-1.5 rounded-sm text-[11px]"
             style={{
               fontFamily: 'JetBrains Mono, monospace',

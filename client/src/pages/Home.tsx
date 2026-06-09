@@ -510,7 +510,7 @@ export default function Home() {
                 className="text-base font-bold tracking-widest uppercase leading-none"
                 style={{ fontFamily: 'Rajdhani, sans-serif', color: 'oklch(0.92 0.005 65)' }}
               >
-                {viewMode === 'characters' ? 'Character Roster' : 'World Roster'}
+                {viewMode === 'characters' ? 'Character Roster' : 'World Archives'}
               </h1>
             )}
             <p
