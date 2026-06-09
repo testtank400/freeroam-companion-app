@@ -1,6 +1,6 @@
 import { and, eq, inArray } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { characterExtended, characterNsfw, collectionMembers, collections, freeroamUsers, InsertUser, users } from "../drizzle/schema";
+import { characterExtended, characterNsfw, collectionMembers, collections, freeroamUsers, InsertUser, users, worldCollectionMembers } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -376,4 +376,64 @@ export function parseLimitFromError(errorText: string): { limit: number; field: 
   }
 
   return null;
+}
+
+// ─── World Collection Membership (local DB) ──────────────────────────────────────────────
+
+/** Get all world IDs in a collection for a given user */
+export async function getWorldCollectionMembers(collectionExternalId: string, freeroamAccountId: number): Promise<string[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const rows = await db.select()
+    .from(worldCollectionMembers)
+    .where(and(
+      eq(worldCollectionMembers.collectionExternalId, collectionExternalId),
+      eq(worldCollectionMembers.freeroamAccountId, freeroamAccountId)
+    ));
+  return rows.map(r => r.worldExternalId);
+}
+
+/** Add a world to a collection in local DB */
+export async function addWorldToCollectionLocal(collectionExternalId: string, worldExternalId: string, freeroamAccountId: number): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  // Avoid duplicates
+  const existing = await db.select()
+    .from(worldCollectionMembers)
+    .where(and(
+      eq(worldCollectionMembers.collectionExternalId, collectionExternalId),
+      eq(worldCollectionMembers.worldExternalId, worldExternalId),
+      eq(worldCollectionMembers.freeroamAccountId, freeroamAccountId)
+    ));
+  if (existing.length > 0) return;
+  await db.insert(worldCollectionMembers).values({
+    collectionExternalId,
+    worldExternalId,
+    freeroamAccountId,
+  });
+}
+
+/** Remove a world from a collection in local DB */
+export async function removeWorldFromCollectionLocal(collectionExternalId: string, worldExternalId: string, freeroamAccountId: number): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  await db.delete(worldCollectionMembers)
+    .where(and(
+      eq(worldCollectionMembers.collectionExternalId, collectionExternalId),
+      eq(worldCollectionMembers.worldExternalId, worldExternalId),
+      eq(worldCollectionMembers.freeroamAccountId, freeroamAccountId)
+    ));
+}
+
+/** Get all collection IDs that a world belongs to for a given user */
+export async function getWorldMemberships(worldExternalId: string, freeroamAccountId: number): Promise<string[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const rows = await db.select()
+    .from(worldCollectionMembers)
+    .where(and(
+      eq(worldCollectionMembers.worldExternalId, worldExternalId),
+      eq(worldCollectionMembers.freeroamAccountId, freeroamAccountId)
+    ));
+  return rows.map(r => r.collectionExternalId);
 }

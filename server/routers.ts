@@ -7,13 +7,17 @@ import { ENV } from "./_core/env";
 import { storagePut } from "./storage";
 import {
   addCharacterToCollection,
+  addWorldToCollectionLocal,
   createCollection as dbCreateCollection,
   deleteCollection as dbDeleteCollection,
   getCharacterExtended,
   getCharactersNsfw,
   getCollectionsByAccountId,
+  getWorldCollectionMembers,
+  getWorldMemberships,
   parseLimitFromError,
   removeCharacterFromCollection,
+  removeWorldFromCollectionLocal,
   toggleCharacterNsfw,
   updateCollection as dbUpdateCollection,
   upsertCharacterExtended,
@@ -1237,13 +1241,15 @@ export const appRouter = router({
         return { success: true };
       }),
 
-    /** Add a world to a collection */
+    /** Add a world to a collection (Freeroam API + local DB) */
     addWorld: publicProcedure
       .input(z.object({ collectionId: z.string(), worldExternalId: z.string() }))
       .mutation(async ({ input, ctx }) => {
         const cookie = getFreeroamCookie(ctx);
         if (!cookie) throw new Error("Cookie not configured in environment");
+        const accountId = getFreeroamAccountId(ctx);
 
+        // Call Freeroam API
         const response = await fetch(
           `https://getfreeroam.com/api/collections/${encodeURIComponent(input.collectionId)}/worlds`,
           {
@@ -1266,16 +1272,23 @@ export const appRouter = router({
           throw new Error(`Add world to collection failed (${response.status}): ${text}`);
         }
 
+        // Also save to local DB for private world tracking
+        if (accountId) {
+          await addWorldToCollectionLocal(input.collectionId, input.worldExternalId, accountId);
+        }
+
         return { success: true };
       }),
 
-    /** Remove a world from a collection */
+    /** Remove a world from a collection (Freeroam API + local DB) */
     removeWorld: publicProcedure
       .input(z.object({ collectionId: z.string(), worldExternalId: z.string() }))
       .mutation(async ({ input, ctx }) => {
         const cookie = getFreeroamCookie(ctx);
         if (!cookie) throw new Error("Cookie not configured in environment");
+        const accountId = getFreeroamAccountId(ctx);
 
+        // Call Freeroam API
         const response = await fetch(
           `https://getfreeroam.com/api/collections/${encodeURIComponent(input.collectionId)}/worlds/${encodeURIComponent(input.worldExternalId)}`,
           {
@@ -1296,7 +1309,30 @@ export const appRouter = router({
           throw new Error(`Remove world from collection failed (${response.status}): ${text}`);
         }
 
+        // Also remove from local DB
+        if (accountId) {
+          await removeWorldFromCollectionLocal(input.collectionId, input.worldExternalId, accountId);
+        }
+
         return { success: true };
+      }),
+
+    /** Get local membership: world IDs in a collection (includes private worlds) */
+    getMembers: publicProcedure
+      .input(z.object({ collectionId: z.string() }))
+      .query(async ({ input, ctx }) => {
+        const accountId = getFreeroamAccountId(ctx);
+        if (!accountId) return [];
+        return getWorldCollectionMembers(input.collectionId, accountId);
+      }),
+
+    /** Get all collection IDs that a specific world belongs to */
+    getWorldMemberships: publicProcedure
+      .input(z.object({ worldExternalId: z.string() }))
+      .query(async ({ input, ctx }) => {
+        const accountId = getFreeroamAccountId(ctx);
+        if (!accountId) return [];
+        return getWorldMemberships(input.worldExternalId, accountId);
       }),
 
     /** Upload a cover image for a collection */

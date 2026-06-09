@@ -122,22 +122,28 @@ export default function Home() {
   }, [viewMode]);
 
   // Fetch worlds inside a specific collection when one is selected.
-  // Cross-references with allWorlds to include private worlds that Freeroam hides.
+  // Uses local DB membership to include private worlds that Freeroam hides.
   const openWorldCollection = useCallback(async (collectionId: string) => {
     setActiveWorldCollectionId(collectionId);
     setIsLoadingCollectionWorlds(true);
     setWorldCollectionWorlds([]);
     try {
+      // Fetch from Freeroam API (may omit private worlds)
       const result = await utils.worldCollections.get.fetch({ collectionId });
       const apiWorlds = result.worlds as ApiWorld[];
-      // The API may hide private worlds. Cross-reference with allWorlds:
-      // Start with what the API returned, then add any from allWorlds that
-      // aren't already in the response (private worlds the API filtered out).
       const returnedIds = new Set(apiWorlds.map(w => w.external_id));
-      // For now, use the API response directly since we can't know which
-      // private worlds belong to this collection without the API telling us.
-      // The API does return the world IDs even for private worlds if you're the owner.
-      setWorldCollectionWorlds(apiWorlds);
+
+      // Fetch local membership (includes private world IDs)
+      const localMemberIds = await utils.worldCollections.getMembers.fetch({ collectionId });
+
+      // Find private worlds that are in our local DB but not in the API response
+      const missingPrivateWorlds = localMemberIds
+        .filter(id => !returnedIds.has(id))
+        .map(id => allWorlds.find(w => w.external_id === id))
+        .filter((w): w is ApiWorld => w !== undefined);
+
+      // Combine: API worlds + locally-tracked private worlds
+      setWorldCollectionWorlds([...apiWorlds, ...missingPrivateWorlds]);
     } catch {
       toast.error('Failed to load collection worlds.');
     } finally {

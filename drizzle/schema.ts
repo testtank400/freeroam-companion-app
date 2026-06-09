@@ -133,3 +133,20 @@ export const exportJobs = mysqlTable("export_jobs", {
 
 export type ExportJob = typeof exportJobs.$inferSelect;
 export type InsertExportJob = typeof exportJobs.$inferInsert;
+
+// World collection membership — tracks which worlds belong to which Freeroam collections.
+// This is needed because Freeroam's API hides private worlds from collection responses.
+// We store the membership locally so we can show all worlds (including private) in a collection.
+export const worldCollectionMembers = mysqlTable("world_collection_members", {
+  id: int("id").autoincrement().primaryKey(),
+  /** Freeroam collection external_id (UUID string) */
+  collectionExternalId: varchar("collectionExternalId", { length: 128 }).notNull(),
+  /** Freeroam world external_id (UUID string) */
+  worldExternalId: varchar("worldExternalId", { length: 128 }).notNull(),
+  /** Freeroam account_id of the user who added this membership */
+  freeroamAccountId: int("freeroamAccountId").notNull(),
+  addedAt: timestamp("addedAt").defaultNow().notNull(),
+});
+
+export type WorldCollectionMember = typeof worldCollectionMembers.$inferSelect;
+export type InsertWorldCollectionMember = typeof worldCollectionMembers.$inferInsert;
