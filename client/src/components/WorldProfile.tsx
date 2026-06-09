@@ -168,15 +168,103 @@ export default function WorldProfile({ world, onClose, worldCollections = [], on
 
       {/* Modal panel */}
       <div
-        ref={scrollRef}
-        className="relative w-full max-w-2xl overflow-y-auto"
+        className="relative w-full max-w-2xl"
         style={{
-          background: 'oklch(0.11 0.008 264)',
-          borderLeft: '1px solid oklch(1 0 0 / 0.08)',
           transform: isVisible ? 'translateX(0)' : 'translateX(100%)',
           transition: 'transform 0.3s ease',
+          display: 'flex',
+          flexDirection: 'column',
         }}
       >
+        {/* Fixed overlay for top buttons — outside scroll area so scrollbar doesn't affect alignment */}
+        <div className="absolute top-3 left-3 z-30 flex items-center gap-2" style={{ pointerEvents: 'none' }}>
+          <div style={{ pointerEvents: 'auto' }}>
+            <PrivacyBadgeLarge status={world.privacy_status} />
+          </div>
+          <span
+            className="inline-flex items-center gap-1.5 px-3 h-7 rounded-sm text-xs font-semibold"
+            style={{
+              fontFamily: 'JetBrains Mono, monospace',
+              background: 'oklch(0.12 0.01 264 / 0.85)',
+              border: '1px solid oklch(1 0 0 / 0.12)',
+              color: 'oklch(0.7 0.005 65)',
+              backdropFilter: 'blur(4px)',
+              pointerEvents: 'auto',
+            }}
+          >
+            <Eye size={12} strokeWidth={2} style={{ color: 'oklch(0.769 0.188 70.08)' }} />
+            {formatCount(world.interaction_count)}
+          </span>
+        </div>
+
+        <div className="absolute top-3 right-3 z-30 flex items-center gap-2" style={{ pointerEvents: 'none' }}>
+          {/* Collect button */}
+          <div ref={collectionBtnRef} className="relative" style={{ pointerEvents: 'auto' }}>
+            <button
+              onClick={() => setShowCollectionPopover(v => !v)}
+              className="flex items-center gap-1.5 px-3 h-7 rounded-sm transition-all hover:brightness-110"
+              style={{
+                background: membershipSet.size > 0
+                  ? 'oklch(0.769 0.188 70.08 / 0.2)'
+                  : showCollectionPopover ? 'oklch(0.22 0.01 264 / 0.9)' : 'oklch(0.15 0.01 264 / 0.85)',
+                border: membershipSet.size > 0
+                  ? '1px solid oklch(0.769 0.188 70.08 / 0.5)'
+                  : '1px solid oklch(1 0 0 / 0.15)',
+                color: membershipSet.size > 0
+                  ? 'oklch(0.769 0.188 70.08)'
+                  : 'oklch(0.65 0.01 264)',
+                backdropFilter: 'blur(4px)',
+                fontFamily: 'Rajdhani, sans-serif',
+                fontSize: '11px',
+                fontWeight: 700,
+                letterSpacing: '0.1em',
+                textTransform: 'uppercase',
+              }}
+              title="Add to collection"
+            >
+              <FolderPlus size={12} strokeWidth={2.5} />
+              {membershipSet.size > 0 ? `${membershipSet.size} Collection${membershipSet.size !== 1 ? 's' : ''}` : 'Collect'}
+            </button>
+
+            {/* Popover */}
+            {showCollectionPopover && (
+              <AddToWorldCollectionPopover
+                worldExternalId={world.external_id}
+                collections={worldCollections}
+                membershipSet={membershipSet}
+                onToggle={handleToggleMembership}
+                onCreate={handleCreateCollection}
+                onClose={() => setShowCollectionPopover(false)}
+              />
+            )}
+          </div>
+
+          {/* Close button */}
+          <button
+            onClick={onClose}
+            className="flex items-center justify-center px-2.5 h-7 rounded-sm transition-colors hover:brightness-125"
+            style={{
+              background: 'oklch(0.15 0.01 264 / 0.85)',
+              border: '1px solid oklch(1 0 0 / 0.15)',
+              color: 'oklch(0.7 0.005 65)',
+              backdropFilter: 'blur(4px)',
+              pointerEvents: 'auto',
+            }}
+          >
+            <X size={14} strokeWidth={2} />
+          </button>
+        </div>
+
+        {/* Scrollable content */}
+        <div
+          ref={scrollRef}
+          className="relative w-full overflow-y-auto"
+          style={{
+            background: 'oklch(0.11 0.008 264)',
+            borderLeft: '1px solid oklch(1 0 0 / 0.08)',
+            flex: 1,
+          }}
+        >
         {/* Cover image header */}
         <div className="relative w-full" style={{ height: '280px' }}>
           {coverUrl ? (
@@ -194,82 +282,6 @@ export default function WorldProfile({ world, onClose, worldCollections = [], on
               background: 'linear-gradient(to bottom, transparent 30%, oklch(0.11 0.008 264 / 0.9) 80%, oklch(0.11 0.008 264) 100%)',
             }}
           />
-
-          {/* Top-right: action buttons + close */}
-          <div className="absolute top-3 right-3 z-20 flex items-center gap-2">
-            {/* Collect button */}
-            <div ref={collectionBtnRef} className="relative">
-              <button
-                onClick={() => setShowCollectionPopover(v => !v)}
-                className="flex items-center gap-1.5 px-3 h-7 rounded-sm transition-all hover:brightness-110"
-                style={{
-                  background: membershipSet.size > 0
-                    ? 'oklch(0.769 0.188 70.08 / 0.2)'
-                    : showCollectionPopover ? 'oklch(0.22 0.01 264 / 0.9)' : 'oklch(0.15 0.01 264 / 0.85)',
-                  border: membershipSet.size > 0
-                    ? '1px solid oklch(0.769 0.188 70.08 / 0.5)'
-                    : '1px solid oklch(1 0 0 / 0.15)',
-                  color: membershipSet.size > 0
-                    ? 'oklch(0.769 0.188 70.08)'
-                    : 'oklch(0.65 0.01 264)',
-                  backdropFilter: 'blur(4px)',
-                  fontFamily: 'Rajdhani, sans-serif',
-                  fontSize: '11px',
-                  fontWeight: 700,
-                  letterSpacing: '0.1em',
-                  textTransform: 'uppercase',
-                }}
-                title="Add to collection"
-              >
-                <FolderPlus size={12} strokeWidth={2.5} />
-                {membershipSet.size > 0 ? `${membershipSet.size} Collection${membershipSet.size !== 1 ? 's' : ''}` : 'Collect'}
-              </button>
-
-              {/* Popover */}
-              {showCollectionPopover && (
-                <AddToWorldCollectionPopover
-                  worldExternalId={world.external_id}
-                  collections={worldCollections}
-                  membershipSet={membershipSet}
-                  onToggle={handleToggleMembership}
-                  onCreate={handleCreateCollection}
-                  onClose={() => setShowCollectionPopover(false)}
-                />
-              )}
-            </div>
-
-            {/* Close button */}
-            <button
-              onClick={onClose}
-              className="flex items-center justify-center px-2.5 h-7 rounded-sm transition-colors hover:brightness-125"
-              style={{
-                background: 'oklch(0.15 0.01 264 / 0.85)',
-                border: '1px solid oklch(1 0 0 / 0.15)',
-                color: 'oklch(0.7 0.005 65)',
-                backdropFilter: 'blur(4px)',
-              }}
-            >
-              <X size={14} strokeWidth={2} />
-            </button>
-          </div>
-
-          {/* Privacy + interaction count */}
-          <div className="absolute top-3 left-3 z-20 flex items-center gap-2">
-            <PrivacyBadgeLarge status={world.privacy_status} />
-            <span
-              className="inline-flex items-center gap-1.5 px-3 h-7 rounded-sm text-xs font-semibold"
-              style={{
-                fontFamily: 'JetBrains Mono, monospace',
-                background: 'oklch(0.12 0.01 264 / 0.85)',
-                border: '1px solid oklch(1 0 0 / 0.12)',
-                color: 'oklch(0.7 0.005 65)',
-                backdropFilter: 'blur(4px)',
-              }}
-            >
-              <Eye size={12} strokeWidth={2} style={{ color: 'oklch(0.769 0.188 70.08)' }} />
-              {formatCount(world.interaction_count)}
-            </span>
-          </div>
 
           {/* Title overlay */}
           <div className="absolute bottom-4 left-4 right-4 z-20">
@@ -528,6 +540,7 @@ export default function WorldProfile({ world, onClose, worldCollections = [], on
             </div>
           )}
         </div>
+        </div> {/* end scrollable content */}
       </div>
     </div>
   );
