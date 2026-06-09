@@ -196,7 +196,7 @@ export default function WorldProfile({ world, onClose, worldCollections = [], on
           />
 
           {/* Top-right: action buttons + close */}
-          <div className="absolute top-4 right-4 z-20 flex items-center gap-2">
+          <div className="absolute top-3 right-3 z-20 flex items-center gap-2">
             {/* Collect button */}
             <div ref={collectionBtnRef} className="relative">
               <button
@@ -254,7 +254,7 @@ export default function WorldProfile({ world, onClose, worldCollections = [], on
           </div>
 
           {/* Privacy + interaction count */}
-          <div className="absolute top-4 left-4 z-20 flex items-center gap-2">
+          <div className="absolute top-3 left-3 z-20 flex items-center gap-2">
             <PrivacyBadgeLarge status={world.privacy_status} />
             <span
               className="inline-flex items-center gap-1.5 px-3 py-1 rounded-sm text-xs font-semibold"
