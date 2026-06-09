@@ -241,7 +241,7 @@ export default function WorldProfile({ world, onClose, worldCollections = [], on
             {/* Close button */}
             <button
               onClick={onClose}
-              className="w-9 h-9 flex items-center justify-center rounded-sm transition-colors hover:brightness-125"
+              className="flex items-center justify-center px-2.5 py-1 rounded-sm transition-colors hover:brightness-125"
               style={{
                 background: 'oklch(0.15 0.01 264 / 0.85)',
                 border: '1px solid oklch(1 0 0 / 0.15)',
@@ -249,7 +249,7 @@ export default function WorldProfile({ world, onClose, worldCollections = [], on
                 backdropFilter: 'blur(4px)',
               }}
             >
-              <X size={16} strokeWidth={2} />
+              <X size={14} strokeWidth={2} />
             </button>
           </div>
 
