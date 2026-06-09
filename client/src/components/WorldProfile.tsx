@@ -176,11 +176,10 @@ export default function WorldProfile({ world, onClose, worldCollections = [], on
           flexDirection: 'column',
         }}
       >
-        {/* Fixed overlay for top buttons — outside scroll area so scrollbar doesn't affect alignment */}
-        <div className="absolute top-3 left-3 z-30 flex items-center gap-2" style={{ pointerEvents: 'none' }}>
-          <div style={{ pointerEvents: 'auto' }}>
-            <PrivacyBadgeLarge status={world.privacy_status} />
-          </div>
+        {/* Single row for all top buttons — guarantees alignment */}
+        <div className="absolute top-3 left-3 right-3 z-30 flex items-center gap-2">
+          {/* Left: Privacy + interaction count */}
+          <PrivacyBadgeLarge status={world.privacy_status} />
           <span
             className="inline-flex items-center gap-1.5 px-3 h-7 rounded-sm text-xs font-semibold"
             style={{
@@ -189,17 +188,17 @@ export default function WorldProfile({ world, onClose, worldCollections = [], on
               border: '1px solid oklch(1 0 0 / 0.12)',
               color: 'oklch(0.7 0.005 65)',
               backdropFilter: 'blur(4px)',
-              pointerEvents: 'auto',
             }}
           >
             <Eye size={12} strokeWidth={2} style={{ color: 'oklch(0.769 0.188 70.08)' }} />
             {formatCount(world.interaction_count)}
           </span>
-        </div>
 
-        <div className="absolute top-3 right-3 z-30 flex items-center gap-2" style={{ pointerEvents: 'none' }}>
-          {/* Collect button */}
-          <div ref={collectionBtnRef} className="relative" style={{ pointerEvents: 'auto' }}>
+          {/* Spacer pushes right items to the end */}
+          <div className="flex-1" />
+
+          {/* Right: Collect + Close */}
+          <div ref={collectionBtnRef} className="relative">
             <button
               onClick={() => setShowCollectionPopover(v => !v)}
               className="flex items-center gap-1.5 px-3 h-7 rounded-sm transition-all hover:brightness-110"
@@ -248,7 +247,6 @@ export default function WorldProfile({ world, onClose, worldCollections = [], on
               border: '1px solid oklch(1 0 0 / 0.15)',
               color: 'oklch(0.7 0.005 65)',
               backdropFilter: 'blur(4px)',
-              pointerEvents: 'auto',
             }}
           >
             <X size={14} strokeWidth={2} />
