@@ -1131,6 +1131,212 @@ export const appRouter = router({
           can_edit: data.can_edit,
         };
       }),
+
+    /** Create a new world collection */
+    create: publicProcedure
+      .input(z.object({ name: z.string().min(1) }))
+      .mutation(async ({ input, ctx }) => {
+        const cookie = getFreeroamCookie(ctx);
+        if (!cookie) throw new Error("Cookie not configured in environment");
+
+        const response = await fetch("https://getfreeroam.com/api/collections", {
+          method: "POST",
+          headers: {
+            accept: "*/*",
+            "accept-language": "en-US,en;q=0.9",
+            "content-type": "application/json",
+            cookie,
+            origin: "https://getfreeroam.com",
+            referer: "https://getfreeroam.com",
+            "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36",
+          },
+          body: JSON.stringify({ name: input.name }),
+        });
+
+        if (!response.ok) {
+          const text = await response.text();
+          throw new Error(`Create collection failed (${response.status}): ${text}`);
+        }
+
+        const data = await response.json() as {
+          success: boolean;
+          collection: { external_id: string; name: string; description: string | null; privacy_status: string };
+        };
+        return data;
+      }),
+
+    /** Update a world collection (name, description, privacy_status) */
+    update: publicProcedure
+      .input(z.object({
+        collectionId: z.string(),
+        name: z.string().min(1).optional(),
+        description: z.string().nullable().optional(),
+        privacy_status: z.enum(["private", "public", "unlisted"]).optional(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const cookie = getFreeroamCookie(ctx);
+        if (!cookie) throw new Error("Cookie not configured in environment");
+
+        const body: Record<string, unknown> = {};
+        if (input.name !== undefined) body.name = input.name;
+        if (input.description !== undefined) body.description = input.description;
+        if (input.privacy_status !== undefined) body.privacy_status = input.privacy_status;
+
+        const response = await fetch(
+          `https://getfreeroam.com/api/collections/${encodeURIComponent(input.collectionId)}`,
+          {
+            method: "PUT",
+            headers: {
+              accept: "*/*",
+              "accept-language": "en-US,en;q=0.9",
+              "content-type": "application/json",
+              cookie,
+              origin: "https://getfreeroam.com",
+              referer: "https://getfreeroam.com",
+              "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36",
+            },
+            body: JSON.stringify(body),
+          }
+        );
+
+        if (!response.ok) {
+          const text = await response.text();
+          throw new Error(`Update collection failed (${response.status}): ${text}`);
+        }
+
+        return { success: true };
+      }),
+
+    /** Delete a world collection */
+    delete: publicProcedure
+      .input(z.object({ collectionId: z.string() }))
+      .mutation(async ({ input, ctx }) => {
+        const cookie = getFreeroamCookie(ctx);
+        if (!cookie) throw new Error("Cookie not configured in environment");
+
+        const response = await fetch(
+          `https://getfreeroam.com/api/collections/${encodeURIComponent(input.collectionId)}`,
+          {
+            method: "DELETE",
+            headers: {
+              accept: "*/*",
+              "accept-language": "en-US,en;q=0.9",
+              cookie,
+              origin: "https://getfreeroam.com",
+              referer: "https://getfreeroam.com",
+              "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36",
+            },
+          }
+        );
+
+        if (!response.ok) {
+          const text = await response.text();
+          throw new Error(`Delete collection failed (${response.status}): ${text}`);
+        }
+
+        return { success: true };
+      }),
+
+    /** Add a world to a collection */
+    addWorld: publicProcedure
+      .input(z.object({ collectionId: z.string(), worldExternalId: z.string() }))
+      .mutation(async ({ input, ctx }) => {
+        const cookie = getFreeroamCookie(ctx);
+        if (!cookie) throw new Error("Cookie not configured in environment");
+
+        const response = await fetch(
+          `https://getfreeroam.com/api/collections/${encodeURIComponent(input.collectionId)}/worlds`,
+          {
+            method: "POST",
+            headers: {
+              accept: "*/*",
+              "accept-language": "en-US,en;q=0.9",
+              "content-type": "application/json",
+              cookie,
+              origin: "https://getfreeroam.com",
+              referer: "https://getfreeroam.com",
+              "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36",
+            },
+            body: JSON.stringify({ world_external_id: input.worldExternalId }),
+          }
+        );
+
+        if (!response.ok) {
+          const text = await response.text();
+          throw new Error(`Add world to collection failed (${response.status}): ${text}`);
+        }
+
+        return { success: true };
+      }),
+
+    /** Remove a world from a collection */
+    removeWorld: publicProcedure
+      .input(z.object({ collectionId: z.string(), worldExternalId: z.string() }))
+      .mutation(async ({ input, ctx }) => {
+        const cookie = getFreeroamCookie(ctx);
+        if (!cookie) throw new Error("Cookie not configured in environment");
+
+        const response = await fetch(
+          `https://getfreeroam.com/api/collections/${encodeURIComponent(input.collectionId)}/worlds/${encodeURIComponent(input.worldExternalId)}`,
+          {
+            method: "DELETE",
+            headers: {
+              accept: "*/*",
+              "accept-language": "en-US,en;q=0.9",
+              cookie,
+              origin: "https://getfreeroam.com",
+              referer: "https://getfreeroam.com",
+              "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36",
+            },
+          }
+        );
+
+        if (!response.ok) {
+          const text = await response.text();
+          throw new Error(`Remove world from collection failed (${response.status}): ${text}`);
+        }
+
+        return { success: true };
+      }),
+
+    /** Upload a cover image for a collection */
+    uploadCover: publicProcedure
+      .input(z.object({
+        collectionId: z.string(),
+        fileBase64: z.string(),
+        mimeType: z.string(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const cookie = getFreeroamCookie(ctx);
+        if (!cookie) throw new Error("Cookie not configured in environment");
+
+        const buffer = Buffer.from(input.fileBase64, "base64");
+
+        const response = await fetch(
+          `https://getfreeroam.com/api/collections/${encodeURIComponent(input.collectionId)}/cover`,
+          {
+            method: "POST",
+            headers: {
+              accept: "*/*",
+              "accept-language": "en-US,en;q=0.9",
+              "content-type": "text/plain",
+              cookie,
+              origin: "https://getfreeroam.com",
+              referer: "https://getfreeroam.com",
+              "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36",
+            },
+            body: buffer,
+          }
+        );
+
+        if (!response.ok) {
+          const text = await response.text();
+          throw new Error(`Upload cover failed (${response.status}): ${text}`);
+        }
+
+        const data = await response.json() as { cover_image_url?: string; url?: string; success?: boolean };
+        return { success: true, cover_image_url: data.cover_image_url ?? data.url ?? null };
+      }),
   }),
 
   // ─── Freeroam Cookie Verification ──────────────────────────────────────────────────────────

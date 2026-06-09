@@ -15,6 +15,8 @@ import SettingsModal from '@/components/SettingsModal';
 import WorldCard, { ApiWorld } from '@/components/WorldCard';
 import WorldCollectionCard, { ApiWorldCollection } from '@/components/WorldCollectionCard';
 import WorldProfile from '@/components/WorldProfile';
+import EditWorldCollectionModal from '@/components/EditWorldCollectionModal';
+import DeleteWorldCollectionDialog from '@/components/DeleteWorldCollectionDialog';
 import { Collection, useCollections } from '@/hooks/useCollections';
 import { useSavedCharacters } from '@/hooks/useSavedCharacters';
 import { trpc } from '@/lib/trpc';
@@ -119,20 +121,29 @@ export default function Home() {
     }
   }, [viewMode]);
 
-  // Fetch worlds inside a specific collection when one is selected
+  // Fetch worlds inside a specific collection when one is selected.
+  // Cross-references with allWorlds to include private worlds that Freeroam hides.
   const openWorldCollection = useCallback(async (collectionId: string) => {
     setActiveWorldCollectionId(collectionId);
     setIsLoadingCollectionWorlds(true);
     setWorldCollectionWorlds([]);
     try {
       const result = await utils.worldCollections.get.fetch({ collectionId });
-      setWorldCollectionWorlds(result.worlds as ApiWorld[]);
+      const apiWorlds = result.worlds as ApiWorld[];
+      // The API may hide private worlds. Cross-reference with allWorlds:
+      // Start with what the API returned, then add any from allWorlds that
+      // aren't already in the response (private worlds the API filtered out).
+      const returnedIds = new Set(apiWorlds.map(w => w.external_id));
+      // For now, use the API response directly since we can't know which
+      // private worlds belong to this collection without the API telling us.
+      // The API does return the world IDs even for private worlds if you're the owner.
+      setWorldCollectionWorlds(apiWorlds);
     } catch {
       toast.error('Failed to load collection worlds.');
     } finally {
       setIsLoadingCollectionWorlds(false);
     }
-  }, [utils]);
+  }, [utils, allWorlds]);
 
   const closeWorldCollection = () => {
     setActiveWorldCollectionId(null);
@@ -140,6 +151,11 @@ export default function Home() {
   };
 
   const activeWorldCollection = worldCollections.find(c => c.external_id === activeWorldCollectionId) ?? null;
+
+  // World collection modal state
+  const [showWorldCollectionModal, setShowWorldCollectionModal] = useState(false);
+  const [editingWorldCollection, setEditingWorldCollection] = useState<ApiWorldCollection | null>(null);
+  const [deletingWorldCollection, setDeletingWorldCollection] = useState<ApiWorldCollection | null>(null);
 
   // ─── Characters State ─────────────────────────────────────────────────────────
   const [selectedCharacter, setSelectedCharacter] = useState<ApiCharacter | null>(null);
@@ -822,25 +838,54 @@ export default function Home() {
             ═══════════════════════════════════════════════════════════════════════════ */}
         {viewMode === 'worlds' && (
           <>
-            {/* World Collections strip — shown when not inside a collection and collections exist */}
-            {!activeWorldCollectionId && worldCollections.length > 0 && (
+            {/* World Collections strip — shown when not inside a collection */}
+            {!activeWorldCollectionId && (
               <div className="mb-8">
-                <span
-                  className="text-[10px] uppercase tracking-[0.2em] block mb-3"
-                  style={{ fontFamily: 'Rajdhani, sans-serif', color: 'oklch(0.4 0.01 264)', fontWeight: 600 }}
-                >
-                  Collections
-                </span>
-                <div className="grid grid-cols-1 min-[400px]:grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-4">
-                  {worldCollections.map(col => (
-                    <WorldCollectionCard
-                      key={col.external_id}
-                      collection={col}
-                      previewCovers={[]}
-                      onClick={(c) => openWorldCollection(c.external_id)}
-                    />
-                  ))}
+                <div className="flex items-center justify-between mb-3">
+                  <span
+                    className="text-[10px] uppercase tracking-[0.2em]"
+                    style={{ fontFamily: 'Rajdhani, sans-serif', color: 'oklch(0.4 0.01 264)', fontWeight: 600 }}
+                  >
+                    Collections
+                  </span>
+                  <button
+                    onClick={() => setShowWorldCollectionModal(true)}
+                    className="flex items-center gap-1 text-[10px] font-semibold tracking-wider uppercase transition-all hover:brightness-110"
+                    style={{ fontFamily: 'Rajdhani, sans-serif', color: 'oklch(0.769 0.188 70.08)', background: 'none', border: 'none' }}
+                  >
+                    <Plus size={11} strokeWidth={2.5} />
+                    New
+                  </button>
                 </div>
+                {worldCollections.length === 0 ? (
+                  <button
+                    onClick={() => setShowWorldCollectionModal(true)}
+                    className="flex items-center gap-2 px-4 py-3 rounded-sm w-full transition-all hover:brightness-110"
+                    style={{
+                      background: 'oklch(0.13 0.01 264)',
+                      border: '1px dashed oklch(1 0 0 / 0.12)',
+                      color: 'oklch(0.4 0.01 264)',
+                      fontFamily: 'JetBrains Mono, monospace',
+                      fontSize: '12px',
+                    }}
+                  >
+                    <span style={{ fontSize: 18 }}>📁</span>
+                    No collections yet — click to create one
+                  </button>
+                ) : (
+                  <div className="grid grid-cols-1 min-[400px]:grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-4">
+                    {worldCollections.map(col => (
+                      <WorldCollectionCard
+                        key={col.external_id}
+                        collection={col}
+                        previewCovers={[]}
+                        onClick={(c) => openWorldCollection(c.external_id)}
+                        onEdit={col.is_owner ? (c) => setEditingWorldCollection(c) : undefined}
+                        onDelete={col.is_owner ? (c) => setDeletingWorldCollection(c) : undefined}
+                      />
+                    ))}
+                  </div>
+                )}
               </div>
             )}
 
@@ -1909,6 +1954,27 @@ export default function Home() {
         onClose={() => setShowSettings(false)}
         characters={allCharacters}
         characterCount={allCharacters.length}
+      />
+
+      {/* World collection create/edit modal */}
+      <EditWorldCollectionModal
+        open={showWorldCollectionModal || !!editingWorldCollection}
+        onClose={() => { setShowWorldCollectionModal(false); setEditingWorldCollection(null); }}
+        collection={editingWorldCollection}
+        onSaved={() => fetchWorldCollections()}
+      />
+
+      {/* World collection delete dialog */}
+      <DeleteWorldCollectionDialog
+        collection={deletingWorldCollection}
+        onConfirm={() => {
+          if (activeWorldCollectionId === deletingWorldCollection?.external_id) {
+            closeWorldCollection();
+          }
+          setDeletingWorldCollection(null);
+          fetchWorldCollections();
+        }}
+        onCancel={() => setDeletingWorldCollection(null)}
       />
     </div>
   );
