@@ -2,15 +2,21 @@
 // Design: Tactical Dark Ops — full-screen modal overlay for world details
 // Fetches full world data (characters, tags, related worlds) via tRPC on open
 // Tabs: Overview, Characters, Related Worlds
+// Action bar: Add to Collection popover
 
 import { trpc } from '@/lib/trpc';
 import { ApiWorld } from '@/components/WorldCard';
-import { Eye, Globe, Link, Lock, X, Users, BookOpen, Compass } from 'lucide-react';
+import { ApiWorldCollection } from '@/components/WorldCollectionCard';
+import AddToWorldCollectionPopover from '@/components/AddToWorldCollectionPopover';
+import { Eye, FolderPlus, Globe, Link, Lock, X, Users, BookOpen, Compass } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
 interface WorldProfileProps {
   world: ApiWorld | null;
   onClose: () => void;
+  /** World collections for the Add to Collection popover */
+  worldCollections?: ApiWorldCollection[];
+  onCollectionsRefresh?: () => void;
 }
 
 type Tab = 'overview' | 'characters' | 'related';
@@ -52,10 +58,15 @@ function formatCount(count: number): string {
   return count.toString();
 }
 
-export default function WorldProfile({ world, onClose }: WorldProfileProps) {
+export default function WorldProfile({ world, onClose, worldCollections = [], onCollectionsRefresh }: WorldProfileProps) {
   const [activeTab, setActiveTab] = useState<Tab>('overview');
   const [isVisible, setIsVisible] = useState(false);
+  const [showCollectionPopover, setShowCollectionPopover] = useState(false);
+  const [membershipSet, setMembershipSet] = useState<Set<string>>(new Set());
+  const collectionBtnRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const utils = trpc.useUtils();
+  const createCollectionMutation = trpc.worldCollections.create.useMutation();
 
   // Fetch full world details when opened
   const { data: worldDetail, isLoading: isLoadingDetail } = trpc.worlds.get.useQuery(
@@ -63,11 +74,24 @@ export default function WorldProfile({ world, onClose }: WorldProfileProps) {
     { enabled: !!world }
   );
 
+  // Fetch which collections this world belongs to
+  const { data: memberships } = trpc.worldCollections.getWorldMemberships.useQuery(
+    { worldExternalId: world?.external_id ?? '' },
+    { enabled: !!world }
+  );
+
+  useEffect(() => {
+    if (memberships) {
+      setMembershipSet(new Set(memberships));
+    }
+  }, [memberships]);
+
   // Animate in
   useEffect(() => {
     if (world) {
       requestAnimationFrame(() => setIsVisible(true));
       setActiveTab('overview');
+      setShowCollectionPopover(false);
     } else {
       setIsVisible(false);
     }
@@ -76,11 +100,17 @@ export default function WorldProfile({ world, onClose }: WorldProfileProps) {
   // Close on Escape
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') {
+        if (showCollectionPopover) {
+          setShowCollectionPopover(false);
+        } else {
+          onClose();
+        }
+      }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [onClose]);
+  }, [onClose, showCollectionPopover]);
 
   // Scroll to top on tab change
   useEffect(() => {
@@ -101,6 +131,28 @@ export default function WorldProfile({ world, onClose }: WorldProfileProps) {
     { id: 'characters', label: 'Characters', icon: <Users size={13} strokeWidth={2} />, count: characters.length },
     { id: 'related', label: 'Related', icon: <Compass size={13} strokeWidth={2} />, count: relatedWorlds.length },
   ];
+
+  const handleToggleMembership = (collectionId: string, added: boolean) => {
+    setMembershipSet(prev => {
+      const next = new Set(prev);
+      if (added) next.add(collectionId);
+      else next.delete(collectionId);
+      return next;
+    });
+    // Refresh collections list to update world counts
+    onCollectionsRefresh?.();
+  };
+
+  const handleCreateCollection = async (name: string) => {
+    try {
+      await createCollectionMutation.mutateAsync({ name });
+      onCollectionsRefresh?.();
+      // Re-fetch collections after creation
+      await utils.worldCollections.list.invalidate();
+    } catch {
+      // Error handled inside popover
+    }
+  };
 
   return (
     <div
@@ -176,7 +228,7 @@ export default function WorldProfile({ world, onClose }: WorldProfileProps) {
           </div>
 
           {/* Title overlay */}
-          <div className="absolute bottom-4 left-4 right-4 z-20">
+          <div className="absolute bottom-4 left-4 right-16 z-20">
             <h2
               className="text-2xl font-bold tracking-wide leading-tight"
               style={{
@@ -193,6 +245,43 @@ export default function WorldProfile({ world, onClose }: WorldProfileProps) {
             >
               by {ownerName}
             </p>
+          </div>
+
+          {/* Add to Collection button — bottom right of cover */}
+          <div ref={collectionBtnRef} className="absolute bottom-4 right-4 z-20">
+            <button
+              onClick={() => setShowCollectionPopover(v => !v)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-sm text-xs font-semibold tracking-wider uppercase transition-all hover:brightness-110"
+              style={{
+                fontFamily: 'Rajdhani, sans-serif',
+                background: membershipSet.size > 0
+                  ? 'oklch(0.769 0.188 70.08 / 0.2)'
+                  : 'oklch(0.15 0.01 264 / 0.85)',
+                border: membershipSet.size > 0
+                  ? '1px solid oklch(0.769 0.188 70.08 / 0.5)'
+                  : '1px solid oklch(1 0 0 / 0.15)',
+                color: membershipSet.size > 0
+                  ? 'oklch(0.769 0.188 70.08)'
+                  : 'oklch(0.7 0.005 65)',
+                backdropFilter: 'blur(4px)',
+              }}
+              title="Add to Collection"
+            >
+              <FolderPlus size={13} strokeWidth={2} />
+              {membershipSet.size > 0 ? `${membershipSet.size} Collection${membershipSet.size !== 1 ? 's' : ''}` : 'Add to Collection'}
+            </button>
+
+            {/* Popover */}
+            {showCollectionPopover && (
+              <AddToWorldCollectionPopover
+                worldExternalId={world.external_id}
+                collections={worldCollections}
+                membershipSet={membershipSet}
+                onToggle={handleToggleMembership}
+                onCreate={handleCreateCollection}
+                onClose={() => setShowCollectionPopover(false)}
+              />
+            )}
           </div>
         </div>
 
@@ -353,22 +442,14 @@ export default function WorldProfile({ world, onClose }: WorldProfileProps) {
                 </p>
               ) : (
                 <>
-                  {/* Main character first */}
                   {characters.filter(c => c.is_main).map(char => (
                     <div
                       key={char.external_id}
                       className="flex gap-3 p-3 rounded-sm"
-                      style={{
-                        background: 'oklch(0.15 0.01 264)',
-                        border: '1px solid oklch(0.769 0.188 70.08 / 0.3)',
-                      }}
+                      style={{ background: 'oklch(0.15 0.01 264)', border: '1px solid oklch(0.769 0.188 70.08 / 0.3)' }}
                     >
                       {char.display_headshot_url || char.headshot_url ? (
-                        <img
-                          src={char.display_headshot_url || char.headshot_url || ''}
-                          alt={char.name}
-                          className="w-16 h-16 rounded-sm object-cover flex-shrink-0"
-                        />
+                        <img src={char.display_headshot_url || char.headshot_url || ''} alt={char.name} className="w-16 h-16 rounded-sm object-cover flex-shrink-0" />
                       ) : (
                         <div className="w-16 h-16 rounded-sm flex-shrink-0 flex items-center justify-center" style={{ background: 'oklch(0.18 0.01 264)' }}>
                           <Users size={20} style={{ color: 'oklch(0.3 0.01 264)' }} />
@@ -376,69 +457,29 @@ export default function WorldProfile({ world, onClose }: WorldProfileProps) {
                       )}
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
-                          <h4
-                            className="text-sm font-bold tracking-wide"
-                            style={{ fontFamily: 'Rajdhani, sans-serif', color: 'oklch(0.92 0.005 65)' }}
-                          >
-                            {char.name}
-                          </h4>
-                          <span
-                            className="text-[9px] uppercase tracking-widest px-1.5 py-0.5 rounded-sm"
-                            style={{
-                              fontFamily: 'Rajdhani, sans-serif',
-                              background: 'oklch(0.769 0.188 70.08 / 0.15)',
-                              border: '1px solid oklch(0.769 0.188 70.08 / 0.3)',
-                              color: 'oklch(0.769 0.188 70.08)',
-                              fontWeight: 600,
-                            }}
-                          >
-                            Main
-                          </span>
+                          <h4 className="text-sm font-bold tracking-wide" style={{ fontFamily: 'Rajdhani, sans-serif', color: 'oklch(0.92 0.005 65)' }}>{char.name}</h4>
+                          <span className="text-[9px] uppercase tracking-widest px-1.5 py-0.5 rounded-sm" style={{ fontFamily: 'Rajdhani, sans-serif', background: 'oklch(0.769 0.188 70.08 / 0.15)', border: '1px solid oklch(0.769 0.188 70.08 / 0.3)', color: 'oklch(0.769 0.188 70.08)', fontWeight: 600 }}>Main</span>
                         </div>
-                        <p
-                          className="text-[11px] mt-1 line-clamp-3"
-                          style={{ fontFamily: 'JetBrains Mono, monospace', color: 'oklch(0.55 0.01 264)', lineHeight: '1.5' }}
-                        >
-                          {char.backstory}
-                        </p>
+                        <p className="text-[11px] mt-1 line-clamp-3" style={{ fontFamily: 'JetBrains Mono, monospace', color: 'oklch(0.55 0.01 264)', lineHeight: '1.5' }}>{char.backstory}</p>
                       </div>
                     </div>
                   ))}
-
-                  {/* Other characters */}
                   {characters.filter(c => !c.is_main).map(char => (
                     <div
                       key={char.external_id}
                       className="flex gap-3 p-3 rounded-sm"
-                      style={{
-                        background: 'oklch(0.14 0.008 264)',
-                        border: '1px solid oklch(1 0 0 / 0.07)',
-                      }}
+                      style={{ background: 'oklch(0.14 0.008 264)', border: '1px solid oklch(1 0 0 / 0.07)' }}
                     >
                       {char.display_headshot_url || char.headshot_url ? (
-                        <img
-                          src={char.display_headshot_url || char.headshot_url || ''}
-                          alt={char.name}
-                          className="w-14 h-14 rounded-sm object-cover flex-shrink-0"
-                        />
+                        <img src={char.display_headshot_url || char.headshot_url || ''} alt={char.name} className="w-14 h-14 rounded-sm object-cover flex-shrink-0" />
                       ) : (
                         <div className="w-14 h-14 rounded-sm flex-shrink-0 flex items-center justify-center" style={{ background: 'oklch(0.18 0.01 264)' }}>
                           <Users size={18} style={{ color: 'oklch(0.3 0.01 264)' }} />
                         </div>
                       )}
                       <div className="flex-1 min-w-0">
-                        <h4
-                          className="text-sm font-bold tracking-wide"
-                          style={{ fontFamily: 'Rajdhani, sans-serif', color: 'oklch(0.88 0.005 65)' }}
-                        >
-                          {char.name}
-                        </h4>
-                        <p
-                          className="text-[11px] mt-1 line-clamp-2"
-                          style={{ fontFamily: 'JetBrains Mono, monospace', color: 'oklch(0.5 0.01 264)', lineHeight: '1.5' }}
-                        >
-                          {char.backstory}
-                        </p>
+                        <h4 className="text-sm font-bold tracking-wide" style={{ fontFamily: 'Rajdhani, sans-serif', color: 'oklch(0.88 0.005 65)' }}>{char.name}</h4>
+                        <p className="text-[11px] mt-1 line-clamp-2" style={{ fontFamily: 'JetBrains Mono, monospace', color: 'oklch(0.5 0.01 264)', lineHeight: '1.5' }}>{char.backstory}</p>
                       </div>
                     </div>
                   ))}
@@ -456,20 +497,9 @@ export default function WorldProfile({ world, onClose }: WorldProfileProps) {
                 </p>
               ) : (
                 relatedWorlds.map(rw => (
-                  <div
-                    key={rw.external_id}
-                    className="flex gap-3 p-3 rounded-sm transition-colors hover:brightness-110"
-                    style={{
-                      background: 'oklch(0.14 0.008 264)',
-                      border: '1px solid oklch(1 0 0 / 0.07)',
-                    }}
-                  >
+                  <div key={rw.external_id} className="flex gap-3 p-3 rounded-sm" style={{ background: 'oklch(0.14 0.008 264)', border: '1px solid oklch(1 0 0 / 0.07)' }}>
                     {rw.cover_image_url ? (
-                      <img
-                        src={rw.cover_image_url}
-                        alt={rw.name}
-                        className="w-20 h-14 rounded-sm object-cover flex-shrink-0"
-                      />
+                      <img src={rw.cover_image_url} alt={rw.name} className="w-20 h-14 rounded-sm object-cover flex-shrink-0" />
                     ) : (
                       <div className="w-20 h-14 rounded-sm flex-shrink-0 flex items-center justify-center" style={{ background: 'oklch(0.18 0.01 264)' }}>
                         <Compass size={18} style={{ color: 'oklch(0.3 0.01 264)' }} />
@@ -477,38 +507,13 @@ export default function WorldProfile({ world, onClose }: WorldProfileProps) {
                     )}
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
-                        <h4
-                          className="text-sm font-bold tracking-wide truncate"
-                          style={{ fontFamily: 'Rajdhani, sans-serif', color: 'oklch(0.88 0.005 65)' }}
-                        >
-                          {rw.name}
-                        </h4>
+                        <h4 className="text-sm font-bold tracking-wide truncate" style={{ fontFamily: 'Rajdhani, sans-serif', color: 'oklch(0.88 0.005 65)' }}>{rw.name}</h4>
                         {rw.tag_name && (
-                          <span
-                            className="text-[9px] px-1.5 py-0.5 rounded-sm flex-shrink-0"
-                            style={{
-                              fontFamily: 'JetBrains Mono, monospace',
-                              background: rw.tag_is_fandom ? 'oklch(0.25 0.08 280 / 0.3)' : 'oklch(0.18 0.01 264)',
-                              border: rw.tag_is_fandom ? '1px solid oklch(0.5 0.1 280 / 0.4)' : '1px solid oklch(1 0 0 / 0.08)',
-                              color: rw.tag_is_fandom ? 'oklch(0.7 0.1 280)' : 'oklch(0.5 0.01 264)',
-                            }}
-                          >
-                            {rw.tag_name}
-                          </span>
+                          <span className="text-[9px] px-1.5 py-0.5 rounded-sm flex-shrink-0" style={{ fontFamily: 'JetBrains Mono, monospace', background: rw.tag_is_fandom ? 'oklch(0.25 0.08 280 / 0.3)' : 'oklch(0.18 0.01 264)', border: rw.tag_is_fandom ? '1px solid oklch(0.5 0.1 280 / 0.4)' : '1px solid oklch(1 0 0 / 0.08)', color: rw.tag_is_fandom ? 'oklch(0.7 0.1 280)' : 'oklch(0.5 0.01 264)' }}>{rw.tag_name}</span>
                         )}
                       </div>
-                      <p
-                        className="text-[10px] mt-0.5"
-                        style={{ fontFamily: 'JetBrains Mono, monospace', color: 'oklch(0.45 0.01 264)' }}
-                      >
-                        by {rw.owner.username} · {formatCount(rw.interaction_count)} plays
-                      </p>
-                      <p
-                        className="text-[11px] mt-1 line-clamp-2"
-                        style={{ fontFamily: 'JetBrains Mono, monospace', color: 'oklch(0.5 0.01 264)', lineHeight: '1.4' }}
-                      >
-                        {rw.logline}
-                      </p>
+                      <p className="text-[10px] mt-0.5" style={{ fontFamily: 'JetBrains Mono, monospace', color: 'oklch(0.45 0.01 264)' }}>by {rw.owner.username} · {formatCount(rw.interaction_count)} plays</p>
+                      <p className="text-[11px] mt-1 line-clamp-2" style={{ fontFamily: 'JetBrains Mono, monospace', color: 'oklch(0.5 0.01 264)', lineHeight: '1.4' }}>{rw.logline}</p>
                     </div>
                   </div>
                 ))

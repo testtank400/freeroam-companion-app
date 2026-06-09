@@ -1852,6 +1852,8 @@ export default function Home() {
         <WorldProfile
           world={selectedWorld}
           onClose={() => setSelectedWorld(null)}
+          worldCollections={worldCollections}
+          onCollectionsRefresh={fetchWorldCollections}
         />
       )}
 
