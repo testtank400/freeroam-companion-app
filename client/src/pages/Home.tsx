@@ -104,12 +104,25 @@ export default function Home() {
   const [activeWorldCollectionId, setActiveWorldCollectionId] = useState<string | null>(null);
   const [worldCollectionWorlds, setWorldCollectionWorlds] = useState<ApiWorld[]>([]);
   const [isLoadingCollectionWorlds, setIsLoadingCollectionWorlds] = useState(false);
+  const [allCollectionWorldIds, setAllCollectionWorldIds] = useState<Set<string>>(new Set());
 
-  // Fetch world collections list
+  // Fetch world collections list and build set of all world IDs in any collection
   const fetchWorldCollections = useCallback(async () => {
     try {
       const result = await utils.worldCollections.list.fetch({});
       setWorldCollections(result as ApiWorldCollection[]);
+      
+      // Fetch world IDs for each collection to build the exclusion set
+      const allWorldIds = new Set<string>();
+      for (const col of result as ApiWorldCollection[]) {
+        try {
+          const memberIds = await utils.worldCollections.getMembers.fetch({ collectionId: col.external_id });
+          memberIds.forEach(id => allWorldIds.add(id));
+        } catch {
+          // Non-fatal — skip this collection's members
+        }
+      }
+      setAllCollectionWorldIds(allWorldIds);
     } catch {
       // Non-fatal — collections strip just won't show
     }
@@ -120,7 +133,7 @@ export default function Home() {
     if (viewMode === 'worlds' && worldCollections.length === 0) {
       fetchWorldCollections();
     }
-  }, [viewMode]);
+  }, [viewMode, fetchWorldCollections]);
 
   // Fetch worlds inside a specific collection when one is selected.
   // Uses local DB membership to include private worlds that Freeroam hides.
@@ -155,6 +168,8 @@ export default function Home() {
   const closeWorldCollection = () => {
     setActiveWorldCollectionId(null);
     setWorldCollectionWorlds([]);
+    // Refresh collections to update the exclusion set
+    fetchWorldCollections();
   };
 
   const activeWorldCollection = worldCollections.find(c => c.external_id === activeWorldCollectionId) ?? null;
@@ -1227,7 +1242,9 @@ export default function Home() {
                     const matchesPrivacy = !worldsPrivacyFilter || w.privacy_status === worldsPrivacyFilter;
                     const matchesSearch = !q || w.name.toLowerCase().includes(q) || w.logline.toLowerCase().includes(q);
                     const matchesDraft = worldsDraftFilter === null || w.is_draft === worldsDraftFilter;
-                    return matchesPrivacy && matchesSearch && matchesDraft;
+                    // When not searching, hide worlds that belong to any collection (they live in collection view)
+                    const notInCollection = q ? true : !allCollectionWorldIds.has(w.external_id);
+                    return matchesPrivacy && matchesSearch && matchesDraft && notInCollection;
                   });
                   return visibleWorlds.map((world, idx) => (
                     <WorldCard
@@ -1269,13 +1286,16 @@ export default function Home() {
             )}
 
             {/* Worlds no results */}
-            {!isLoadingWorlds && allWorlds.length > 0 && allWorlds.filter(w => {
-              const q = worldsSearchQuery.trim().toLowerCase();
-              const matchesPrivacy = !worldsPrivacyFilter || w.privacy_status === worldsPrivacyFilter;
-              const matchesSearch = !q || w.name.toLowerCase().includes(q) || w.logline.toLowerCase().includes(q);
-              const matchesDraft = worldsDraftFilter === null || w.is_draft === worldsDraftFilter;
-              return matchesPrivacy && matchesSearch && matchesDraft;
-            }).length === 0 && (
+            {!isLoadingWorlds && allWorlds.length > 0 && (() => {
+              return allWorlds.filter(w => {
+                const q = worldsSearchQuery.trim().toLowerCase();
+                const matchesPrivacy = !worldsPrivacyFilter || w.privacy_status === worldsPrivacyFilter;
+                const matchesSearch = !q || w.name.toLowerCase().includes(q) || w.logline.toLowerCase().includes(q);
+                const matchesDraft = worldsDraftFilter === null || w.is_draft === worldsDraftFilter;
+                const notInCollection = q ? true : !allCollectionWorldIds.has(w.external_id);
+                return matchesPrivacy && matchesSearch && matchesDraft && notInCollection;
+              }).length === 0;
+            })() && (
               <div className="flex flex-col items-center justify-center py-16 gap-3">
                 <p style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: '16px', fontWeight: 700, color: 'oklch(0.4 0.01 264)' }}>
                   NO RESULTS
