@@ -143,9 +143,22 @@ export default function WorldCard({ world, onOpenModal, onSelect, searchQuery = 
           }}
         />
 
-        {/* Top-left: Privacy badge + Draft badge stacked vertically */}
+        {/* Top-left: Privacy (row 1), Interactions (row 2), Draft (row 3) */}
         <div className="absolute top-3 left-3 z-10 flex flex-col gap-1.5">
           <PrivacyBadge status={world.privacy_status} />
+          <span
+            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-sm text-[11px] font-semibold"
+            style={{
+              fontFamily: 'JetBrains Mono, monospace',
+              background: 'oklch(0.12 0.01 264 / 0.85)',
+              border: '1px solid oklch(1 0 0 / 0.12)',
+              color: 'oklch(0.7 0.005 65)',
+              backdropFilter: 'blur(4px)',
+            }}
+          >
+            <Eye size={11} strokeWidth={2} style={{ color: 'oklch(0.769 0.188 70.08)' }} />
+            {formatCount(world.interaction_count)}
+          </span>
           {world.is_draft && (
             <span
               className="inline-flex items-center gap-1 px-2 py-0.5 rounded-sm text-[11px] font-medium tracking-wider uppercase"
@@ -162,42 +175,25 @@ export default function WorldCard({ world, onOpenModal, onSelect, searchQuery = 
           )}
         </div>
 
-        {/* Top-right: Interaction count + Info button stacked vertically */}
-        <div className="absolute top-3 right-3 z-10 flex flex-col items-end gap-1.5">
-          <span
-            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-sm text-[11px] font-semibold"
+        {/* Top-right: View details button only */}
+        {!isSelected && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onOpenModal(world);
+            }}
+            className="absolute top-3 right-3 z-10 flex items-center justify-center w-7 h-7 rounded-sm transition-all hover:brightness-125"
             style={{
-              fontFamily: 'JetBrains Mono, monospace',
               background: 'oklch(0.12 0.01 264 / 0.85)',
               border: '1px solid oklch(1 0 0 / 0.12)',
-              color: 'oklch(0.7 0.005 65)',
+              color: 'oklch(0.65 0.01 264)',
               backdropFilter: 'blur(4px)',
             }}
+            title="View details"
           >
-            <Eye size={11} strokeWidth={2} style={{ color: 'oklch(0.769 0.188 70.08)' }} />
-            {formatCount(world.interaction_count)}
-          </span>
-
-          {/* Info button — opens WorldProfile modal */}
-          {!isSelected && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onOpenModal(world);
-              }}
-              className="flex items-center justify-center w-6 h-6 rounded-sm transition-all hover:brightness-125"
-              style={{
-                background: 'oklch(0.12 0.01 264 / 0.85)',
-                border: '1px solid oklch(1 0 0 / 0.12)',
-                color: 'oklch(0.65 0.01 264)',
-                backdropFilter: 'blur(4px)',
-              }}
-              title="View details"
-            >
-              <BookOpen size={11} strokeWidth={2} />
-            </button>
-          )}
-        </div>
+            <BookOpen size={13} strokeWidth={2} />
+          </button>
+        )}
 
         {/* World name overlay at bottom of image */}
         <div className="absolute bottom-0 left-0 right-0 px-3 pb-3 z-10">
