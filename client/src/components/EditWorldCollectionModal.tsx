@@ -4,7 +4,7 @@
 
 import { ApiWorldCollection } from '@/components/WorldCollectionCard';
 import { trpc } from '@/lib/trpc';
-import { Globe, ImagePlus, Link, Lock, Upload, X } from 'lucide-react';
+import { Globe, ImagePlus, Lock, Upload, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
@@ -44,8 +44,7 @@ export default function EditWorldCollectionModal({ open, onClose, collection, on
   const [visible, setVisible] = useState(false);
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
-  const [privacyStatus, setPrivacyStatus] = useState<'private' | 'public' | 'unlisted'>('public');
-  const [coverMode, setCoverMode] = useState<'url' | 'upload'>('upload');
+  const [privacyStatus, setPrivacyStatus] = useState<'private' | 'public'>('public');
   const [coverUrl, setCoverUrl] = useState('');
   const [uploadPreview, setUploadPreview] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
@@ -60,9 +59,8 @@ export default function EditWorldCollectionModal({ open, onClose, collection, on
     if (open) {
       setName(collection?.name ?? '');
       setDescription(collection?.description ?? '');
-      setPrivacyStatus(collection?.privacy_status ?? 'public');
+      setPrivacyStatus((collection?.privacy_status === 'private' ? 'private' : 'public') as 'private' | 'public');
       setCoverUrl(collection?.cover_image_url ?? '');
-      setCoverMode(collection?.cover_image_url ? 'url' : 'upload');
       setUploadPreview(null);
       requestAnimationFrame(() => setVisible(true));
     } else {
@@ -114,8 +112,7 @@ export default function EditWorldCollectionModal({ open, onClose, collection, on
         setUploadPreview(result.cover_image_url ?? dataUrl);
         toast.success('Cover image uploaded');
       } else {
-        // For new collections, we'll upload after creation
-        // Store the base64 for later
+        // For new collections, store the base64 for upload after creation
         setCoverUrl(dataUrl);
       }
     } catch {
@@ -146,7 +143,7 @@ export default function EditWorldCollectionModal({ open, onClose, collection, on
         const result = await createMutation.mutateAsync({ name: name.trim() });
 
         // If we have a cover image to upload and the collection was created successfully
-        if (result.collection && coverUrl && coverMode === 'upload' && coverUrl.startsWith('data:')) {
+        if (result.collection && coverUrl && coverUrl.startsWith('data:')) {
           try {
             const base64 = coverUrl.split(',')[1];
             const mimeMatch = coverUrl.match(/data:([^;]+);/);
@@ -268,7 +265,6 @@ export default function EditWorldCollectionModal({ open, onClose, collection, on
               <div className="flex gap-1">
                 {([
                   { value: 'public' as const, label: 'Public', icon: <Globe size={11} strokeWidth={2} /> },
-                  { value: 'unlisted' as const, label: 'Unlisted', icon: <Link size={11} strokeWidth={2} /> },
                   { value: 'private' as const, label: 'Private', icon: <Lock size={11} strokeWidth={2} /> },
                 ]).map(opt => {
                   const isActive = privacyStatus === opt.value;
@@ -297,26 +293,6 @@ export default function EditWorldCollectionModal({ open, onClose, collection, on
             <div>
               <label style={LABEL_STYLE}>Cover Image</label>
 
-              {/* Mode toggle */}
-              <div className="flex gap-1 mb-3">
-                {(['upload', 'url'] as const).map((mode) => (
-                  <button
-                    key={mode}
-                    type="button"
-                    onClick={() => setCoverMode(mode)}
-                    className="px-3 py-1 rounded-sm text-[11px] font-semibold tracking-wider uppercase transition-all"
-                    style={{
-                      fontFamily: 'Rajdhani, sans-serif',
-                      background: coverMode === mode ? 'oklch(0.769 0.188 70.08 / 0.15)' : 'oklch(0.15 0.01 264)',
-                      border: coverMode === mode ? '1px solid oklch(0.769 0.188 70.08 / 0.4)' : '1px solid oklch(1 0 0 / 0.08)',
-                      color: coverMode === mode ? 'oklch(0.769 0.188 70.08)' : 'oklch(0.45 0.01 264)',
-                    }}
-                  >
-                    {mode === 'url' ? 'Paste URL' : 'Upload File'}
-                  </button>
-                ))}
-              </div>
-
               <div className="flex gap-3 items-start">
                 {/* Preview */}
                 <div
@@ -342,18 +318,7 @@ export default function EditWorldCollectionModal({ open, onClose, collection, on
                 </div>
 
                 <div className="flex-1">
-                  {coverMode === 'url' ? (
-                    <input
-                      type="text"
-                      value={coverUrl.startsWith('data:') ? '' : coverUrl}
-                      onChange={(e) => setCoverUrl(e.target.value)}
-                      placeholder="https://..."
-                      style={{ ...FIELD_STYLE }}
-                      onFocus={(e) => (e.target.style.borderColor = 'oklch(0.769 0.188 70.08 / 0.5)')}
-                      onBlur={(e) => (e.target.style.borderColor = 'oklch(1 0 0 / 0.1)')}
-                    />
-                  ) : (
-                    <div>
+                  <div>
                       <input
                         ref={fileInputRef}
                         type="file"
@@ -382,7 +347,6 @@ export default function EditWorldCollectionModal({ open, onClose, collection, on
                         </p>
                       )}
                     </div>
-                  )}
                 </div>
               </div>
             </div>
