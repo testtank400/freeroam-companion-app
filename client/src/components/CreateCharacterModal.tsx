@@ -389,7 +389,7 @@ export default function CreateCharacterModal({
                 type="text"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="e.g. Trooper-Kane"
+                placeholder="e.g. Trooper Kane"
                 required
                 style={{ ...FIELD_STYLE, resize: undefined }}
                 onFocus={(e) => (e.target.style.borderColor = 'oklch(0.769 0.188 70.08 / 0.5)')}
