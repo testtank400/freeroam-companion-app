@@ -997,7 +997,18 @@ export default function Home() {
                         <WorldCard
                           key={world.external_id}
                           world={world}
-                          onClick={setSelectedWorld}
+                          onOpenModal={(w) => setSelectedWorld(w)}
+                          onSelect={(w, e) => {
+                            if (e.ctrlKey || e.metaKey || e.shiftKey) {
+                              setSelectedWorldIds(prev => {
+                                const next = new Set(prev);
+                                if (next.has(w.external_id)) next.delete(w.external_id);
+                                else next.add(w.external_id);
+                                return next;
+                              });
+                            }
+                          }}
+                          isSelected={selectedWorldIds.has(world.external_id)}
                           searchQuery={worldsSearchQuery}
                         />
                       ))}
@@ -1223,7 +1234,8 @@ export default function Home() {
                       key={world.external_id}
                       world={world}
                       isSelected={selectedWorldIds.has(world.external_id)}
-                      onClick={(w, e) => {
+                      onOpenModal={(w) => setSelectedWorld(w)}
+                      onSelect={(w, e) => {
                         // Ctrl/Cmd click: toggle single
                         if (e.ctrlKey || e.metaKey) {
                           e.preventDefault();
@@ -1248,12 +1260,6 @@ export default function Home() {
                           });
                           return;
                         }
-                        // Normal click: open profile (clear selection if any)
-                        if (selectedWorldIds.size > 0) {
-                          setSelectedWorldIds(new Set());
-                          return;
-                        }
-                        setSelectedWorld(w);
                       }}
                       searchQuery={worldsSearchQuery}
                     />

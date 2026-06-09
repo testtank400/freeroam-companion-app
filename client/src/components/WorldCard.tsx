@@ -1,10 +1,11 @@
 // WorldCard.tsx
-// Design: Tactical Dark Ops — landscape/portrait card for worlds,
-// cover image with gradient overlay, amber glow on hover,
-// privacy badge top-left, interaction count top-right, draft badge
-// Uses ApiWorld shape from the worlds router
+// Design: Tactical Dark Ops — landscape card for worlds
+// Click → opens Freeroam world page in new tab
+// Info button (top-right) → opens WorldProfile modal
+// Larger image area to prevent badge crowding
 
-import { Globe, Link, Lock, Eye, FileEdit } from 'lucide-react';
+import { Globe, Link, Lock, Eye, FileEdit, BookOpen } from 'lucide-react';
+import React from 'react';
 
 export type PrivacyStatus = 'private' | 'public' | 'unlisted';
 
@@ -23,7 +24,10 @@ export interface ApiWorld {
 
 interface WorldCardProps {
   world: ApiWorld;
-  onClick: (world: ApiWorld, e: React.MouseEvent) => void;
+  /** Called when the info button is clicked — opens the WorldProfile modal */
+  onOpenModal: (world: ApiWorld) => void;
+  /** Called for Ctrl/Cmd click — bulk select toggle */
+  onSelect: (world: ApiWorld, e: React.MouseEvent) => void;
   /** Active search query — matching portion of the name is highlighted in amber */
   searchQuery?: string;
   isSelected?: boolean;
@@ -48,25 +52,11 @@ function HighlightedText({ text, query }: { text: string; query: string }) {
 
 function PrivacyBadge({ status }: { status: PrivacyStatus }) {
   const config = {
-    private: {
-      label: 'Private',
-      icon: <Lock size={11} strokeWidth={2.5} />,
-      className: 'badge-private',
-    },
-    public: {
-      label: 'Public',
-      icon: <Globe size={11} strokeWidth={2.5} />,
-      className: 'badge-public',
-    },
-    unlisted: {
-      label: 'Unlisted',
-      icon: <Link size={11} strokeWidth={2.5} />,
-      className: 'badge-linked',
-    },
+    private: { label: 'Private', icon: <Lock size={11} strokeWidth={2.5} />, className: 'badge-private' },
+    public:  { label: 'Public',  icon: <Globe size={11} strokeWidth={2.5} />, className: 'badge-public' },
+    unlisted:{ label: 'Unlisted',icon: <Link size={11} strokeWidth={2.5} />, className: 'badge-linked' },
   };
-
   const { label, icon, className } = config[status];
-
   return (
     <span
       className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-sm text-[11px] font-medium tracking-wider uppercase ${className}`}
@@ -88,8 +78,19 @@ function formatCount(count: number): string {
 // Fallback placeholder image for worlds without a cover
 const FALLBACK_IMAGE = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCIgZmlsbD0iIzFhMWEyNCIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBmb250LWZhbWlseT0ibW9ub3NwYWNlIiBmb250LXNpemU9IjE0IiBmaWxsPSIjMzMzMzQ0IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkeT0iLjNlbSI+Tk8gQ09WRVI8L3RleHQ+PC9zdmc+';
 
-export default function WorldCard({ world, onClick, searchQuery = '', isSelected = false }: WorldCardProps) {
+export default function WorldCard({ world, onOpenModal, onSelect, searchQuery = '', isSelected = false }: WorldCardProps) {
   const imageUrl = world.cover_image_url || FALLBACK_IMAGE;
+  const freeroamUrl = `https://getfreeroam.com/world/${world.external_id}`;
+
+  const handleCardClick = (e: React.MouseEvent) => {
+    // Ctrl/Cmd click → bulk select
+    if (e.ctrlKey || e.metaKey || e.shiftKey) {
+      onSelect(world, e);
+      return;
+    }
+    // Normal click → open Freeroam in new tab
+    window.open(freeroamUrl, '_blank', 'noopener,noreferrer');
+  };
 
   return (
     <div
@@ -99,7 +100,7 @@ export default function WorldCard({ world, onClick, searchQuery = '', isSelected
         border: isSelected ? '1px solid oklch(0.769 0.188 70.08 / 0.8)' : '1px solid oklch(1 0 0 / 0.07)',
         boxShadow: isSelected ? '0 0 0 2px oklch(0.769 0.188 70.08 / 0.25)' : undefined,
       }}
-      onClick={(e) => onClick(world, e)}
+      onClick={handleCardClick}
     >
       {/* Selection overlay */}
       {isSelected && (
@@ -122,8 +123,9 @@ export default function WorldCard({ world, onClick, searchQuery = '', isSelected
           </svg>
         </div>
       )}
-      {/* Image area — landscape aspect ratio for worlds */}
-      <div className="relative w-full" style={{ paddingBottom: '75%' }}>
+
+      {/* Image area — taller to give badges room */}
+      <div className="relative w-full" style={{ paddingBottom: '90%' }}>
         <img
           src={imageUrl}
           alt={world.name}
@@ -141,8 +143,8 @@ export default function WorldCard({ world, onClick, searchQuery = '', isSelected
           }}
         />
 
-        {/* Top-left: Privacy badge */}
-        <div className="absolute top-3 left-3 z-10 flex items-center gap-1.5">
+        {/* Top-left: Privacy badge + Draft badge stacked vertically */}
+        <div className="absolute top-3 left-3 z-10 flex flex-col gap-1.5">
           <PrivacyBadge status={world.privacy_status} />
           {world.is_draft && (
             <span
@@ -160,8 +162,8 @@ export default function WorldCard({ world, onClick, searchQuery = '', isSelected
           )}
         </div>
 
-        {/* Top-right: Interaction count */}
-        <div className="absolute top-3 right-3 z-10">
+        {/* Top-right: Interaction count + Info button stacked vertically */}
+        <div className="absolute top-3 right-3 z-10 flex flex-col items-end gap-1.5">
           <span
             className="inline-flex items-center gap-1 px-2 py-0.5 rounded-sm text-[11px] font-semibold"
             style={{
@@ -175,6 +177,26 @@ export default function WorldCard({ world, onClick, searchQuery = '', isSelected
             <Eye size={11} strokeWidth={2} style={{ color: 'oklch(0.769 0.188 70.08)' }} />
             {formatCount(world.interaction_count)}
           </span>
+
+          {/* Info button — opens WorldProfile modal */}
+          {!isSelected && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onOpenModal(world);
+              }}
+              className="flex items-center justify-center w-6 h-6 rounded-sm transition-all hover:brightness-125"
+              style={{
+                background: 'oklch(0.12 0.01 264 / 0.85)',
+                border: '1px solid oklch(1 0 0 / 0.12)',
+                color: 'oklch(0.65 0.01 264)',
+                backdropFilter: 'blur(4px)',
+              }}
+              title="View details"
+            >
+              <BookOpen size={11} strokeWidth={2} />
+            </button>
+          )}
         </div>
 
         {/* World name overlay at bottom of image */}
