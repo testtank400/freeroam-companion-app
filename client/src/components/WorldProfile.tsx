@@ -228,7 +228,7 @@ export default function WorldProfile({ world, onClose, worldCollections = [], on
           </div>
 
           {/* Title overlay */}
-          <div className="absolute bottom-4 left-4 right-16 z-20">
+          <div className="absolute bottom-4 left-4 right-4 z-20">
             <h2
               className="text-2xl font-bold tracking-wide leading-tight"
               style={{
@@ -246,29 +246,42 @@ export default function WorldProfile({ world, onClose, worldCollections = [], on
               by {ownerName}
             </p>
           </div>
+        </div>
 
-          {/* Add to Collection button — bottom right of cover */}
-          <div ref={collectionBtnRef} className="absolute bottom-4 right-4 z-20">
+        {/* Action bar — matches CharacterProfile style */}
+        <div
+          className="flex items-center gap-2 px-4 py-2 overflow-x-auto"
+          style={{
+            background: 'oklch(0.11 0.008 264)',
+            borderBottom: '1px solid oklch(1 0 0 / 0.07)',
+            scrollbarWidth: 'none',
+          }}
+        >
+          {/* Collect button */}
+          <div ref={collectionBtnRef} className="relative flex-shrink-0">
             <button
               onClick={() => setShowCollectionPopover(v => !v)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-sm text-xs font-semibold tracking-wider uppercase transition-all hover:brightness-110"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-sm transition-all hover:brightness-110"
               style={{
-                fontFamily: 'Rajdhani, sans-serif',
                 background: membershipSet.size > 0
-                  ? 'oklch(0.769 0.188 70.08 / 0.2)'
-                  : 'oklch(0.15 0.01 264 / 0.85)',
+                  ? 'oklch(0.769 0.188 70.08 / 0.15)'
+                  : showCollectionPopover ? 'oklch(0.22 0.01 264)' : 'oklch(0.18 0.01 264)',
                 border: membershipSet.size > 0
-                  ? '1px solid oklch(0.769 0.188 70.08 / 0.5)'
+                  ? '1px solid oklch(0.769 0.188 70.08 / 0.4)'
                   : '1px solid oklch(1 0 0 / 0.15)',
                 color: membershipSet.size > 0
                   ? 'oklch(0.769 0.188 70.08)'
-                  : 'oklch(0.7 0.005 65)',
-                backdropFilter: 'blur(4px)',
+                  : 'oklch(0.65 0.01 264)',
+                fontFamily: 'Rajdhani, sans-serif',
+                fontSize: '11px',
+                fontWeight: 700,
+                letterSpacing: '0.1em',
+                textTransform: 'uppercase',
               }}
-              title="Add to Collection"
+              title="Add to collection"
             >
-              <FolderPlus size={13} strokeWidth={2} />
-              {membershipSet.size > 0 ? `${membershipSet.size} Collection${membershipSet.size !== 1 ? 's' : ''}` : 'Add to Collection'}
+              <FolderPlus size={12} strokeWidth={2.5} />
+              {membershipSet.size > 0 ? `${membershipSet.size} Collection${membershipSet.size !== 1 ? 's' : ''}` : 'Collect'}
             </button>
 
             {/* Popover */}
