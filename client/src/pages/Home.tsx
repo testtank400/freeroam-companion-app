@@ -1994,17 +1994,10 @@ export default function Home() {
         selectedIds={Array.from(selectedWorldIds)}
         onClear={() => setSelectedWorldIds(new Set())}
         worldCollections={worldCollections}
-        getMembershipSet={(ids) => {
-          // A collection is in the set only if ALL selected worlds are members
-          // We track this via the worldCollectionWorlds map
-          const result = new Set<string>();
-          worldCollections.forEach(col => {
-            // Check if all selected worlds are in this collection
-            // We use the worldCollections data - each collection has world_count but we need membership
-            // For now use optimistic: include if any world is in it (will be refined by server)
-            result.add(col.external_id);
-          });
-          return result;
+        getMembershipSet={(_ids) => {
+          // Return empty set — we don't pre-check any collections for bulk select
+          // since determining membership for multiple worlds would require N server queries
+          return new Set<string>();
         }}
         onToggleInCollection={async (collectionId, added, worldExternalIds) => {
           // Batch add/remove all selected worlds via tRPC HTTP API
