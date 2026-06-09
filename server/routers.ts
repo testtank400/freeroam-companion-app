@@ -1346,7 +1346,13 @@ export const appRouter = router({
         const cookie = getFreeroamCookie(ctx);
         if (!cookie) throw new Error("Cookie not configured in environment");
 
+        // Decode base64 back to binary
         const buffer = Buffer.from(input.fileBase64, "base64");
+
+        // Build multipart/form-data using FormData
+        const formData = new FormData();
+        const blob = new Blob([buffer], { type: input.mimeType });
+        formData.append("file", blob, "cover.png");
 
         const response = await fetch(
           `https://getfreeroam.com/api/collections/${encodeURIComponent(input.collectionId)}/cover`,
@@ -1355,13 +1361,12 @@ export const appRouter = router({
             headers: {
               accept: "*/*",
               "accept-language": "en-US,en;q=0.9",
-              "content-type": "text/plain",
               cookie,
               origin: "https://getfreeroam.com",
               referer: "https://getfreeroam.com",
               "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36",
             },
-            body: buffer,
+            body: formData,
           }
         );
 
