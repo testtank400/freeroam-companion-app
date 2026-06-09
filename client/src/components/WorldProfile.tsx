@@ -196,7 +196,7 @@ export default function WorldProfile({ world, onClose, worldCollections = [], on
           />
 
           {/* Single row: all badges aligned in one container */}
-          <div className="absolute top-3 left-3 right-3 z-20 flex items-center gap-2">
+          <div className="absolute top-3 left-3 right-3 z-40 flex items-center gap-2">
             {/* Left: Privacy + interaction count */}
             <PrivacyBadgeLarge status={world.privacy_status} />
             <span
