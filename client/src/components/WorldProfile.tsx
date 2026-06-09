@@ -196,7 +196,7 @@ export default function WorldProfile({ world, onClose, worldCollections = [], on
           />
 
           {/* Single row: all badges aligned in one container */}
-          <div className="absolute top-3 left-3 right-3 z-40 flex items-center gap-2">
+          <div className="absolute top-2 sm:top-3 left-2 sm:left-3 right-2 sm:right-3 z-40 flex items-center gap-1.5 sm:gap-2">
             {/* Left: Privacy + interaction count */}
             <PrivacyBadgeLarge status={world.privacy_status} />
             <span
@@ -262,16 +262,23 @@ export default function WorldProfile({ world, onClose, worldCollections = [], on
             {/* Close button */}
             <button
               onClick={onClose}
-              className="flex items-center justify-center px-2.5 rounded-sm transition-colors hover:brightness-125"
+              className="flex items-center justify-center rounded-sm transition-colors hover:brightness-125 ml-1 sm:ml-0"
               style={{
                 background: 'oklch(0.15 0.01 264 / 0.85)',
                 border: '1px solid oklch(1 0 0 / 0.15)',
                 color: 'oklch(0.7 0.005 65)',
                 backdropFilter: 'blur(4px)',
-                height: '26px',
+                width: '36px',
+                height: '36px',
+                minWidth: '36px',
+                minHeight: '36px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
               }}
+              title="Close"
             >
-              <X size={14} strokeWidth={2} />
+              <X size={18} strokeWidth={2} />
             </button>
           </div>
 
