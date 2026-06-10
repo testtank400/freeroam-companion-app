@@ -210,7 +210,7 @@ export default function WorldProfile({ world, onClose, worldCollections = [], on
                 height: '26px',
               }}
             >
-              <Eye size={12} strokeWidth={2} style={{ color: 'oklch(0.769 0.188 70.08)' }} />
+              <BookOpen size={12} strokeWidth={2} style={{ color: 'oklch(0.769 0.188 70.08)' }} />
               {formatCount(world.interaction_count)}
             </span>
 
@@ -355,7 +355,7 @@ export default function WorldProfile({ world, onClose, worldCollections = [], on
             <div className="space-y-6">
               {/* Logline */}
               <div>
-                <SectionLabel label="Logline" />
+                <SectionLabel label="Headline" />
                 <p
                   style={{
                     fontFamily: 'JetBrains Mono, monospace',
