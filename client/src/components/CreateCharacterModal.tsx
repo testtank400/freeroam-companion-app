@@ -119,7 +119,7 @@ export default function CreateCharacterModal({
       setPrivacy((src?.privacy_status as PrivacyStatus) ?? 'private');
       const existingUrl = src?.headshot_url ?? src?.display_headshot_url ?? '';
       setHeadshotUrl(existingUrl);
-      setHeadshotMode('url');
+      setHeadshotMode('upload');
       setUploadedFile(null);
       setUploadPreview(null);
       setUploadedHeadshotUrl(null);
@@ -139,7 +139,7 @@ export default function CreateCharacterModal({
       setPrivacy((duplicateSource.privacy_status as PrivacyStatus) ?? 'private');
       const url = duplicateSource.headshot_url ?? duplicateSource.display_headshot_url ?? '';
       setHeadshotUrl(url);
-      setHeadshotMode('url');
+      setHeadshotMode('upload');
       setUploadedFile(null);
       setUploadPreview(null);
       setUploadedHeadshotUrl(null);
@@ -160,7 +160,7 @@ export default function CreateCharacterModal({
     setAppearance('');
     setPrivacy('private');
     setHeadshotUrl('');
-    setHeadshotMode('url');
+    setHeadshotMode('upload');
     setUploadedFile(null);
     setUploadPreview(null);
     setUploadedHeadshotUrl(null);
