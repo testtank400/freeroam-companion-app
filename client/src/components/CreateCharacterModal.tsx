@@ -90,7 +90,7 @@ export default function CreateCharacterModal({
   const [appearanceExtended, setAppearanceExtended] = useState('');
   const [privacy, setPrivacy] = useState<PrivacyStatus>('private');
   const [headshotUrl, setHeadshotUrl] = useState('');
-  const [headshotMode, setHeadshotMode] = useState<'url' | 'upload'>('url');
+  const [headshotMode, setHeadshotMode] = useState<'url' | 'upload'>('upload');
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const [uploadPreview, setUploadPreview] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
@@ -431,7 +431,7 @@ export default function CreateCharacterModal({
             <div>
               <label style={LABEL_STYLE}>Headshot</label>
               <div className="flex gap-1 mb-3">
-                {(['url', 'upload'] as const).map((mode) => (
+                {(['upload', 'url'] as const).map((mode) => (
                   <button
                     key={mode}
                     type="button"

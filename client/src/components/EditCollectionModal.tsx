@@ -48,7 +48,7 @@ export default function EditCollectionModal({ open, onClose, collection, allColl
   const [coverUrl, setCoverUrl] = useState('');
   const [description, setDescription] = useState('');
   const [parentId, setParentId] = useState<number | null>(null);
-  const [coverMode, setCoverMode] = useState<'url' | 'upload'>('url');
+  const [coverMode, setCoverMode] = useState<'url' | 'upload'>('upload');
   const [uploadPreview, setUploadPreview] = useState<string | null>(null);
   const [uploadedCoverUrl, setUploadedCoverUrl] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
@@ -61,7 +61,7 @@ export default function EditCollectionModal({ open, onClose, collection, allColl
       setDescription(collection?.description ?? '');
       setCoverUrl(collection?.coverImage ?? '');
       setParentId(collection?.parentId ?? null);
-      setCoverMode('url');
+      setCoverMode('upload');
       setUploadPreview(null);
       setUploadedCoverUrl(null);
       requestAnimationFrame(() => setVisible(true));
@@ -237,7 +237,7 @@ export default function EditCollectionModal({ open, onClose, collection, allColl
 
               {/* Mode toggle */}
               <div className="flex gap-1 mb-3">
-                {(['url', 'upload'] as const).map((mode) => (
+                {(['upload', 'url'] as const).map((mode) => (
                   <button
                     key={mode}
                     type="button"
