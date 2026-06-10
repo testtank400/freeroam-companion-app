@@ -122,7 +122,7 @@ export default function CreateCharacterModal({
       setHeadshotMode('upload');
       setUploadedFile(null);
       setUploadPreview(null);
-      setUploadedHeadshotUrl(null);
+      setUploadedHeadshotUrl(existingUrl);
     }
       }, [open, isEditMode, editCharacter, fullEditData, extendedData]);
 
@@ -142,7 +142,7 @@ export default function CreateCharacterModal({
       setHeadshotMode('upload');
       setUploadedFile(null);
       setUploadPreview(null);
-      setUploadedHeadshotUrl(null);
+      setUploadedHeadshotUrl(url);
     }
   }, [open, isEditMode, duplicateSource]);
 
@@ -327,7 +327,7 @@ export default function CreateCharacterModal({
 
   if (!open) return null;
 
-  const previewImage = headshotMode === 'url' ? headshotUrl : (uploadPreview ?? '');
+  const previewImage = headshotMode === 'url' ? headshotUrl : (uploadPreview ?? headshotUrl ?? '');
 
   return (
     <div

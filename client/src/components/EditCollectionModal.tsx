@@ -63,7 +63,7 @@ export default function EditCollectionModal({ open, onClose, collection, allColl
       setParentId(collection?.parentId ?? null);
       setCoverMode('upload');
       setUploadPreview(null);
-      setUploadedCoverUrl(null);
+      setUploadedCoverUrl(collection?.coverImage ?? null);
       requestAnimationFrame(() => setVisible(true));
     } else {
       setVisible(false);
@@ -134,8 +134,8 @@ export default function EditCollectionModal({ open, onClose, collection, allColl
 
   if (!open) return null;
 
-  // For URL mode: use the typed URL. For upload mode: use the S3 URL if available, else local preview.
-  const previewImage = coverMode === 'url' ? coverUrl : (uploadedCoverUrl ?? uploadPreview ?? '');
+  // For URL mode: use the typed URL. For upload mode: use the S3 URL if available, else local preview, else existing cover.
+  const previewImage = coverMode === 'url' ? coverUrl : (uploadedCoverUrl ?? uploadPreview ?? collection?.coverImage ?? '');
 
   return (
     <div
