@@ -6,7 +6,7 @@
 import { trpc } from '@/lib/trpc';
 import { ApiCharacter } from '@/pages/Home';
 import { Globe, ImagePlus, Link, Lock, Upload, X } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
 type PrivacyStatus = 'private' | 'public' | 'unlisted';
@@ -126,6 +126,28 @@ export default function CreateCharacterModal({
     }
       }, [open, isEditMode, editCharacter, fullEditData, extendedData]);
 
+  const resetForm = useCallback(() => {
+    setName('');
+    setBackstory('');
+    setAppearance('');
+    setBackstoryExtended('');
+    setAppearanceExtended('');
+    setPrivacy('private');
+    setHeadshotUrl('');
+    setHeadshotMode('upload');
+    setUploadedFile(null);
+    setUploadPreview(null);
+    setUploadedHeadshotUrl(null);
+    setIsUploading(false);
+  }, []);
+
+  // Reset form when opening in fresh create mode (no edit, no duplicate)
+  useEffect(() => {
+    if (open && !isEditMode && !duplicateSource) {
+      resetForm();
+    }
+  }, [open, isEditMode, duplicateSource, resetForm]);
+
   // Seed form when opening in duplicate mode
   useEffect(() => {
     if (open && !isEditMode && duplicateSource) {
@@ -154,23 +176,10 @@ export default function CreateCharacterModal({
     }
   }, [open]);
 
-  const resetForm = () => {
-    setName('');
-    setBackstory('');
-    setAppearance('');
-    setPrivacy('private');
-    setHeadshotUrl('');
-    setHeadshotMode('upload');
-    setUploadedFile(null);
-    setUploadPreview(null);
-    setUploadedHeadshotUrl(null);
-    setIsUploading(false);
-  };
-
   const handleClose = () => {
     setVisible(false);
     setTimeout(() => {
-      if (!isEditMode) resetForm();
+      resetForm();
       onClose();
     }, 250);
   };
