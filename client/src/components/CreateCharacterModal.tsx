@@ -538,7 +538,11 @@ export default function CreateCharacterModal({
                   </div>
                   <textarea
                     value={backstory}
-                    onChange={(e) => setBackstory(e.target.value)}
+                    onChange={(e) => {
+                      setBackstory(e.target.value);
+                      // Keep extended backstory in sync with the main field so the full text is always saved
+                      setBackstoryExtended(e.target.value);
+                    }}
                     placeholder="Character backstory, personality, and motivations..."
                     rows={5}
                     style={{ ...FIELD_STYLE, borderColor: pct >= 1 ? 'oklch(0.65 0.22 25 / 0.5)' : undefined }}
@@ -566,7 +570,11 @@ export default function CreateCharacterModal({
                   </div>
                   <textarea
                     value={appearance}
-                    onChange={(e) => setAppearance(e.target.value)}
+                    onChange={(e) => {
+                      setAppearance(e.target.value);
+                      // Keep extended appearance in sync with the main field so the full text is always saved
+                      setAppearanceExtended(e.target.value);
+                    }}
                     placeholder="Physical description, clothing, distinguishing features..."
                     rows={4}
                     style={{ ...FIELD_STYLE, borderColor: pct >= 1 ? 'oklch(0.65 0.22 25 / 0.5)' : undefined }}
