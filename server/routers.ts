@@ -83,7 +83,6 @@ const CharacterSchema = z.object({
     display_name: z.string(),
   }),
   privacy_status: privacyStatusSchema,
-  created_at: z.string().optional(),
 });
 
 // Single character response — includes the `appearance` field not in the list endpoint.
@@ -164,62 +163,6 @@ export const appRouter = router({
         const data = await response.json();
         const parsed = CharactersResponseSchema.parse(data);
         return parsed;
-      }),
-
-    /** Fetch ALL characters across all pages for the grid view — mirrors worlds.listAll */
-    listAll: publicProcedure
-      .input(
-        z.object({
-          username: z.string().default("Test Tank"),
-          sort: z.string().default("recent"),
-        })
-      )
-      .query(async ({ input, ctx }) => {
-        if (!hasUserCookie(ctx)) return [];
-
-        const cookie = getFreeroamCookie(ctx);
-        if (!cookie) throw new Error("Cookie not configured in environment");
-
-        const encodedUsername = encodeURIComponent(input.username);
-        const allCharacters: z.infer<typeof CharacterSchema>[] = [];
-        let cursor = "";
-        let hasMore = true;
-
-        while (hasMore) {
-          const url = `https://getfreeroam.com/api/user/${encodedUsername}/characters?limit=20&sort=${input.sort}&cursor=${cursor}`;
-
-          let response: Response | null = null;
-          for (let attempt = 0; attempt < 3; attempt++) {
-            if (attempt > 0) {
-              await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, attempt - 1)));
-            }
-            response = await fetch(url, {
-              headers: {
-                accept: "*/*",
-                "accept-language": "en-US,en;q=0.9",
-                cookie,
-                origin: "https://getfreeroam.com",
-                referer: "https://getfreeroam.com",
-                "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36",
-              },
-            });
-            if (response.status !== 429) break;
-          }
-
-          if (!response || !response.ok) {
-            const text = response ? await response.text() : 'No response';
-            if (response?.status === 429) throw new Error('Rate limit exceeded. Please wait a moment and try again.');
-            if (response?.status === 401) throw new Error('SESSION_EXPIRED');
-            throw new Error(`Characters fetch failed (${response?.status}): ${text}`);
-          }
-
-          const data = CharactersResponseSchema.parse(await response.json());
-          allCharacters.push(...data.characters);
-          hasMore = data.has_more;
-          cursor = data.next_cursor ?? "";
-        }
-
-        return allCharacters;
       }),
 
     // Single-request library endpoint — returns ALL characters with is_saved, description, tags

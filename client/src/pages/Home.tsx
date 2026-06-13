@@ -218,13 +218,13 @@ export default function Home() {
     return () => document.removeEventListener('mousedown', handler);
   }, []);
 
-  // Fetch ALL characters using the paginated user endpoint (supports sort)
-  const fetchAll = useCallback(async (sortValue: string) => {
+  // Fetch ALL characters in one request via the library endpoint
+  const fetchAll = useCallback(async (_sortValue: string) => {
     setIsLoadingAll(true);
     setAllCharacters([]);
     try {
-      const result = await utils.characters.listAll.fetch({ sort: sortValue });
-      // Map to ApiCharacter shape
+      const result = await utils.characters.library.fetch();
+      // Map library shape to ApiCharacter
       const mapped: ApiCharacter[] = result.map(c => ({
         external_id: c.external_id,
         name: c.name,
@@ -232,19 +232,29 @@ export default function Home() {
         description: c.description,
         headshot_url: c.headshot_url,
         display_headshot_url: c.display_headshot_url,
-        is_persona: c.is_persona,
-        owner: { username: c.owner.username, display_name: c.owner.display_name },
+        is_persona: false,
+        owner: { username: c.creator_username, display_name: c.creator_username },
         privacy_status: c.privacy_status,
+        is_saved: c.is_saved,
+        tags: c.tags,
+        creator_username: c.creator_username,
         created_at: c.created_at,
+        is_yours: c.is_yours,
       }));
       setAllCharacters(mapped);
+      // Seed saved state from the API response
+      const savedFromApi = mapped
+        .filter(c => c.is_saved)
+        .map(c => c.external_id);
+      initFromApi(savedFromApi);
     } catch (err) {
       const msg = err instanceof Error ? err.message : '';
       if (msg.includes('401') || msg.includes('SESSION_EXPIRED') || msg.includes('Unauthorized')) {
         toast.error('Your Freeroam session has expired. Please update your cookie in Settings.', { duration: 8000 });
       } else if (msg.includes('429') || msg.includes('Rate limit') || msg.includes('rate limit')) {
         toast.error('Freeroam rate limit hit. Retrying automatically in a few seconds...', { duration: 5000 });
-        setTimeout(() => fetchAll(sortValue), 5000);
+        // Auto-retry after 5 seconds
+        setTimeout(() => fetchAll(sort), 5000);
       } else {
         toast.error('Failed to load characters. Please refresh.');
       }
@@ -1762,6 +1772,12 @@ export default function Home() {
               : !subCollectionCharIds.has(c.external_id);
             const matchesNsfw = !sfwOnly || !nsfwMap[c.external_id];
             return matchesPrivacy && matchesSearch && matchesPersona && matchesFavorites && matchesCollection && notInOtherCollection && notInSubCollection && matchesNsfw;
+          }).sort((a, b) => {
+            // Sort by created_at using the sort state
+            const dateA = a.created_at ? new Date(a.created_at).getTime() : 0;
+            const dateB = b.created_at ? new Date(b.created_at).getTime() : 0;
+            if (sort === 'oldest') return dateA - dateB;
+            return dateB - dateA; // 'recent' is default
           });
 
           const filteredEmpty = !isLoading && !isError && allCharacters.length > 0 && visibleCharacters.length === 0;
