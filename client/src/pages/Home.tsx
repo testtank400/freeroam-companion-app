@@ -50,9 +50,14 @@ const USERNAME = 'Test Tank';
 const LIMIT = 50;
 
 type SortOption = { value: string; label: string; description: string };
-const SORT_OPTIONS: SortOption[] = [
+const CHARACTER_SORT_OPTIONS: SortOption[] = [
   { value: 'recent',  label: 'Most Recent', description: 'Newest first' },
   { value: 'oldest',  label: 'Oldest First', description: 'Oldest first' },
+];
+const WORLD_SORT_OPTIONS: SortOption[] = [
+  { value: 'recent',   label: 'Most Recent', description: 'Newest first' },
+  { value: 'oldest',   label: 'Oldest First', description: 'Oldest first' },
+  { value: 'popular',  label: 'Popular', description: 'Most interactions' },
 ];
 
 export type ViewMode = 'characters' | 'worlds';
@@ -68,14 +73,16 @@ export default function Home() {
   const [worldsSearchQuery, setWorldsSearchQuery] = useState('');
   const [worldsPrivacyFilter, setWorldsPrivacyFilter] = useState<PrivacyStatus | null>(null);
   const [worldsDraftFilter, setWorldsDraftFilter] = useState<boolean | null>(null);
+  const [worldsSort, setWorldsSort] = useState<string>('recent');
   const utils = trpc.useUtils();
 
   // Fetch all worlds
-  const fetchAllWorlds = useCallback(async () => {
+  const fetchAllWorlds = useCallback(async (sortValue?: string) => {
+    const sortToUse = sortValue ?? worldsSort;
     setIsLoadingWorlds(true);
     setAllWorlds([]);
     try {
-      const result = await utils.worlds.listAll.fetch({ sort: 'recent' });
+      const result = await utils.worlds.listAll.fetch({ sort: sortToUse });
       setAllWorlds(result as ApiWorld[]);
     } catch (err) {
       const msg = err instanceof Error ? err.message : '';
@@ -83,14 +90,14 @@ export default function Home() {
         toast.error('Your Freeroam session has expired. Please update your cookie in Settings.', { duration: 8000 });
       } else if (msg.includes('429') || msg.includes('Rate limit') || msg.includes('rate limit')) {
         toast.error('Freeroam rate limit hit. Retrying automatically in a few seconds...', { duration: 5000 });
-        setTimeout(() => fetchAllWorlds(), 5000);
+        setTimeout(() => fetchAllWorlds(sortToUse), 5000);
       } else {
         toast.error('Failed to load worlds. Please refresh.');
       }
     } finally {
       setIsLoadingWorlds(false);
     }
-  }, [utils]);
+  }, [utils, worldsSort]);
 
   // Load worlds when switching to worlds mode
   useEffect(() => {
@@ -270,10 +277,16 @@ export default function Home() {
 
   // Change sort
   const handleSortChange = (newSort: string) => {
-    if (newSort === sort) { setSortDropdownOpen(false); return; }
-    setSort(newSort);
     setSortDropdownOpen(false);
-    // useEffect above will trigger fetchAll(newSort)
+    if (viewMode === 'worlds') {
+      if (newSort === worldsSort) return;
+      setWorldsSort(newSort);
+      fetchAllWorlds(newSort);
+    } else {
+      if (newSort === sort) return;
+      setSort(newSort);
+      // useEffect above will trigger fetchAll(newSort)
+    }
   };
 
   const { hasCookie } = useFreeroamCookie();
@@ -725,7 +738,7 @@ export default function Home() {
               title="Sort order"
             >
               <ArrowDownUp size={12} strokeWidth={2.5} />
-              <span className="hidden sm:inline">{SORT_OPTIONS.find(o => o.value === sort)?.label ?? 'Sort'}</span>
+              <span className="hidden sm:inline">{(viewMode === 'worlds' ? WORLD_SORT_OPTIONS : CHARACTER_SORT_OPTIONS).find(o => o.value === (viewMode === 'worlds' ? worldsSort : sort))?.label ?? 'Sort'}</span>
               <ChevronDown
                 size={11}
                 strokeWidth={2.5}
@@ -747,14 +760,14 @@ export default function Home() {
                   zIndex: 50,
                 }}
               >
-                {SORT_OPTIONS.map((opt) => (
+                {(viewMode === 'worlds' ? WORLD_SORT_OPTIONS : CHARACTER_SORT_OPTIONS).map((opt) => (
                   <button
                     key={opt.value}
                     onClick={() => handleSortChange(opt.value)}
                     className="w-full flex items-start gap-2 px-3 py-2.5 text-left transition-colors hover:bg-white/5"
                     style={{
                       borderBottom: '1px solid oklch(1 0 0 / 0.06)',
-                      background: sort === opt.value ? 'oklch(0.769 0.188 70.08 / 0.08)' : 'transparent',
+                      background: (viewMode === 'worlds' ? worldsSort : sort) === opt.value ? 'oklch(0.769 0.188 70.08 / 0.08)' : 'transparent',
                     }}
                   >
                     <div className="flex-1 min-w-0">
@@ -762,7 +775,7 @@ export default function Home() {
                         className="text-xs font-semibold tracking-wider uppercase"
                         style={{
                           fontFamily: 'Rajdhani, sans-serif',
-                          color: sort === opt.value ? 'oklch(0.769 0.188 70.08)' : 'oklch(0.82 0.005 65)',
+                          color: (viewMode === 'worlds' ? worldsSort : sort) === opt.value ? 'oklch(0.769 0.188 70.08)' : 'oklch(0.82 0.005 65)',
                         }}
                       >
                         {opt.label}
@@ -774,7 +787,7 @@ export default function Home() {
                         {opt.description}
                       </p>
                     </div>
-                    {sort === opt.value && (
+                    {(viewMode === 'worlds' ? worldsSort : sort) === opt.value && (
                       <div
                         className="w-1.5 h-1.5 rounded-full mt-1 flex-shrink-0"
                         style={{ background: 'oklch(0.769 0.188 70.08)', marginTop: '4px' }}
@@ -802,7 +815,7 @@ export default function Home() {
 
           {/* Refresh button */}
           <button
-            onClick={viewMode === 'worlds' ? fetchAllWorlds : handleRefresh}
+            onClick={viewMode === 'worlds' ? () => fetchAllWorlds(worldsSort) : handleRefresh}
             disabled={viewMode === 'worlds' ? isLoadingWorlds : isFetching}
             className="w-8 h-8 flex items-center justify-center rounded-sm transition-colors hover:brightness-110 disabled:opacity-50"
             style={{
@@ -1759,6 +1772,12 @@ export default function Home() {
               : !subCollectionCharIds.has(c.external_id);
             const matchesNsfw = !sfwOnly || !nsfwMap[c.external_id];
             return matchesPrivacy && matchesSearch && matchesPersona && matchesFavorites && matchesCollection && notInOtherCollection && notInSubCollection && matchesNsfw;
+          }).sort((a, b) => {
+            // Sort by created_at using the sort state
+            const dateA = a.created_at ? new Date(a.created_at).getTime() : 0;
+            const dateB = b.created_at ? new Date(b.created_at).getTime() : 0;
+            if (sort === 'oldest') return dateA - dateB;
+            return dateB - dateA; // 'recent' is default
           });
 
           const filteredEmpty = !isLoading && !isError && allCharacters.length > 0 && visibleCharacters.length === 0;
