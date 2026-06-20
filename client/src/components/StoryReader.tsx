@@ -174,11 +174,13 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
   const canGoBack = !!panel?.prev_panel_id;
   const canGoForward = !isAwaitingChoice && !!panel?.next_panel_id;
 
-  // Determine text to display
-  const displayText = narration ?? speechBubble?.text ?? null;
-  const isSpoken = !narration && speechBubble?.style === 'spoken';
+  // Speech bubble: shown in upper-left as a comic-style bubble
+  const hasSpeechBubble = !!speechBubble?.text;
+  const isSpoken = speechBubble?.style === 'spoken';
   const speakerName = isSpoken ? speechBubble?.character : null;
   const speakerColor = speakerName ? getCharacterColor(speakerName) : null;
+  // Narration: shown at bottom overlay
+  const hasNarration = !!narration;
 
   return (
     <div
@@ -296,8 +298,8 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
             />
           )}
 
-          {/* Gradient overlay for text legibility */}
-          {displayText && (
+          {/* Bottom gradient overlay for narration legibility */}
+          {hasNarration && (
             <div
               className="absolute inset-0"
               style={{
@@ -306,21 +308,61 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
             />
           )}
 
-          {/* Text overlay */}
-          {displayText && !isLoading && !isNavigating && (
-            <div className="absolute bottom-0 left-0 right-0 px-4 pb-5 z-10">
-              {speakerName && speakerColor && (
-                <p
-                  className="text-sm font-bold mb-1"
+          {/* Speech bubble — upper-left, comic style */}
+          {hasSpeechBubble && !isLoading && !isNavigating && (
+            <div
+              className="absolute top-4 left-4 z-10"
+              style={{ maxWidth: '55%' }}
+            >
+              <div
+                className="relative px-3 py-2 rounded-2xl"
+                style={{
+                  background: 'white',
+                  boxShadow: '0 2px 8px rgba(0,0,0,0.35)',
+                }}
+              >
+                {/* Bubble tail pointing down-left */}
+                <div
                   style={{
-                    fontFamily: 'Rajdhani, sans-serif',
-                    color: speakerColor,
-                    letterSpacing: '0.05em',
+                    position: 'absolute',
+                    bottom: '-10px',
+                    left: '18px',
+                    width: 0,
+                    height: 0,
+                    borderLeft: '8px solid transparent',
+                    borderRight: '4px solid transparent',
+                    borderTop: '10px solid white',
+                  }}
+                />
+                {speakerName && speakerColor && (
+                  <p
+                    className="text-xs font-bold mb-0.5"
+                    style={{
+                      fontFamily: 'Rajdhani, sans-serif',
+                      color: speakerColor,
+                      letterSpacing: '0.04em',
+                    }}
+                  >
+                    {speakerName}
+                  </p>
+                )}
+                <p
+                  className="font-semibold leading-snug"
+                  style={{
+                    fontFamily: 'Georgia, serif',
+                    fontSize: 'clamp(11px, 2.5vw, 14px)',
+                    color: '#1a1a1a',
                   }}
                 >
-                  {speakerName}
+                  {speechBubble!.text}
                 </p>
-              )}
+              </div>
+            </div>
+          )}
+
+          {/* Narration overlay — bottom of image */}
+          {hasNarration && !isLoading && !isNavigating && (
+            <div className="absolute bottom-0 left-0 right-0 px-4 pb-5 z-10">
               <p
                 className="text-center font-bold leading-snug"
                 style={{
@@ -330,9 +372,19 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
                   textShadow: '0 1px 8px rgba(0,0,0,0.9), 0 0 20px rgba(0,0,0,0.6)',
                 }}
               >
-                {displayText}
+                {narration}
               </p>
             </div>
+          )}
+
+          {/* Speech bubble only (no narration) — also show text at bottom for readability */}
+          {hasSpeechBubble && !hasNarration && !isLoading && !isNavigating && (
+            <div
+              className="absolute inset-0"
+              style={{
+                background: 'linear-gradient(to bottom, transparent 55%, rgba(0,0,0,0.5) 80%, rgba(0,0,0,0.65) 100%)',
+              }}
+            />
           )}
 
           {/* Polling spinner overlay */}
