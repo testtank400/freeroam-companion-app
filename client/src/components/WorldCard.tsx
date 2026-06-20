@@ -26,6 +26,8 @@ interface WorldCardProps {
   world: ApiWorld;
   /** Called when the info button is clicked — opens the WorldProfile modal */
   onOpenModal: (world: ApiWorld) => void;
+  /** Called when the card body is clicked — opens the story reader */
+  onOpenReader?: (world: ApiWorld) => void;
   /** Called for Ctrl/Cmd click — bulk select toggle */
   onSelect: (world: ApiWorld, e: React.MouseEvent) => void;
   /** Active search query — matching portion of the name is highlighted in amber */
@@ -78,9 +80,8 @@ function formatCount(count: number): string {
 // Fallback placeholder image for worlds without a cover
 const FALLBACK_IMAGE = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCIgZmlsbD0iIzFhMWEyNCIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBmb250LWZhbWlseT0ibW9ub3NwYWNlIiBmb250LXNpemU9IjE0IiBmaWxsPSIjMzMzMzQ0IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkeT0iLjNlbSI+Tk8gQ09WRVI8L3RleHQ+PC9zdmc+';
 
-export default function WorldCard({ world, onOpenModal, onSelect, searchQuery = '', isSelected = false }: WorldCardProps) {
+export default function WorldCard({ world, onOpenModal, onOpenReader, onSelect, searchQuery = '', isSelected = false }: WorldCardProps) {
   const imageUrl = world.cover_image_url || FALLBACK_IMAGE;
-  const freeroamUrl = `https://getfreeroam.com/world/${world.external_id}`;
 
   const handleCardClick = (e: React.MouseEvent) => {
     // Ctrl/Cmd click → bulk select
@@ -88,8 +89,10 @@ export default function WorldCard({ world, onOpenModal, onSelect, searchQuery = 
       onSelect(world, e);
       return;
     }
-    // Normal click → open Freeroam in new tab
-    window.open(freeroamUrl, '_blank', 'noopener,noreferrer');
+    // Normal click → open story reader
+    if (onOpenReader) {
+      onOpenReader(world);
+    }
   };
 
   return (

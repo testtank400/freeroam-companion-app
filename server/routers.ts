@@ -1009,7 +1009,135 @@ export const appRouter = router({
             ? data.world_privacy_status
             : "private") as "private" | "public" | "unlisted",
           is_world_owner: data.is_world_owner,
+          panel_id: (data as Record<string, unknown>).panel_id as string | null ?? null,
+          has_previous_progress: (data as Record<string, unknown>).has_previous_progress as boolean ?? false,
+          world_stats: (data as Record<string, unknown>).world_stats as { interaction_count: number; time_to_first_chapter: number; character_count: number; fandom_rank: number | null; fandom_name: string | null } | null ?? null,
         };
+      }),
+
+    /** Fetch a specific panel by panel_id and world_id */
+    getPanel: publicProcedure
+      .input(z.object({
+        worldId: z.string(),
+        panelId: z.string(),
+      }))
+      .query(async ({ input, ctx }) => {
+        const cookie = getFreeroamCookie(ctx);
+        if (!cookie) throw new Error("Cookie not configured in environment");
+
+        const url = `https://getfreeroam.com/api/nav/panel?world_id=${encodeURIComponent(input.worldId)}&panel_id=${encodeURIComponent(input.panelId)}`;
+        const response = await fetch(url, {
+          headers: {
+            accept: "*/*",
+            "accept-language": "en-US,en;q=0.9",
+            cookie,
+            origin: "https://getfreeroam.com",
+            referer: "https://getfreeroam.com",
+            "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36",
+          },
+        });
+        if (!response.ok) {
+          const text = await response.text();
+          throw new Error(`Get panel failed (${response.status}): ${text}`);
+        }
+        return response.json() as Promise<{
+          panel_id: string;
+          world_id: string;
+          next_panel_id: string | null;
+          prev_panel_id: string | null;
+          is_action: boolean;
+          requires_action: boolean;
+          depth: number;
+          forward_state: string;
+          panel_content: {
+            type: string;
+            narration: string | null;
+            images: Array<{
+              url: string;
+              prompt: string;
+              generation_type: string | null;
+              visible_characters: Record<string, { name: string; external_id: string }>;
+              shot: string | null;
+              is_nsfw: boolean | null;
+            }>;
+            speech_bubbles: Array<{
+              text: string;
+              character: string;
+              style: string;
+              isRequiresActionChat: boolean;
+            }>;
+            choice: {
+              question: string;
+              options: Array<{ text: string; action_panel_external_id: string }>;
+              selected_choice: string | null;
+              is_chat: boolean;
+            } | null;
+            chapter_header: string | null;
+            chapter_start: unknown;
+            chapter_end: unknown;
+            depth: number;
+            is_chat: boolean;
+          };
+          next_panel: unknown;
+          show_jump_to_latest: boolean;
+          jump_to_latest_panel_id: string | null;
+          is_owner: boolean;
+        }>;
+      }),
+
+    /** Save the user's current reading position */
+    setPanel: publicProcedure
+      .input(z.object({
+        worldId: z.string(),
+        panelId: z.string(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const cookie = getFreeroamCookie(ctx);
+        if (!cookie) throw new Error("Cookie not configured in environment");
+
+        const response = await fetch("https://getfreeroam.com/api/nav/view", {
+          method: "POST",
+          headers: {
+            accept: "*/*",
+            "accept-language": "en-US,en;q=0.9",
+            "content-type": "application/json",
+            cookie,
+            origin: "https://getfreeroam.com",
+            referer: "https://getfreeroam.com",
+            "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36",
+          },
+          body: JSON.stringify({ panel_id: input.panelId, world_id: input.worldId }),
+        });
+        if (!response.ok) {
+          const text = await response.text();
+          throw new Error(`Set panel failed (${response.status}): ${text}`);
+        }
+        return { ok: true };
+      }),
+
+    /** Poll to check if the next panel is ready (AI generation) */
+    nextReady: publicProcedure
+      .input(z.object({ panelId: z.string() }))
+      .query(async ({ input, ctx }) => {
+        const cookie = getFreeroamCookie(ctx);
+        if (!cookie) throw new Error("Cookie not configured in environment");
+
+        const url = `https://getfreeroam.com/api/nav/next-ready?panel_id=${encodeURIComponent(input.panelId)}`;
+        const response = await fetch(url, {
+          headers: {
+            accept: "*/*",
+            "accept-language": "en-US,en;q=0.9",
+            cookie,
+            origin: "https://getfreeroam.com",
+            referer: "https://getfreeroam.com",
+            "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36",
+          },
+        });
+        if (!response.ok) {
+          const text = await response.text();
+          throw new Error(`Next ready check failed (${response.status}): ${text}`);
+        }
+        return response.json() as Promise<{ ready: false } | { ready: true; panel_id: string }>;
       }),
   }),
 

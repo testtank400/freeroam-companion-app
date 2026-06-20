@@ -16,6 +16,7 @@ import SettingsModal from '@/components/SettingsModal';
 import WorldCard, { ApiWorld } from '@/components/WorldCard';
 import WorldCollectionCard, { ApiWorldCollection } from '@/components/WorldCollectionCard';
 import WorldProfile from '@/components/WorldProfile';
+import StoryReader from '@/components/StoryReader';
 import EditWorldCollectionModal from '@/components/EditWorldCollectionModal';
 import DeleteWorldCollectionDialog from '@/components/DeleteWorldCollectionDialog';
 import { Collection, useCollections } from '@/hooks/useCollections';
@@ -70,6 +71,10 @@ export default function Home() {
   const [allWorlds, setAllWorlds] = useState<ApiWorld[]>([]);
   const [isLoadingWorlds, setIsLoadingWorlds] = useState(false);
   const [selectedWorld, setSelectedWorld] = useState<ApiWorld | null>(null);
+  // Story reader state
+  const [storyReaderWorld, setStoryReaderWorld] = useState<ApiWorld | null>(null);
+  const [storyReaderPanelId, setStoryReaderPanelId] = useState<string | null>(null);
+  const [isLoadingReaderPanel, setIsLoadingReaderPanel] = useState(false);
   const [worldsSearchQuery, setWorldsSearchQuery] = useState('');
   const [worldsPrivacyFilter, setWorldsPrivacyFilter] = useState<PrivacyStatus | null>(null);
   const [worldsDraftFilter, setWorldsDraftFilter] = useState<boolean | null>(null);
@@ -105,6 +110,25 @@ export default function Home() {
       fetchAllWorlds();
     }
   }, [viewMode]);
+
+  // Open story reader — fetches panel_id from worlds.get then launches the reader
+  const openStoryReader = useCallback(async (world: ApiWorld) => {
+    setIsLoadingReaderPanel(true);
+    try {
+      const detail = await utils.worlds.get.fetch({ worldId: world.external_id });
+      const panelId = (detail as { panel_id?: string | null }).panel_id;
+      if (!panelId) {
+        toast.error('No story panel found for this world.');
+        return;
+      }
+      setStoryReaderWorld(world);
+      setStoryReaderPanelId(panelId);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to load story');
+    } finally {
+      setIsLoadingReaderPanel(false);
+    }
+  }, [utils]);
 
   // ─── World Collections State ──────────────────────────────────────────────═
   const [worldCollections, setWorldCollections] = useState<ApiWorldCollection[]>([]);
@@ -1022,10 +1046,11 @@ export default function Home() {
                         return !q || w.name.toLowerCase().includes(q) || w.logline.toLowerCase().includes(q);
                       })
                       .map(world => (
-                        <WorldCard
+                         <WorldCard
                           key={world.external_id}
                           world={world}
                           onOpenModal={(w) => setSelectedWorld(w)}
+                          onOpenReader={(w) => openStoryReader(w)}
                           onSelect={(w, e) => {
                             if (e.ctrlKey || e.metaKey || e.shiftKey) {
                               setSelectedWorldIds(prev => {
@@ -1265,6 +1290,7 @@ export default function Home() {
                       world={world}
                       isSelected={selectedWorldIds.has(world.external_id)}
                       onOpenModal={(w) => setSelectedWorld(w)}
+                      onOpenReader={(w) => openStoryReader(w)}
                       onSelect={(w, e) => {
                         // Ctrl/Cmd click: toggle single
                         if (e.ctrlKey || e.metaKey) {
@@ -1957,6 +1983,39 @@ export default function Home() {
           onClose={() => setSelectedWorld(null)}
           worldCollections={worldCollections}
           onCollectionsRefresh={fetchWorldCollections}
+        />
+      )}
+
+      {/* Story reader loading overlay */}
+      {isLoadingReaderPanel && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center"
+          style={{ background: 'rgba(0,0,0,0.85)' }}
+        >
+          <div className="flex flex-col items-center gap-3">
+            <div
+              className="w-8 h-8 border-2 border-t-transparent rounded-full animate-spin"
+              style={{ borderColor: 'oklch(0.769 0.188 70.08)', borderTopColor: 'transparent' }}
+            />
+            <p
+              className="text-xs uppercase tracking-widest font-semibold"
+              style={{ fontFamily: 'Rajdhani, sans-serif', color: 'oklch(0.55 0.01 264)' }}
+            >
+              Loading Story...
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Story reader */}
+      {storyReaderWorld && storyReaderPanelId && (
+        <StoryReader
+          world={storyReaderWorld}
+          initialPanelId={storyReaderPanelId}
+          onClose={() => {
+            setStoryReaderWorld(null);
+            setStoryReaderPanelId(null);
+          }}
         />
       )}
 

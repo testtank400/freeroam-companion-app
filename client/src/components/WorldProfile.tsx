@@ -259,6 +259,27 @@ export default function WorldProfile({ world, onClose, worldCollections = [], on
               )}
             </div>
 
+            {/* Freeroam link button */}
+            <button
+              onClick={() => window.open(`https://getfreeroam.com/world/${world.external_id}/story`, '_blank', 'noopener,noreferrer')}
+              className="flex items-center gap-1.5 px-3 rounded-sm transition-all hover:brightness-110"
+              style={{
+                background: 'oklch(0.15 0.01 264 / 0.85)',
+                border: '1px solid oklch(1 0 0 / 0.15)',
+                color: 'oklch(0.65 0.01 264)',
+                backdropFilter: 'blur(4px)',
+                fontFamily: 'Rajdhani, sans-serif',
+                fontSize: '11px',
+                fontWeight: 700,
+                letterSpacing: '0.1em',
+                textTransform: 'uppercase',
+                height: '36px',
+              }}
+              title="Open on Freeroam"
+            >
+              Freeroam
+            </button>
+
             {/* Close button */}
             <button
               onClick={onClose}
