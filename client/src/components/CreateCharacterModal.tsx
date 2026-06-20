@@ -549,8 +549,11 @@ export default function CreateCharacterModal({
                     value={backstory}
                     onChange={(e) => {
                       setBackstory(e.target.value);
-                      // Keep extended backstory in sync with the main field so the full text is always saved
-                      setBackstoryExtended(e.target.value);
+                      // Only sync to extended if extended has no extra content beyond the main field.
+                      // If extended is longer, the user has overflow content there — preserve it.
+                      if (backstoryExtended.length <= backstory.length) {
+                        setBackstoryExtended(e.target.value);
+                      }
                     }}
                     placeholder="Character backstory, personality, and motivations..."
                     rows={5}
@@ -581,8 +584,11 @@ export default function CreateCharacterModal({
                     value={appearance}
                     onChange={(e) => {
                       setAppearance(e.target.value);
-                      // Keep extended appearance in sync with the main field so the full text is always saved
-                      setAppearanceExtended(e.target.value);
+                      // Only sync to extended if extended has no extra content beyond the main field.
+                      // If extended is longer, the user has overflow content there — preserve it.
+                      if (appearanceExtended.length <= appearance.length) {
+                        setAppearanceExtended(e.target.value);
+                      }
                     }}
                     placeholder="Physical description, clothing, distinguishing features..."
                     rows={4}
