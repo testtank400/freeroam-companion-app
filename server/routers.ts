@@ -1196,6 +1196,62 @@ export const appRouter = router({
         return response.json() as Promise<{ success: boolean; message: string; bookmarked: boolean }>;
       }),
 
+    /** Send an action (choice, take-action, image, steer-story) */
+    sendAction: publicProcedure
+      .input(z.object({
+        worldId: z.string(),
+        panelId: z.string(),
+        actionText: z.string(),
+        displayText: z.string(),
+        actionType: z.enum(['choice', 'take-action', 'image', 'steer-story']),
+        characterChanges: z.object({
+          add_character_ids: z.array(z.string()),
+          remove_character_ids: z.array(z.string()),
+          new_main_character_id: z.string().nullable(),
+          old_main_character_id: z.string().nullable(),
+          batch_character_update: z.boolean(),
+        }).nullable().optional(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const cookie = getFreeroamCookie(ctx);
+        if (!cookie) throw new Error("Cookie not configured in environment");
+
+        const response = await fetch("https://getfreeroam.com/api/nav/action", {
+          method: "POST",
+          headers: {
+            accept: "*/*",
+            "accept-language": "en-US,en;q=0.9",
+            "content-type": "application/json",
+            cookie,
+            origin: "https://getfreeroam.com",
+            referer: "https://getfreeroam.com",
+            "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36",
+          },
+          body: JSON.stringify({
+            world_id: input.worldId,
+            panel_id: input.panelId,
+            action_text: input.actionText,
+            display_text: input.displayText,
+            action_type: input.actionType,
+            character_changes: input.characterChanges ?? null,
+          }),
+        });
+        if (!response.ok) {
+          const text = await response.text();
+          throw new Error(`Send action failed (${response.status}): ${text}`);
+        }
+        return response.json() as Promise<{
+          action_panel_id: string;
+          action_panel_content: Record<string, unknown>;
+          next_panel_id: string | null;
+          prev_panel_id: string | null;
+          is_chapter_start: boolean;
+          generation_started: boolean;
+          forward_state: string;
+          usage: Record<string, unknown> | null;
+        }>;
+      }),
+
     /** Regenerate the starting scene of a world */
     regenerateStartingScene: publicProcedure
       .input(z.object({ worldId: z.string() }))

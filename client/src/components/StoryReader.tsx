@@ -106,14 +106,73 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
   const [actionBarVisible, setActionBarVisible] = useState(true);
   const [activeInputMode, setActiveInputMode] = useState<'act' | 'direct' | 'image' | null>(null);
   const [actionInput, setActionInput] = useState('');
+  const [isSendingAction, setIsSendingAction] = useState(false);
+  const sendActionMutation = trpc.worlds.sendAction.useMutation();
 
   const handleActionBarButton = (mode: 'act' | 'direct' | 'image') => {
     if (activeInputMode === mode) {
-      setActiveInputMode(null); // toggle off
+      setActiveInputMode(null);
     } else {
       setActiveInputMode(mode);
+      setActionInput('');
     }
   };
+
+  const handleSendAction = useCallback(async (text: string, actionType: 'choice' | 'take-action' | 'image' | 'steer-story') => {
+    if (!panel || !text.trim() || isSendingAction) return;
+    setIsSendingAction(true);
+    setActiveInputMode(null);
+    setActionInput('');
+    try {
+      const result = await sendActionMutation.mutateAsync({
+        worldId: world.external_id,
+        panelId: panel.panel_id,
+        actionText: text,
+        displayText: text,
+        actionType,
+        characterChanges: null,
+      });
+      // Display the action panel content directly
+      const actionPanel = {
+        panel_id: result.action_panel_id,
+        world_id: world.external_id,
+        next_panel_id: result.next_panel_id,
+        prev_panel_id: result.prev_panel_id ?? panel.panel_id,
+        is_action: true,
+        requires_action: false,
+        depth: panel.depth,
+        forward_state: result.forward_state,
+        panel_content: result.action_panel_content,
+        next_panel: null,
+        show_jump_to_latest: false,
+        jump_to_latest_panel_id: null,
+        text_feedback: [],
+        is_owner: true,
+        image_prompt_edit_enabled: false,
+        phone_unread_count: 0,
+        phone: { total: 0, by_app: {}, recent: [], version: null, seen_at_by_app: {} },
+        phone_experiment_enabled: false,
+        in_world_time: null,
+        location: null,
+        usage: result.usage,
+      };
+      setCurrentPanel(actionPanel as unknown as PanelData);
+      // Save position
+      setPanelMutation.mutate({ worldId: world.external_id, panelId: result.action_panel_id });
+      // If next_panel_id exists, start polling or load it
+      if (result.next_panel_id) {
+        if (result.forward_state === 'ready') {
+          // Load next panel after brief delay to show action panel
+          setTimeout(() => loadPanel(result.next_panel_id!, world.external_id), 800);
+        }
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to send action');
+    } finally {
+      setIsSendingAction(false);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isSendingAction, sendActionMutation, world.external_id]);
 
   // Regenerate polling state
   const [isRegeneratePolling, setIsRegeneratePolling] = useState(false);
@@ -828,37 +887,76 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
             </div>
           )}
 
-          {/* Choice options */}
+          {/* Choice options — Freeroam-style with lettered options, OR divider, custom input */}
           {isAwaitingChoice && choice && !isLoading && !isNavigating && (
             <div
-              className="absolute bottom-0 left-0 right-0 z-20 flex flex-col gap-2 px-4 pb-5 pt-8"
-              style={{ background: 'linear-gradient(to top, rgba(0,0,0,0.88) 60%, transparent)' }}
+              className="absolute bottom-0 left-0 right-0 z-20 flex flex-col gap-2 px-4 pb-4 pt-10"
+              style={{ background: 'linear-gradient(to top, rgba(0,0,0,0.92) 55%, transparent)' }}
             >
+              {/* Question */}
+              {choice.question && (
+                <p style={{ fontFamily: 'Outfit, sans-serif', fontSize: '14px', fontWeight: 500, color: 'rgba(255,255,255,0.7)', marginBottom: '4px' }}>
+                  {choice.question}
+                </p>
+              )}
+              {/* Lettered options */}
               {choice.options.map((opt, i) => (
                 <button
                   key={i}
                   onClick={() => handleChoice(opt.action_panel_external_id)}
-                  className="w-full px-4 py-3 rounded-xl transition-all hover:brightness-110 active:scale-95"
+                  className="w-full flex items-start gap-3 px-4 py-3 rounded-2xl transition-all hover:brightness-110 active:scale-95"
                   style={{
-                    fontFamily: 'Lora, Georgia, serif',
-                    fontSize: '15px',
-                    fontWeight: 600,
-                    color: 'rgba(255,255,255,0.95)',
-                    background: 'rgba(255,255,255,0.12)',
-                    border: '1px solid rgba(255,255,255,0.2)',
-                    backdropFilter: 'blur(8px)',
+                    background: 'rgba(30,30,40,0.85)',
+                    border: '1px solid rgba(255,255,255,0.15)',
+                    backdropFilter: 'blur(10px)',
                     textAlign: 'left',
                   }}
                 >
-                  {opt.text}
+                  <span
+                    className="flex-shrink-0 flex items-center justify-center rounded-full"
+                    style={{ width: '26px', height: '26px', background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', fontFamily: 'Outfit, sans-serif', fontSize: '13px', fontWeight: 600, color: 'rgba(255,255,255,0.7)' }}
+                  >
+                    {String.fromCharCode(65 + i)}
+                  </span>
+                  <span style={{ fontFamily: 'Outfit, sans-serif', fontSize: '14px', fontWeight: 500, color: 'rgba(255,255,255,0.9)', lineHeight: 1.45 }}>
+                    {opt.text}
+                  </span>
                 </button>
               ))}
+              {/* OR divider + custom text input */}
+              <div className="flex items-center gap-3 mt-1">
+                <div style={{ flex: 1, height: '1px', background: 'rgba(255,255,255,0.15)' }} />
+                <span style={{ fontFamily: 'Outfit, sans-serif', fontSize: '12px', color: 'rgba(255,255,255,0.4)' }}>OR</span>
+                <div style={{ flex: 1, height: '1px', background: 'rgba(255,255,255,0.15)' }} />
+              </div>
+              <div
+                className="flex items-center gap-2 px-4 py-2 rounded-2xl"
+                style={{ background: 'rgba(30,30,40,0.85)', border: '1px solid rgba(255,255,255,0.15)', backdropFilter: 'blur(10px)' }}
+              >
+                <input
+                  type="text"
+                  value={actionInput}
+                  onChange={(e) => setActionInput(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter' && actionInput.trim()) handleSendAction(actionInput, 'choice'); }}
+                  placeholder="Or type your own"
+                  className="flex-1 outline-none"
+                  style={{ fontFamily: 'Outfit, sans-serif', fontSize: '14px', color: 'rgba(255,255,255,0.75)', background: 'transparent', border: 'none', minWidth: 0 }}
+                />
+                <button
+                  onClick={() => { if (actionInput.trim()) handleSendAction(actionInput, 'choice'); }}
+                  disabled={!actionInput.trim() || isSendingAction}
+                  className="flex items-center justify-center rounded-full flex-shrink-0 transition-all hover:brightness-125 disabled:opacity-40"
+                  style={{ width: '32px', height: '32px', background: 'rgba(255,255,255,0.15)', color: '#fff' }}
+                >
+                  {isSendingAction ? <Loader2 size={14} className="animate-spin" /> : <ChevronRight size={16} strokeWidth={2.5} />}
+                </button>
+              </div>
             </div>
           )}
-        {/* Action bar */}
+        {/* Action bar — hidden on choice/requires_action panels */}
         <div
           className="absolute left-0 right-0 z-30 transition-all duration-300"
-          style={{ bottom: actionBarVisible ? '0' : '-110px' }}
+          style={{ bottom: (actionBarVisible && !panel?.requires_action) ? '0' : '-110px' }}
         >
           {/* Input field row (shown when Act/Direct/Image active) */}
           {activeInputMode && (
@@ -871,7 +969,13 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
                 type="text"
                 value={actionInput}
                 onChange={(e) => setActionInput(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Escape') { setActiveInputMode(null); setActionInput(''); } }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape') { setActiveInputMode(null); setActionInput(''); }
+                  if (e.key === 'Enter' && actionInput.trim()) {
+                    const type = activeInputMode === 'act' ? 'take-action' : activeInputMode === 'direct' ? 'steer-story' : 'image';
+                    handleSendAction(actionInput, type as 'take-action' | 'steer-story' | 'image');
+                  }
+                }}
                 placeholder={activeInputMode === 'act' ? 'What do you do?' : activeInputMode === 'direct' ? 'Direct the scene...' : 'Describe the image...'}
                 className="flex-1 outline-none"
                 style={{
@@ -885,11 +989,16 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
                 }}
               />
               <button
-                onClick={() => { toast(`${activeInputMode} — coming soon`); setActiveInputMode(null); setActionInput(''); }}
-                className="flex items-center justify-center rounded-full flex-shrink-0 transition-all hover:brightness-125"
+                onClick={() => {
+                  if (!actionInput.trim()) return;
+                  const type = activeInputMode === 'act' ? 'take-action' : activeInputMode === 'direct' ? 'steer-story' : 'image';
+                  handleSendAction(actionInput, type as 'take-action' | 'steer-story' | 'image');
+                }}
+                disabled={!actionInput.trim() || isSendingAction}
+                className="flex items-center justify-center rounded-full flex-shrink-0 transition-all hover:brightness-125 disabled:opacity-40"
                 style={{ width: '36px', height: '36px', background: 'rgba(255,255,255,0.15)', color: '#fff' }}
               >
-                <ChevronRight size={18} strokeWidth={2.5} />
+                {isSendingAction ? <Loader2 size={16} className="animate-spin" /> : <ChevronRight size={18} strokeWidth={2.5} />}
               </button>
             </div>
           )}
