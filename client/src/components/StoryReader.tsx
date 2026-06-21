@@ -111,6 +111,15 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
   const [worldDetail, setWorldDetail] = useState<{ tags: Array<{ id: number; name: string; is_fandom: boolean; emoji: string | null }>; related_worlds: Array<{ external_id: string; name: string; logline: string; cover_image_url: string | null; owner: { username: string; is_verified: boolean; avatar_url: string | null }; interaction_count: number; tag_name: string; tag_is_fandom: boolean }> } | null>(null);
   // Chapters from journal endpoint
   const [chapters, setChapters] = useState<Array<{ chapter_number: number; panel_external_id: string; image_url: string }>>([]);
+  // Full journal data for Journal tab
+  const [journalData, setJournalData] = useState<{
+    summary: string | null;
+    compressedSummaries: Array<{ type: string; level: number; chapter_numbers: number[]; content: string }>;
+    entityCharacters: Array<{ name: string; state: string; appearance: string; display_headshot_url: string; headshot_url: string }>;
+    entityLocations: Array<{ name: string; description: string; position: string }>;
+    entityMisc: Array<{ name: string; description: string; state: string }>;
+    narrativeThreads: Array<{ id: string; title: string; importance: string; status: string; notes: string[] }>;
+  } | null>(null);
 
   const stopPolling = useCallback(() => {
     if (pollingRef.current) {
@@ -154,10 +163,24 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
         setWorldDetail({ tags: data.tags, related_worlds: data.related_worlds });
       })
       .catch(() => { /* Non-fatal */ });
-    // Fetch journal for chapters
+    // Fetch journal for chapters + journal tab data
     utils.worlds.getJournal.fetch({ worldId: world.external_id })
       .then((data) => {
         setChapters(data.chapters ?? []);
+        const entity = (data as Record<string, unknown>).entityState as {
+          characters?: Array<{ name: string; state: string; appearance: string; display_headshot_url: string; headshot_url: string }>;
+          locations?: Array<{ name: string; description: string; position: string }>;
+          misc?: Array<{ name: string; description: string; state: string }>;
+        } | undefined;
+        const threads = (data as Record<string, unknown>).narrativeThreads as Array<{ id: string; title: string; importance: string; status: string; notes: string[] }> | undefined;
+        setJournalData({
+          summary: data.summary ?? null,
+          compressedSummaries: data.compressedSummaries ?? [],
+          entityCharacters: entity?.characters ?? [],
+          entityLocations: entity?.locations ?? [],
+          entityMisc: entity?.misc ?? [],
+          narrativeThreads: threads ?? [],
+        });
       })
       .catch(() => { /* Non-fatal */ });
   }, []);
@@ -382,6 +405,12 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
             tags={worldDetail?.tags ?? []}
             relatedWorlds={(worldDetail?.related_worlds ?? []) as Array<{ external_id: string; name: string; logline: string; cover_image_url: string | null; owner: { username: string; is_verified: boolean; avatar_url: string | null }; interaction_count: number; tag_name: string; tag_is_fandom: boolean }>}
             chapters={chapters}
+            journalSummary={journalData?.summary}
+            compressedSummaries={journalData?.compressedSummaries}
+            entityCharacters={journalData?.entityCharacters}
+            entityLocations={journalData?.entityLocations}
+            entityMisc={journalData?.entityMisc}
+            narrativeThreads={journalData?.narrativeThreads}
             onNavigateToPanel={(panelId) => loadPanel(panelId, world.external_id)}
             onRemoveBookmark={handleRemoveBookmarkFromMenu}
           />
