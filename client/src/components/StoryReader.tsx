@@ -489,6 +489,34 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
             isLiked={isLiked}
             likeCount={likeCount}
             onToggleLike={handleToggleLike}
+            onRestart={async () => {
+              try {
+                const cookie = localStorage.getItem('freeroam_cookie') ?? '';
+                const accountId = localStorage.getItem('freeroam_account_id') ?? '';
+                const res = await fetch('/api/trpc/worlds.restart?batch=1', {
+                  method: 'POST',
+                  credentials: 'include',
+                  headers: {
+                    'content-type': 'application/json',
+                    ...(cookie ? { 'x-freeroam-cookie': cookie } : {}),
+                    ...(accountId ? { 'x-freeroam-account-id': accountId } : {}),
+                  },
+                  body: JSON.stringify({ '0': { json: { worldId: world.external_id } } }),
+                });
+                if (!res.ok) { toast.error('Restart failed'); return; }
+                const json = await res.json();
+                const data = json?.[0]?.result?.data?.json;
+                if (data?.panel_id) {
+                  setCurrentPanel(data);
+                  setPanelMutation.mutate({ worldId: world.external_id, panelId: data.panel_id });
+                  setIsLoading(false);
+                  setIsNavigating(false);
+                  toast.success('Story restarted from page 1');
+                }
+              } catch {
+                toast.error('Failed to restart story');
+              }
+            }}
           />
 
           {/* Top bar — z-40 so buttons sit above the trigger zone */}

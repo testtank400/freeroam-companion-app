@@ -1196,6 +1196,34 @@ export const appRouter = router({
         return response.json() as Promise<{ success: boolean; message: string; bookmarked: boolean }>;
       }),
 
+    /** Restart a world story from the beginning */
+    restart: publicProcedure
+      .input(z.object({ worldId: z.string() }))
+      .mutation(async ({ input, ctx }) => {
+        const cookie = getFreeroamCookie(ctx);
+        if (!cookie) throw new Error("Cookie not configured in environment");
+
+        const response = await fetch("https://getfreeroam.com/api/nav/restart", {
+          method: "POST",
+          headers: {
+            accept: "*/*",
+            "accept-language": "en-US,en;q=0.9",
+            "content-type": "application/json",
+            cookie,
+            origin: "https://getfreeroam.com",
+            referer: "https://getfreeroam.com",
+            "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36",
+          },
+          body: JSON.stringify({ world_id: input.worldId }),
+        });
+        if (!response.ok) {
+          const text = await response.text();
+          throw new Error(`Restart failed (${response.status}): ${text}`);
+        }
+        // Returns the first panel data (same shape as getPanel)
+        return response.json();
+      }),
+
     /** Get the panel at a specific depth (for page slider navigation) */
     getPanelAtDepth: publicProcedure
       .input(z.object({
