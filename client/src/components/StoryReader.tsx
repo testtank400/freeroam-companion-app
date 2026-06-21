@@ -752,36 +752,39 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
                   </div>
                 )}
 
-                {/* Dialogue text */}
+                {/* Dialogue text — Outfit SemiBold, matches Freeroam spoken style */}
                 {dialogueText && (
                   <p
                     style={{
-                      fontFamily: 'Lora, Georgia, serif',
-                      fontSize: 'clamp(18px, 4.5vw, 26px)',
-                      fontWeight: 700,
-                      color: '#ffffff',
-                      lineHeight: 1.3,
-                      textShadow: '0 2px 12px rgba(0,0,0,0.9)',
+                      fontFamily: 'Outfit, sans-serif',
+                      fontSize: 'clamp(1.22rem, 5.3vw, 1.56rem)',
+                      fontWeight: 600,
+                      color: '#fff',
+                      lineHeight: 1.26,
+                      letterSpacing: '0.004em',
+                      textShadow: '0 0 1px rgba(0,0,0,0.55), 0 1px 2px rgba(0,0,0,0.75), 0 1px 5px rgba(0,0,0,0.5), 0 2px 16px rgba(0,0,0,0.45)',
                       margin: 0,
+                      paddingLeft: '15px',
+                      paddingRight: '26px',
                     }}
                   >
                     {dialogueText}
                   </p>
                 )}
 
-                {/* Narration text (bold italic) */}
+                {/* Narration text — Outfit Medium italic, matches Freeroam narration style */}
                 {narrationText && (
                   <p
                     style={{
-                      fontFamily: 'Lora, Georgia, serif',
-                      fontSize: 'clamp(16px, 4vw, 22px)',
-                      fontWeight: 700,
+                      fontFamily: 'Outfit, sans-serif',
+                      fontSize: 'clamp(1.08rem, 4.4vw, 1.3rem)',
+                      fontWeight: 500,
                       fontStyle: 'italic',
-                      color: 'rgba(255,255,255,0.92)',
-                      lineHeight: 1.4,
-                      textShadow: '0 2px 12px rgba(0,0,0,0.9)',
+                      color: '#f5ecd9',
+                      lineHeight: 1.34,
+                      textShadow: '0 0 1px rgba(0,0,0,0.55), 0 1px 2px rgba(0,0,0,0.75)',
                       margin: 0,
-                      textAlign: 'center',
+                      paddingLeft: '26px',
                     }}
                   >
                     {narrationText}
