@@ -96,6 +96,10 @@ interface StoryMenuProps {
   narrativeThreads?: NarrativeThread[];
   onNavigateToPanel: (panelId: string) => void;
   onRemoveBookmark: (panelId: string) => void;
+  // Like state
+  isLiked?: boolean;
+  likeCount?: number;
+  onToggleLike?: () => void;
 }
 
 const LORA = 'Lora, Georgia, serif';
@@ -487,6 +491,7 @@ export default function StoryMenu({
   progressPanel, bookmarks, chapters, tags, relatedWorlds,
   journalSummary, compressedSummaries = [], canEditSummary, entityCharacters = [], entityLocations = [], entityMisc = [], narrativeThreads = [],
   onNavigateToPanel, onRemoveBookmark,
+  isLiked = false, likeCount, onToggleLike,
 }: StoryMenuProps) {
   const allBookmarkEntries: BookmarkEntry[] = [
     ...(progressPanel ? [progressPanel] : []),
@@ -569,8 +574,18 @@ export default function StoryMenu({
 
               {/* Action icon row */}
               <div className="flex items-center justify-center gap-8 mb-6">
+                {/* Like button — wired */}
+                <button
+                  onClick={onToggleLike ?? (() => toast('Like — coming soon'))}
+                  className="flex flex-col items-center gap-1.5 transition-all hover:brightness-125"
+                  style={{ color: isLiked ? '#f87171' : 'rgba(255,255,255,0.65)' }}
+                >
+                  <Heart size={20} strokeWidth={2} fill={isLiked ? '#f87171' : 'none'} />
+                  <span style={{ fontFamily: LORA, fontSize: '11px', fontStyle: 'italic', color: isLiked ? '#f87171' : 'rgba(255,255,255,0.4)' }}>
+                    {likeCount !== undefined ? likeCount.toLocaleString() : 'Like'}
+                  </span>
+                </button>
                 {[
-                  { icon: <Heart size={20} strokeWidth={2} />, label: 'Like' },
                   { icon: <MessageCircle size={20} strokeWidth={2} />, label: 'Comment' },
                   { icon: <Bookmark size={20} strokeWidth={2} />, label: 'Save' },
                   { icon: <Share2 size={20} strokeWidth={2} />, label: 'Share' },

@@ -102,6 +102,13 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
   const addBookmarkMutation = trpc.worlds.addBookmark.useMutation();
   const removeBookmarkMutation = trpc.worlds.removeBookmark.useMutation();
 
+  // Like state
+  const [isLiked, setIsLiked] = useState(false);
+  const [likeCount, setLikeCount] = useState<number | undefined>(undefined);
+  const [isTogglingLike, setIsTogglingLike] = useState(false);
+  const likeMutation = trpc.worlds.like.useMutation();
+  const unlikeMutation = trpc.worlds.unlike.useMutation();
+
   // Story menu state
   const [menuOpen, setMenuOpen] = useState(false);
   // Full bookmark list with thumbnails (for the menu)
@@ -179,11 +186,13 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
         setBookmarkList(data.bookmarks);
         setProgressPanel(data.progress_panel);
       });
-    // Fetch world detail for tags + related worlds
-    trpcGet<{ tags: Array<{ id: number; name: string; is_fandom: boolean; emoji: string | null }>; related_worlds: Array<{ external_id: string; name: string; logline: string; cover_image_url: string | null; owner: { username: string; is_verified: boolean; avatar_url: string | null }; interaction_count: number; tag_name: string; tag_is_fandom: boolean }> }>('worlds.get', { worldId: world.external_id })
+    // Fetch world detail for tags + related worlds + like state
+    trpcGet<{ tags: Array<{ id: number; name: string; is_fandom: boolean; emoji: string | null }>; related_worlds: Array<{ external_id: string; name: string; logline: string; cover_image_url: string | null; owner: { username: string; is_verified: boolean; avatar_url: string | null }; interaction_count: number; tag_name: string; tag_is_fandom: boolean }>; is_liked: boolean; like_count: number }>('worlds.get', { worldId: world.external_id })
       .then((data) => {
         if (!data) return;
         setWorldDetail({ tags: data.tags, related_worlds: data.related_worlds });
+        setIsLiked(!!data.is_liked);
+        setLikeCount(data.like_count ?? 0);
       });
     // Fetch journal for chapters + journal tab data
     trpcGet<{ summary: string | null; chapters: Array<{ chapter_number: number; panel_external_id: string; image_url: string }>; compressedSummaries: Array<{ type: string; level: number; chapter_numbers: number[]; content: string }>; entityState?: { characters?: Array<{ name: string; state: string; appearance: string; display_headshot_url: string; headshot_url: string }>; locations?: Array<{ name: string; description: string; position: string }>; misc?: Array<{ name: string; description: string; state: string }> }; narrativeThreads?: Array<{ id: string; title: string; importance: string; status: string; notes: string[] }> }>('worlds.getJournal', { worldId: world.external_id })
@@ -235,6 +244,28 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
     if (isNavigating) return;
     await loadPanel(actionPanelId, world.external_id);
   }, [isNavigating, loadPanel, world.external_id]);
+
+  const handleToggleLike = useCallback(async () => {
+    if (isTogglingLike) return;
+    setIsTogglingLike(true);
+    const wasLiked = isLiked;
+    // Optimistic update
+    setIsLiked(!wasLiked);
+    setLikeCount(prev => prev !== undefined ? (wasLiked ? Math.max(0, prev - 1) : prev + 1) : undefined);
+    try {
+      const result = wasLiked
+        ? await unlikeMutation.mutateAsync({ worldId: world.external_id })
+        : await likeMutation.mutateAsync({ worldId: world.external_id });
+      setLikeCount(result.like_count);
+    } catch (err) {
+      // Rollback
+      setIsLiked(wasLiked);
+      setLikeCount(prev => prev !== undefined ? (wasLiked ? prev + 1 : Math.max(0, prev - 1)) : undefined);
+      toast.error(err instanceof Error ? err.message : 'Failed to update like');
+    } finally {
+      setIsTogglingLike(false);
+    }
+  }, [isTogglingLike, isLiked, world.external_id, likeMutation, unlikeMutation]);
 
   const handleRemoveBookmarkFromMenu = useCallback(async (panelId: string) => {
     // Optimistic update
@@ -430,6 +461,9 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
             narrativeThreads={journalData?.narrativeThreads}
             onNavigateToPanel={(panelId) => loadPanel(panelId, world.external_id)}
             onRemoveBookmark={handleRemoveBookmarkFromMenu}
+            isLiked={isLiked}
+            likeCount={likeCount}
+            onToggleLike={handleToggleLike}
           />
 
           {/* Top bar — z-40 so buttons sit above the trigger zone */}
