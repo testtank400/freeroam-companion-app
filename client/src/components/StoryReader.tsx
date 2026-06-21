@@ -109,6 +109,8 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
   const [progressPanel, setProgressPanel] = useState<{ panel_external_id: string; depth: number; image_url: string; updated_at: string; type: 'progress' } | null>(null);
   // World detail for tags and related worlds
   const [worldDetail, setWorldDetail] = useState<{ tags: Array<{ id: number; name: string; is_fandom: boolean; emoji: string | null }>; related_worlds: Array<{ external_id: string; name: string; logline: string; cover_image_url: string | null; owner: { username: string; is_verified: boolean; avatar_url: string | null }; interaction_count: number; tag_name: string; tag_is_fandom: boolean }> } | null>(null);
+  // Chapters from journal endpoint
+  const [chapters, setChapters] = useState<Array<{ chapter_number: number; panel_external_id: string; image_url: string }>>([]);
 
   const stopPolling = useCallback(() => {
     if (pollingRef.current) {
@@ -150,6 +152,12 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
     utils.worlds.get.fetch({ worldId: world.external_id })
       .then((data) => {
         setWorldDetail({ tags: data.tags, related_worlds: data.related_worlds });
+      })
+      .catch(() => { /* Non-fatal */ });
+    // Fetch journal for chapters
+    utils.worlds.getJournal.fetch({ worldId: world.external_id })
+      .then((data) => {
+        setChapters(data.chapters ?? []);
       })
       .catch(() => { /* Non-fatal */ });
   }, []);
@@ -373,6 +381,7 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
             bookmarks={bookmarkList}
             tags={worldDetail?.tags ?? []}
             relatedWorlds={(worldDetail?.related_worlds ?? []) as Array<{ external_id: string; name: string; logline: string; cover_image_url: string | null; owner: { username: string; is_verified: boolean; avatar_url: string | null }; interaction_count: number; tag_name: string; tag_is_fandom: boolean }>}
+            chapters={chapters}
             onNavigateToPanel={(panelId) => loadPanel(panelId, world.external_id)}
             onRemoveBookmark={handleRemoveBookmarkFromMenu}
           />
