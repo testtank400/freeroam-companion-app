@@ -404,10 +404,18 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
   const canGoForward = !isAwaitingChoice && !!panel?.next_panel_id;
 
   // Text rendering logic
+  // speech_bubbles[0].style can be: 'spoken', 'narration', 'action', etc.
   const isSpoken = speechBubble?.style === 'spoken';
+  const isNarrationBubble = speechBubble?.style === 'narration';
+  const isActionBubble = speechBubble?.style === 'action';
   const speakerName = isSpoken ? speechBubble?.character ?? null : null;
-  const dialogueText = speechBubble?.text ?? null;
-  const hasText = !!(narration || dialogueText);
+  // Narration comes from either content.narration field OR speech_bubble with style='narration'
+  const narrationText = narration ?? (isNarrationBubble ? speechBubble?.text ?? null : null);
+  // Dialogue is only spoken style
+  const dialogueText = isSpoken ? speechBubble?.text ?? null : null;
+  // Action text (user's own action, shown differently)
+  const actionText = isActionBubble ? speechBubble?.text ?? null : null;
+  const hasText = !!(narrationText || dialogueText || actionText);
   const accentColor = speakerName ? getAccentColor(speakerName) : null;
 
   // Bookmark state for current panel
@@ -761,8 +769,8 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
                   </p>
                 )}
 
-                {/* Narration text */}
-                {narration && (
+                {/* Narration text (bold italic) */}
+                {narrationText && (
                   <p
                     style={{
                       fontFamily: 'Lora, Georgia, serif',
@@ -776,7 +784,26 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
                       textAlign: 'center',
                     }}
                   >
-                    {narration}
+                    {narrationText}
+                  </p>
+                )}
+
+                {/* Action text (user's action, italic amber) */}
+                {actionText && (
+                  <p
+                    style={{
+                      fontFamily: 'Lora, Georgia, serif',
+                      fontSize: 'clamp(15px, 3.8vw, 20px)',
+                      fontWeight: 600,
+                      fontStyle: 'italic',
+                      color: 'rgba(255,220,150,0.9)',
+                      lineHeight: 1.4,
+                      textShadow: '0 2px 12px rgba(0,0,0,0.9)',
+                      margin: 0,
+                      textAlign: 'center',
+                    }}
+                  >
+                    {actionText}
                   </p>
                 )}
               </div>
