@@ -517,6 +517,24 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
       {/* Dark scrim */}
       <div className="absolute inset-0" style={{ background: 'rgba(0,0,0,0.5)' }} />
 
+      {/* Full-viewport invisible tap zones — match Freeroam's 25% width tap areas */}
+      {canGoBack && !isNavigating && (
+        <div
+          className="fixed left-0 top-0 bottom-0 z-10"
+          style={{ width: '25vw', cursor: 'pointer' }}
+          onClick={() => handleNavigate('prev')}
+          aria-label="Previous panel"
+        />
+      )}
+      {(canGoForward || isPolling || isRegeneratePolling) && !isNavigating && (
+        <div
+          className="fixed right-0 top-0 bottom-0 z-10"
+          style={{ width: '25vw', cursor: 'pointer' }}
+          onClick={() => handleNavigate('next')}
+          aria-label="Next panel"
+        />
+      )}
+
       {/* Left navigation halo */}
       <button
         onClick={() => handleNavigate('prev')}
