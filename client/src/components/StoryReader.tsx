@@ -864,6 +864,7 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
                       textShadow: '0 0 1px rgba(0,0,0,0.55), 0 1px 2px rgba(0,0,0,0.75)',
                       margin: 0,
                       paddingLeft: '26px',
+                      paddingRight: '26px',
                     }}
                   >
                     {narrationText}
