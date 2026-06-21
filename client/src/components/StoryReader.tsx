@@ -869,19 +869,19 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
                   </p>
                 )}
 
-                {/* Action text (user's action, italic amber) */}
+                {/* Action text — same style as narration: Outfit Medium italic */}
                 {actionText && (
                   <p
                     style={{
-                      fontFamily: 'Lora, Georgia, serif',
-                      fontSize: 'clamp(15px, 3.8vw, 20px)',
-                      fontWeight: 600,
+                      fontFamily: 'Outfit, sans-serif',
+                      fontSize: 'clamp(1.08rem, 4.4vw, 1.3rem)',
+                      fontWeight: 500,
                       fontStyle: 'italic',
-                      color: 'rgba(255,220,150,0.9)',
-                      lineHeight: 1.4,
-                      textShadow: '0 2px 12px rgba(0,0,0,0.9)',
+                      color: '#f5ecd9',
+                      lineHeight: 1.34,
+                      textShadow: '0 0 1px rgba(0,0,0,0.55), 0 1px 2px rgba(0,0,0,0.75)',
                       margin: 0,
-                      textAlign: 'center',
+                      paddingLeft: '26px',
                     }}
                   >
                     {actionText}
