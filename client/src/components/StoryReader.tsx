@@ -767,7 +767,7 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
                     style={{
                       fontFamily: 'Lora, Georgia, serif',
                       fontSize: 'clamp(16px, 4vw, 22px)',
-                      fontWeight: 400,
+                      fontWeight: 700,
                       fontStyle: 'italic',
                       color: 'rgba(255,255,255,0.92)',
                       lineHeight: 1.4,
