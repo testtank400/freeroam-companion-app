@@ -114,7 +114,8 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
       setActiveInputMode(null);
     } else {
       setActiveInputMode(mode);
-      setActionInput('');
+      // Auto-fill prefix for Image mode
+      setActionInput(mode === 'image' ? 'Change the image to ' : '');
     }
   };
 
@@ -379,8 +380,25 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
     if (!currentPanel || isNavigating || isPolling) return;
     const targetId = direction === 'prev' ? currentPanel.prev_panel_id : currentPanel.next_panel_id;
     if (!targetId) return;
+    // For action panels going forward: the next panel may not be generated yet.
+    // Start polling next-ready instead of loading directly to avoid 404.
+    if (direction === 'next' && currentPanel.is_action) {
+      setIsPolling(true);
+      pollingRef.current = setInterval(async () => {
+        try {
+          const result = await utils.worlds.nextReady.fetch({ panelId: currentPanel.panel_id });
+          if (result.ready) {
+            stopPolling();
+            await loadPanel(result.panel_id, world.external_id);
+          }
+        } catch {
+          // Non-fatal — keep polling
+        }
+      }, 1000);
+      return;
+    }
     await loadPanel(targetId, world.external_id);
-  }, [currentPanel, isNavigating, isPolling, loadPanel, world.external_id]);
+  }, [currentPanel, isNavigating, isPolling, loadPanel, world.external_id, utils, stopPolling]);
 
   const handleChoice = useCallback(async (actionPanelId: string) => {
     if (isNavigating) return;
