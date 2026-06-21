@@ -792,7 +792,7 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
               src={imageUrl}
               alt=""
               className="w-full h-full"
-              style={{ objectFit: 'contain', objectPosition: 'center top', opacity: isNavigating ? 0.35 : 1, transition: 'opacity 0.15s ease' }}
+              style={{ objectFit: 'cover', objectPosition: 'center top', opacity: isNavigating ? 0.35 : 1, transition: 'opacity 0.15s ease' }}
             />
           )}
 
