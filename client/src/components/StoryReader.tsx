@@ -485,8 +485,9 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
   const isNarrationBubble = speechBubble?.style === 'narration';
   const isActionBubble = speechBubble?.style === 'action';
   const speakerName = isSpoken ? speechBubble?.character ?? null : null;
-  // Narration comes from either content.narration field OR speech_bubble with style='narration'
-  const narrationText = narration ?? (isNarrationBubble ? speechBubble?.text ?? null : null);
+  // Narration: content.narration field, OR speech_bubble with style='narration', OR any unknown/null style (fallback)
+  const isUnknownStyle = speechBubble && !isSpoken && !isNarrationBubble && !isActionBubble;
+  const narrationText = narration ?? ((isNarrationBubble || isUnknownStyle) ? speechBubble?.text ?? null : null);
   // Dialogue is only spoken style
   const dialogueText = isSpoken ? speechBubble?.text ?? null : null;
   // Action text (user's own action, shown differently)
