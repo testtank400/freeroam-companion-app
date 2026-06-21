@@ -529,7 +529,7 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
       {(canGoForward || isPolling || isRegeneratePolling) && !isNavigating && (
         <div
           className="fixed right-0 top-0 bottom-0 z-10"
-          style={{ width: '25vw', cursor: 'pointer' }}
+          style={{ width: '60vw', cursor: 'pointer' }}
           onClick={() => handleNavigate('next')}
           aria-label="Next panel"
         />
