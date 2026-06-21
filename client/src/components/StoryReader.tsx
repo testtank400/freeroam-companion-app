@@ -104,6 +104,16 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
 
   // Action bar state
   const [actionBarVisible, setActionBarVisible] = useState(true);
+  const [activeInputMode, setActiveInputMode] = useState<'act' | 'direct' | 'image' | null>(null);
+  const [actionInput, setActionInput] = useState('');
+
+  const handleActionBarButton = (mode: 'act' | 'direct' | 'image') => {
+    if (activeInputMode === mode) {
+      setActiveInputMode(null); // toggle off
+    } else {
+      setActiveInputMode(mode);
+    }
+  };
 
   // Regenerate polling state
   const [isRegeneratePolling, setIsRegeneratePolling] = useState(false);
@@ -710,7 +720,10 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
                 style={{ background: 'linear-gradient(to bottom, transparent 38%, rgba(0,0,0,0.35) 58%, rgba(0,0,0,0.72) 78%, rgba(0,0,0,0.88) 100%)' }}
               />
 
-              <div className="absolute bottom-0 left-0 right-0 z-10 px-5 pb-7">
+              <div
+                className="absolute bottom-0 left-0 right-0 z-10 px-5"
+                style={{ paddingBottom: actionBarVisible ? (activeInputMode ? '110px' : '68px') : '28px', transition: 'padding-bottom 0.3s ease' }}
+              >
                 {/* Character name label (spoken dialogue only) */}
                 {speakerName && accentColor && (
                   <div className="mb-2">
@@ -813,10 +826,43 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
         {/* Action bar */}
         <div
           className="absolute left-0 right-0 z-30 transition-all duration-300"
-          style={{
-            bottom: actionBarVisible ? '0' : '-60px',
-          }}
+          style={{ bottom: actionBarVisible ? '0' : '-110px' }}
         >
+          {/* Input field row (shown when Act/Direct/Image active) */}
+          {activeInputMode && (
+            <div
+              className="flex items-center gap-2 px-3 py-2"
+              style={{ background: 'rgba(10,10,16,0.92)', borderTop: '1px solid rgba(255,255,255,0.06)' }}
+            >
+              <input
+                autoFocus
+                type="text"
+                value={actionInput}
+                onChange={(e) => setActionInput(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Escape') { setActiveInputMode(null); setActionInput(''); } }}
+                placeholder={activeInputMode === 'act' ? 'What do you do?' : activeInputMode === 'direct' ? 'Direct the scene...' : 'Describe the image...'}
+                className="flex-1 outline-none"
+                style={{
+                  fontFamily: 'Lora, Georgia, serif',
+                  fontSize: '14px',
+                  fontStyle: 'italic',
+                  color: 'rgba(255,255,255,0.85)',
+                  background: 'transparent',
+                  border: 'none',
+                  minWidth: 0,
+                }}
+              />
+              <button
+                onClick={() => { toast(`${activeInputMode} — coming soon`); setActiveInputMode(null); setActionInput(''); }}
+                className="flex items-center justify-center rounded-full flex-shrink-0 transition-all hover:brightness-125"
+                style={{ width: '36px', height: '36px', background: 'rgba(255,255,255,0.15)', color: '#fff' }}
+              >
+                <ChevronRight size={18} strokeWidth={2.5} />
+              </button>
+            </div>
+          )}
+
+          {/* Pill buttons row */}
           <div
             className="flex items-center gap-1.5 px-2 py-2"
             style={{ background: 'rgba(10,10,16,0.88)', backdropFilter: 'blur(12px)', borderTop: '1px solid rgba(255,255,255,0.07)' }}
@@ -834,7 +880,7 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
 
             {/* Toggle down button */}
             <button
-              onClick={() => setActionBarVisible(false)}
+              onClick={() => { setActionBarVisible(false); setActiveInputMode(null); setActionInput(''); }}
               className="flex items-center justify-center rounded-full flex-shrink-0 transition-all hover:bg-white/10"
               style={{ width: '34px', height: '34px', color: 'rgba(255,255,255,0.6)' }}
             >
@@ -844,23 +890,23 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
             {/* Pill action buttons */}
             <div className="flex items-center gap-1.5 overflow-x-auto flex-1" style={{ scrollbarWidth: 'none' }}>
               {[
-                { icon: <Zap size={13} strokeWidth={2} />, label: 'Act' },
-                { icon: <Clapperboard size={13} strokeWidth={2} />, label: 'Direct' },
-                { icon: <Users size={13} strokeWidth={2} />, label: 'Characters' },
-                { icon: <ImageLucide size={13} strokeWidth={2} />, label: 'Image' },
-                { icon: <Share2 size={13} strokeWidth={2} />, label: 'Share' },
-              ].map(({ icon, label }) => (
+                { icon: <Zap size={13} strokeWidth={2} />, label: 'Act', mode: 'act' as const },
+                { icon: <Clapperboard size={13} strokeWidth={2} />, label: 'Direct', mode: 'direct' as const },
+                { icon: <Users size={13} strokeWidth={2} />, label: 'Characters', mode: null },
+                { icon: <ImageLucide size={13} strokeWidth={2} />, label: 'Image', mode: 'image' as const },
+                { icon: <Share2 size={13} strokeWidth={2} />, label: 'Share', mode: null },
+              ].map(({ icon, label, mode }) => (
                 <button
                   key={label}
-                  onClick={() => toast(`${label} — coming soon`)}
+                  onClick={() => mode ? handleActionBarButton(mode) : toast(`${label} — coming soon`)}
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-full flex-shrink-0 transition-all hover:brightness-125"
                   style={{
                     fontFamily: 'Lora, Georgia, serif',
                     fontSize: '13px',
                     fontStyle: 'italic',
-                    color: 'rgba(255,255,255,0.8)',
-                    background: 'rgba(255,255,255,0.1)',
-                    border: '1px solid rgba(255,255,255,0.15)',
+                    color: activeInputMode === mode ? '#fff' : 'rgba(255,255,255,0.8)',
+                    background: activeInputMode === mode ? 'rgba(255,255,255,0.22)' : 'rgba(255,255,255,0.1)',
+                    border: `1px solid ${activeInputMode === mode ? 'rgba(255,255,255,0.35)' : 'rgba(255,255,255,0.15)'}`,
                     whiteSpace: 'nowrap',
                   }}
                 >
