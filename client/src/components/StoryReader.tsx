@@ -12,7 +12,7 @@
 import { trpc } from '@/lib/trpc';
 import { ApiWorld } from '@/components/WorldCard';
 import StoryMenu from '@/components/StoryMenu';
-import { Bookmark, ChevronLeft, ChevronRight, X, Loader2, ImageIcon } from 'lucide-react';
+import { Bookmark, ChevronLeft, ChevronRight, X, Loader2, ImageIcon, Home, ChevronDown, ChevronUp, Zap, Clapperboard, Users, Image as ImageLucide, Share2 } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
@@ -101,6 +101,9 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
   const [isTogglingBookmark, setIsTogglingBookmark] = useState(false);
   const addBookmarkMutation = trpc.worlds.addBookmark.useMutation();
   const removeBookmarkMutation = trpc.worlds.removeBookmark.useMutation();
+
+  // Action bar state
+  const [actionBarVisible, setActionBarVisible] = useState(true);
 
   // Regenerate polling state
   const [isRegeneratePolling, setIsRegeneratePolling] = useState(false);
@@ -807,6 +810,89 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
               ))}
             </div>
           )}
+        {/* Action bar */}
+        <div
+          className="absolute left-0 right-0 z-30 transition-all duration-300"
+          style={{
+            bottom: actionBarVisible ? '0' : '-60px',
+          }}
+        >
+          <div
+            className="flex items-center gap-1.5 px-2 py-2"
+            style={{ background: 'rgba(10,10,16,0.88)', backdropFilter: 'blur(12px)', borderTop: '1px solid rgba(255,255,255,0.07)' }}
+          >
+            {/* Home button */}
+            <a
+              href="https://getfreeroam.com"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center justify-center rounded-full flex-shrink-0 transition-all hover:bg-white/10"
+              style={{ width: '34px', height: '34px', color: 'rgba(255,255,255,0.6)' }}
+            >
+              <Home size={15} strokeWidth={2} />
+            </a>
+
+            {/* Toggle down button */}
+            <button
+              onClick={() => setActionBarVisible(false)}
+              className="flex items-center justify-center rounded-full flex-shrink-0 transition-all hover:bg-white/10"
+              style={{ width: '34px', height: '34px', color: 'rgba(255,255,255,0.6)' }}
+            >
+              <ChevronDown size={15} strokeWidth={2} />
+            </button>
+
+            {/* Pill action buttons */}
+            <div className="flex items-center gap-1.5 overflow-x-auto flex-1" style={{ scrollbarWidth: 'none' }}>
+              {[
+                { icon: <Zap size={13} strokeWidth={2} />, label: 'Act' },
+                { icon: <Clapperboard size={13} strokeWidth={2} />, label: 'Direct' },
+                { icon: <Users size={13} strokeWidth={2} />, label: 'Characters' },
+                { icon: <ImageLucide size={13} strokeWidth={2} />, label: 'Image' },
+                { icon: <Share2 size={13} strokeWidth={2} />, label: 'Share' },
+              ].map(({ icon, label }) => (
+                <button
+                  key={label}
+                  onClick={() => toast(`${label} — coming soon`)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-full flex-shrink-0 transition-all hover:brightness-125"
+                  style={{
+                    fontFamily: 'Lora, Georgia, serif',
+                    fontSize: '13px',
+                    fontStyle: 'italic',
+                    color: 'rgba(255,255,255,0.8)',
+                    background: 'rgba(255,255,255,0.1)',
+                    border: '1px solid rgba(255,255,255,0.15)',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {icon}
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Action bar collapsed — show up arrow to restore */}
+        {!actionBarVisible && (
+          <button
+            onClick={() => setActionBarVisible(true)}
+            onTouchStart={(e) => {
+              const startY = e.touches[0].clientY;
+              const onMove = (te: TouchEvent) => {
+                if (startY - te.touches[0].clientY > 30) {
+                  setActionBarVisible(true);
+                  window.removeEventListener('touchmove', onMove);
+                }
+              };
+              window.addEventListener('touchmove', onMove, { passive: true });
+              setTimeout(() => window.removeEventListener('touchmove', onMove), 2000);
+            }}
+            className="absolute bottom-2 left-1/2 -translate-x-1/2 z-30 flex items-center justify-center px-4 py-1.5 rounded-full transition-all hover:brightness-125"
+            style={{ background: 'rgba(10,10,16,0.75)', border: '1px solid rgba(255,255,255,0.15)', color: 'rgba(255,255,255,0.6)' }}
+          >
+            <ChevronUp size={14} strokeWidth={2} />
+          </button>
+        )}
         </div>
       </div>
     </div>
