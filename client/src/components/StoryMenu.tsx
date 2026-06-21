@@ -572,8 +572,6 @@ export default function StoryMenu({
   const [topTab, setTopTab] = useState<'story' | 'journal'>('story');
   const [journalTab, setJournalTab] = useState<'summary' | 'state' | 'threads' | 'preferences'>('summary');
 
-  const swipeTouchStartY = useRef<number | null>(null);
-
   return (
     <>
       {isOpen && (
@@ -591,13 +589,6 @@ export default function StoryMenu({
           borderBottomLeftRadius: '20px',
           borderBottomRightRadius: '20px',
           boxShadow: '0 12px 48px rgba(0,0,0,0.7)',
-        }}
-        onTouchStart={(e) => { swipeTouchStartY.current = e.touches[0].clientY; }}
-        onTouchEnd={(e) => {
-          if (swipeTouchStartY.current === null) return;
-          const dy = e.changedTouches[0].clientY - swipeTouchStartY.current;
-          if (dy < -50) onClose();
-          swipeTouchStartY.current = null;
         }}
       >
         <div className="mx-auto px-5 pt-4 pb-8" style={{ maxWidth: '680px' }}>
