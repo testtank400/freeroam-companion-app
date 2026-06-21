@@ -4,7 +4,8 @@
 // Journal sub-tabs: Summary | State | Threads | Preferences (placeholder)
 
 import { ApiWorld } from '@/components/WorldCard';
-import { Heart, MessageCircle, Bookmark, Share2, RotateCcw, RefreshCw, Pencil, ChevronDown } from 'lucide-react';
+import { trpc } from '@/lib/trpc';
+import { Heart, MessageCircle, Bookmark, Share2, RotateCcw, RefreshCw, Pencil, ChevronDown, Check, X as XIcon } from 'lucide-react';
 import { useRef, useState } from 'react';
 import { toast } from 'sonner';
 
@@ -88,6 +89,7 @@ interface StoryMenuProps {
   // Journal data
   journalSummary?: string | null;
   compressedSummaries?: CompressedSummary[];
+  canEditSummary?: boolean;
   entityCharacters?: EntityCharacter[];
   entityLocations?: EntityLocation[];
   entityMisc?: EntityMisc[];
@@ -127,23 +129,96 @@ function ThumbnailCard({ imageUrl, label, sublabel, onRemove, onClick }: {
 
 // ─── Journal sub-views ────────────────────────────────────────────────────────
 
-function JournalSummary({ compressedSummaries }: { compressedSummaries: CompressedSummary[] }) {
+function JournalSummary({
+  compressedSummaries,
+  canEdit,
+  worldId,
+}: {
+  compressedSummaries: CompressedSummary[];
+  canEdit?: boolean;
+  worldId: string;
+}) {
+  const [isEditing, setIsEditing] = useState(false);
+  const [drafts, setDrafts] = useState<string[]>([]);
+  const [isSaving, setIsSaving] = useState(false);
+  const editSummaryMutation = trpc.worlds.editSummary.useMutation();
+
+  const enterEdit = () => {
+    setDrafts(compressedSummaries.map(s => s.content));
+    setIsEditing(true);
+  };
+
+  const cancelEdit = () => {
+    setDrafts([]);
+    setIsEditing(false);
+  };
+
+  const saveEdit = async () => {
+    setIsSaving(true);
+    try {
+      const dirtyBlocks = compressedSummaries
+        .map((s, i) => ({ index: i, original: s.content, draft: drafts[i] }))
+        .filter(b => b.draft !== b.original);
+      if (dirtyBlocks.length === 0) { setIsEditing(false); return; }
+      await Promise.all(
+        dirtyBlocks.map(b => editSummaryMutation.mutateAsync({ worldId, summary: b.draft, blockIndex: b.index }))
+      );
+      // Update local content with saved values
+      dirtyBlocks.forEach(b => { compressedSummaries[b.index].content = b.draft; });
+      toast.success('Summary saved.');
+      setIsEditing(false);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to save summary');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   if (!compressedSummaries || compressedSummaries.length === 0) {
     return <p style={{ fontFamily: LORA, fontSize: '14px', fontStyle: 'italic', color: 'rgba(255,255,255,0.35)', textAlign: 'center', padding: '24px 0' }}>No summary yet.</p>;
   }
+
   return (
-    <div className="space-y-6">
-      {compressedSummaries.map((s, i) => {
-        const min = Math.min(...s.chapter_numbers);
-        const max = Math.max(...s.chapter_numbers);
-        const label = min === max ? `Chapter ${min}` : `Chapters ${min}–${max}`;
-        return (
-          <div key={i}>
-            <p style={{ fontFamily: LORA, fontSize: '14px', fontWeight: 700, color: '#fff', marginBottom: '8px' }}>{label}</p>
-            <p style={{ fontFamily: LORA, fontSize: '13px', color: 'rgba(255,255,255,0.7)', lineHeight: 1.6 }}>{s.content}</p>
-          </div>
-        );
-      })}
+    <div>
+      {canEdit && !isEditing && (
+        <div className="flex justify-center mb-4">
+          <button onClick={enterEdit} className="flex items-center gap-2 px-4 py-2 rounded-full transition-all hover:brightness-125" style={{ fontFamily: LORA, fontSize: '13px', fontStyle: 'italic', color: 'rgba(255,255,255,0.75)', background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.14)' }}>
+            <Pencil size={13} strokeWidth={2} /> Edit
+          </button>
+        </div>
+      )}
+      <div className="space-y-5">
+        {compressedSummaries.map((s, i) => {
+          const min = Math.min(...s.chapter_numbers);
+          const max = Math.max(...s.chapter_numbers);
+          const label = min === max ? `Chapter ${min}` : `Chapters ${min}–${max}`;
+          return (
+            <div key={i}>
+              <p style={{ fontFamily: LORA, fontSize: '14px', fontWeight: 700, color: '#fff', marginBottom: '8px' }}>{label}</p>
+              {isEditing ? (
+                <textarea
+                  value={drafts[i] ?? s.content}
+                  onChange={(e) => { const next = [...drafts]; next[i] = e.target.value; setDrafts(next); }}
+                  rows={6}
+                  style={{ width: '100%', fontFamily: LORA, fontSize: '13px', color: 'rgba(255,255,255,0.85)', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '10px', padding: '12px', lineHeight: 1.6, resize: 'vertical', outline: 'none' }}
+                />
+              ) : (
+                <p style={{ fontFamily: LORA, fontSize: '13px', color: 'rgba(255,255,255,0.7)', lineHeight: 1.6 }}>{s.content}</p>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      {isEditing && (
+        <div className="flex items-center gap-3 mt-5">
+          <button onClick={cancelEdit} disabled={isSaving} className="flex items-center gap-2 px-4 py-2 rounded-full transition-all hover:brightness-125 disabled:opacity-50" style={{ fontFamily: LORA, fontSize: '13px', fontStyle: 'italic', color: 'rgba(255,255,255,0.65)', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)' }}>
+            <XIcon size={13} strokeWidth={2} /> Cancel
+          </button>
+          <button onClick={saveEdit} disabled={isSaving} className="flex items-center gap-2 px-5 py-2 rounded-full transition-all hover:brightness-125 disabled:opacity-50" style={{ fontFamily: LORA, fontSize: '13px', fontStyle: 'italic', color: '#fff', background: 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.25)' }}>
+            <Check size={13} strokeWidth={2.5} /> {isSaving ? 'Saving...' : 'Save'}
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -233,7 +308,7 @@ function JournalThreads({ threads }: { threads: NarrativeThread[] }) {
 export default function StoryMenu({
   isOpen, onClose, world, currentDepth, totalDepth,
   progressPanel, bookmarks, chapters, tags, relatedWorlds,
-  journalSummary, compressedSummaries = [], entityCharacters = [], entityLocations = [], entityMisc = [], narrativeThreads = [],
+  journalSummary, compressedSummaries = [], canEditSummary, entityCharacters = [], entityLocations = [], entityMisc = [], narrativeThreads = [],
   onNavigateToPanel, onRemoveBookmark,
 }: StoryMenuProps) {
   const allBookmarkEntries: BookmarkEntry[] = [
@@ -444,7 +519,7 @@ export default function StoryMenu({
               </div>
 
               {/* Journal content */}
-              {journalTab === 'summary' && <JournalSummary compressedSummaries={compressedSummaries} />}
+              {journalTab === 'summary' && <JournalSummary compressedSummaries={compressedSummaries} canEdit={canEditSummary} worldId={world.external_id} />}
               {journalTab === 'state' && <JournalState characters={entityCharacters} locations={entityLocations} misc={entityMisc} />}
               {journalTab === 'threads' && <JournalThreads threads={narrativeThreads} />}
               {journalTab === 'preferences' && (

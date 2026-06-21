@@ -423,6 +423,7 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
             chapters={chapters}
             journalSummary={journalData?.summary}
             compressedSummaries={journalData?.compressedSummaries}
+            canEditSummary={!!(journalData)}
             entityCharacters={journalData?.entityCharacters}
             entityLocations={journalData?.entityLocations}
             entityMisc={journalData?.entityMisc}
