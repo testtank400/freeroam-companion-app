@@ -827,24 +827,23 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
                 className="absolute bottom-0 left-0 right-0 z-10 px-5"
                 style={{ paddingBottom: '110px' }}
               >
-                {/* Character name label (spoken dialogue only) — centered like Freeroam */}
+                {/* Character name label (spoken dialogue only) — left-aligned like Freeroam */}
                 {speakerName && accentColor && (
-                  <div className="mb-2" style={{ textAlign: 'center' }}>
+                  <div className="mb-2" style={{ paddingLeft: '26px' }}>
                     <p
                       style={{
                         fontFamily: 'Outfit, sans-serif',
                         fontSize: '14px',
                         fontWeight: 600,
                         color: accentColor,
-                        letterSpacing: '0.05em',
-                        marginBottom: '6px',
-                        textTransform: 'uppercase',
+                        letterSpacing: '0.03em',
+                        marginBottom: '4px',
                       }}
                     >
                       {speakerName}
                     </p>
-                    {/* Accent underline — centered */}
-                    <div style={{ width: '32px', height: '2px', background: accentColor, borderRadius: '1px', opacity: 0.8, margin: '0 auto' }} />
+                    {/* Accent underline */}
+                    <div style={{ width: '32px', height: '2px', background: accentColor, borderRadius: '1px', opacity: 0.8 }} />
                   </div>
                 )}
 
@@ -864,7 +863,6 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
                       margin: 0,
                       paddingLeft: '26px',
                       paddingRight: '26px',
-                      textAlign: 'center',
                     }}
                   >
                     {dialogueText}
