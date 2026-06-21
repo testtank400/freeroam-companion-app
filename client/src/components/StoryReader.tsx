@@ -722,7 +722,7 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
 
               <div
                 className="absolute bottom-0 left-0 right-0 z-10 px-5"
-                style={{ paddingBottom: actionBarVisible ? (activeInputMode ? '110px' : '68px') : '28px', transition: 'padding-bottom 0.3s ease' }}
+                style={{ paddingBottom: '110px' }}
               >
                 {/* Character name label (spoken dialogue only) */}
                 {speakerName && accentColor && (
