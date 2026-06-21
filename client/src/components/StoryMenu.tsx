@@ -773,7 +773,7 @@ export default function StoryMenu({
                   <p className="mb-3 uppercase tracking-widest" style={{ fontFamily: LORA, fontSize: '10px', fontWeight: 600, color: 'rgba(255,255,255,0.35)', letterSpacing: '0.15em' }}>Bookmarks</p>
                   <div className="flex gap-3 overflow-x-auto pb-2" style={{ scrollbarWidth: 'none' }}>
                     {allBookmarkEntries.map((entry) => (
-                      <ThumbnailCard key={entry.panel_external_id} imageUrl={entry.image_url} label={`Page ${entry.depth}`} sublabel={entry.type === 'progress' ? 'Progress' : 'Bookmark'} onRemove={entry.type === 'bookmark' ? () => onRemoveBookmark(entry.panel_external_id) : undefined} onClick={() => { onNavigateToPanel(entry.panel_external_id); onClose(); }} />
+                      <ThumbnailCard key={`${entry.type}-${entry.panel_external_id}`} imageUrl={entry.image_url} label={`Page ${entry.depth}`} sublabel={entry.type === 'progress' ? 'Progress' : 'Bookmark'} onRemove={entry.type === 'bookmark' ? () => onRemoveBookmark(entry.panel_external_id) : undefined} onClick={() => { onNavigateToPanel(entry.panel_external_id); onClose(); }} />
                     ))}
                   </div>
                 </div>
