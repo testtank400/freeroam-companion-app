@@ -148,41 +148,57 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
   useEffect(() => {
     loadPanel(initialPanelId, world.external_id);
     requestAnimationFrame(() => setVisible(true));
+
+    // Helper: call tRPC endpoint directly (bypasses query cache) so errors don't hit the global error handler
+    const trpcGet = async <T,>(procedure: string, input: Record<string, unknown>): Promise<T | null> => {
+      try {
+        const cookie = localStorage.getItem('freeroam_cookie') ?? '';
+        const accountId = localStorage.getItem('freeroam_account_id') ?? '';
+        const params = encodeURIComponent(JSON.stringify({ '0': { json: input } }));
+        const res = await fetch(`/api/trpc/${procedure}?batch=1&input=${params}`, {
+          credentials: 'include',
+          headers: {
+            ...(cookie ? { 'x-freeroam-cookie': cookie } : {}),
+            ...(accountId ? { 'x-freeroam-account-id': accountId } : {}),
+          },
+        });
+        if (!res.ok) return null;
+        const json = await res.json();
+        return json?.[0]?.result?.data?.json ?? null;
+      } catch {
+        return null;
+      }
+    };
+
     // Fetch bookmarks
-    utils.worlds.listBookmarks.fetch({ worldId: world.external_id })
+    trpcGet<{ progress_panel: typeof progressPanel; bookmarks: Array<{ panel_external_id: string; depth: number; image_url: string; type: 'bookmark' | 'progress' }> }>('worlds.listBookmarks', { worldId: world.external_id })
       .then((data) => {
+        if (!data) return;
         const ids = new Set(data.bookmarks.map(b => b.panel_external_id));
         setBookmarkedPanelIds(ids);
-        setBookmarkList(data.bookmarks as Array<{ panel_external_id: string; depth: number; image_url: string; type: 'bookmark' | 'progress' }>);
-        setProgressPanel(data.progress_panel as typeof progressPanel);
-      })
-      .catch(() => { /* Non-fatal */ });
+        setBookmarkList(data.bookmarks);
+        setProgressPanel(data.progress_panel);
+      });
     // Fetch world detail for tags + related worlds
-    utils.worlds.get.fetch({ worldId: world.external_id })
+    trpcGet<{ tags: Array<{ id: number; name: string; is_fandom: boolean; emoji: string | null }>; related_worlds: Array<{ external_id: string; name: string; logline: string; cover_image_url: string | null; owner: { username: string; is_verified: boolean; avatar_url: string | null }; interaction_count: number; tag_name: string; tag_is_fandom: boolean }> }>('worlds.get', { worldId: world.external_id })
       .then((data) => {
+        if (!data) return;
         setWorldDetail({ tags: data.tags, related_worlds: data.related_worlds });
-      })
-      .catch(() => { /* Non-fatal */ });
+      });
     // Fetch journal for chapters + journal tab data
-    utils.worlds.getJournal.fetch({ worldId: world.external_id })
+    trpcGet<{ summary: string | null; chapters: Array<{ chapter_number: number; panel_external_id: string; image_url: string }>; compressedSummaries: Array<{ type: string; level: number; chapter_numbers: number[]; content: string }>; entityState?: { characters?: Array<{ name: string; state: string; appearance: string; display_headshot_url: string; headshot_url: string }>; locations?: Array<{ name: string; description: string; position: string }>; misc?: Array<{ name: string; description: string; state: string }> }; narrativeThreads?: Array<{ id: string; title: string; importance: string; status: string; notes: string[] }> }>('worlds.getJournal', { worldId: world.external_id })
       .then((data) => {
+        if (!data) return;
         setChapters(data.chapters ?? []);
-        const entity = (data as Record<string, unknown>).entityState as {
-          characters?: Array<{ name: string; state: string; appearance: string; display_headshot_url: string; headshot_url: string }>;
-          locations?: Array<{ name: string; description: string; position: string }>;
-          misc?: Array<{ name: string; description: string; state: string }>;
-        } | undefined;
-        const threads = (data as Record<string, unknown>).narrativeThreads as Array<{ id: string; title: string; importance: string; status: string; notes: string[] }> | undefined;
         setJournalData({
           summary: data.summary ?? null,
           compressedSummaries: data.compressedSummaries ?? [],
-          entityCharacters: entity?.characters ?? [],
-          entityLocations: entity?.locations ?? [],
-          entityMisc: entity?.misc ?? [],
-          narrativeThreads: threads ?? [],
+          entityCharacters: data.entityState?.characters ?? [],
+          entityLocations: data.entityState?.locations ?? [],
+          entityMisc: data.entityState?.misc ?? [],
+          narrativeThreads: data.narrativeThreads ?? [],
         });
-      })
-      .catch(() => { /* Non-fatal */ });
+      });
   }, []);
 
   // Poll when forward_state is "ready" but next_panel_id is null (AI generating)
