@@ -89,6 +89,7 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
   const [isLoading, setIsLoading] = useState(true);
   const [isNavigating, setIsNavigating] = useState(false);
   const [isPolling, setIsPolling] = useState(false);
+  const [isImagePolling, setIsImagePolling] = useState(false); // true when polling for image generation specifically
   const [visible, setVisible] = useState(false);
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const setPanelMutation = trpc.worlds.setPanel.useMutation();
@@ -160,12 +161,24 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
       setCurrentPanel(actionPanel as unknown as PanelData);
       // Save position
       setPanelMutation.mutate({ worldId: world.external_id, panelId: result.action_panel_id });
-      // If next_panel_id exists, start polling or load it
-      if (result.next_panel_id) {
-        if (result.forward_state === 'ready') {
-          // Load next panel after brief delay to show action panel
-          setTimeout(() => loadPanel(result.next_panel_id!, world.external_id), 800);
-        }
+      // Determine if this is an image action (check action text prefix)
+      const isImageAction = text.toLowerCase().startsWith('change the image to');
+      // Handle next panel navigation based on forward_state
+      if (result.forward_state === 'generating' || result.forward_state === 'ready') {
+        // Start polling next-ready immediately — panel may not be generated yet
+        setIsPolling(true);
+        if (isImageAction) setIsImagePolling(true);
+        pollingRef.current = setInterval(async () => {
+          try {
+            const pollResult = await utils.worlds.nextReady.fetch({ panelId: result.action_panel_id });
+            if (pollResult.ready) {
+              stopPolling();
+              await loadPanel(pollResult.panel_id, world.external_id);
+            }
+          } catch {
+            // Non-fatal — keep polling
+          }
+        }, 1000);
       }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to send action');
@@ -267,6 +280,7 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
       pollingRef.current = null;
     }
     setIsPolling(false);
+    setIsImagePolling(false);
   }, []);
 
   const loadPanel = useCallback(async (panelId: string, worldId: string) => {
@@ -648,8 +662,10 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
             <X size={16} strokeWidth={2.5} style={{ color: '#ef4444' }} />
           ) : isRegeneratePolling ? (
             <ImageIcon size={14} strokeWidth={2} style={{ opacity: 0.8, animation: 'pulse 1.5s ease-in-out infinite' }} />
-          ) : isPolling ? (
+          ) : isPolling && isImagePolling ? (
             <ImageIcon size={14} strokeWidth={2} style={{ opacity: 0.8, animation: 'pulse 1.5s ease-in-out infinite' }} />
+          ) : isPolling ? (
+            <Loader2 size={14} strokeWidth={2} className="animate-spin" style={{ opacity: 0.8 }} />
           ) : (
             <ChevronRight size={22} strokeWidth={2} />
           )}
