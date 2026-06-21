@@ -1139,6 +1139,103 @@ export const appRouter = router({
         }
         return response.json() as Promise<{ ready: false } | { ready: true; panel_id: string }>;
       }),
+
+    /** Add a bookmark for a panel */
+    addBookmark: publicProcedure
+      .input(z.object({ panelId: z.string() }))
+      .mutation(async ({ input, ctx }) => {
+        const cookie = getFreeroamCookie(ctx);
+        if (!cookie) throw new Error("Cookie not configured in environment");
+
+        const response = await fetch(
+          `https://getfreeroam.com/api/panels/${encodeURIComponent(input.panelId)}/bookmark`,
+          {
+            method: "POST",
+            headers: {
+              accept: "*/*",
+              "accept-language": "en-US,en;q=0.9",
+              cookie,
+              origin: "https://getfreeroam.com",
+              referer: "https://getfreeroam.com",
+              "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36",
+            },
+          }
+        );
+        if (!response.ok) {
+          const text = await response.text();
+          throw new Error(`Add bookmark failed (${response.status}): ${text}`);
+        }
+        return response.json() as Promise<{ success: boolean; message: string; bookmarked: boolean }>;
+      }),
+
+    /** Remove a bookmark for a panel */
+    removeBookmark: publicProcedure
+      .input(z.object({ panelId: z.string() }))
+      .mutation(async ({ input, ctx }) => {
+        const cookie = getFreeroamCookie(ctx);
+        if (!cookie) throw new Error("Cookie not configured in environment");
+
+        const response = await fetch(
+          `https://getfreeroam.com/api/panels/${encodeURIComponent(input.panelId)}/bookmark`,
+          {
+            method: "DELETE",
+            headers: {
+              accept: "*/*",
+              "accept-language": "en-US,en;q=0.9",
+              cookie,
+              origin: "https://getfreeroam.com",
+              referer: "https://getfreeroam.com",
+              "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36",
+            },
+          }
+        );
+        if (!response.ok) {
+          const text = await response.text();
+          throw new Error(`Remove bookmark failed (${response.status}): ${text}`);
+        }
+        return response.json() as Promise<{ success: boolean; message: string; bookmarked: boolean }>;
+      }),
+
+    /** List all bookmarks for a world */
+    listBookmarks: publicProcedure
+      .input(z.object({ worldId: z.string() }))
+      .query(async ({ input, ctx }) => {
+        const cookie = getFreeroamCookie(ctx);
+        if (!cookie) throw new Error("Cookie not configured in environment");
+
+        const response = await fetch(
+          `https://getfreeroam.com/api/world/${encodeURIComponent(input.worldId)}/bookmarks`,
+          {
+            headers: {
+              accept: "*/*",
+              "accept-language": "en-US,en;q=0.9",
+              cookie,
+              origin: "https://getfreeroam.com",
+              referer: "https://getfreeroam.com",
+              "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36",
+            },
+          }
+        );
+        if (!response.ok) {
+          const text = await response.text();
+          throw new Error(`List bookmarks failed (${response.status}): ${text}`);
+        }
+        return response.json() as Promise<{
+          progress_panel: {
+            panel_external_id: string;
+            depth: number;
+            image_url: string;
+            updated_at: string;
+            type: "progress";
+          } | null;
+          bookmarks: Array<{
+            panel_external_id: string;
+            depth: number;
+            image_url: string;
+            type: "bookmark";
+          }>;
+        }>;
+      }),
   }),
 
   // ─── World Collections (Freeroam API proxy, no local DB) ──────────────────────────────────

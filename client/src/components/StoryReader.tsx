@@ -11,7 +11,7 @@
 
 import { trpc } from '@/lib/trpc';
 import { ApiWorld } from '@/components/WorldCard';
-import { ChevronLeft, ChevronRight, X, Loader2 } from 'lucide-react';
+import { Bookmark, ChevronLeft, ChevronRight, X, Loader2 } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
@@ -92,6 +92,12 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const setPanelMutation = trpc.worlds.setPanel.useMutation();
 
+  // Bookmark state — set of bookmarked panel IDs for this world
+  const [bookmarkedPanelIds, setBookmarkedPanelIds] = useState<Set<string>>(new Set());
+  const [isTogglingBookmark, setIsTogglingBookmark] = useState(false);
+  const addBookmarkMutation = trpc.worlds.addBookmark.useMutation();
+  const removeBookmarkMutation = trpc.worlds.removeBookmark.useMutation();
+
   const stopPolling = useCallback(() => {
     if (pollingRef.current) {
       clearInterval(pollingRef.current);
@@ -115,10 +121,19 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
     }
   }, [utils, setPanelMutation, stopPolling]);
 
-  // Initial load
+  // Initial load + fetch bookmarks
   useEffect(() => {
     loadPanel(initialPanelId, world.external_id);
     requestAnimationFrame(() => setVisible(true));
+    // Fetch bookmarks for this world to know which panels are bookmarked
+    utils.worlds.listBookmarks.fetch({ worldId: world.external_id })
+      .then((data) => {
+        const ids = new Set(data.bookmarks.map(b => b.panel_external_id));
+        setBookmarkedPanelIds(ids);
+      })
+      .catch(() => {
+        // Non-fatal — bookmark state just won't be shown
+      });
   }, []);
 
   // Poll when forward_state is "ready" but next_panel_id is null (AI generating)
@@ -156,6 +171,38 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
     await loadPanel(actionPanelId, world.external_id);
   }, [isNavigating, loadPanel, world.external_id]);
 
+  const handleToggleBookmark = useCallback(async () => {
+    if (!currentPanel || isTogglingBookmark) return;
+    const panelId = currentPanel.panel_id;
+    const isCurrentlyBookmarked = bookmarkedPanelIds.has(panelId);
+    setIsTogglingBookmark(true);
+    // Optimistic update
+    setBookmarkedPanelIds(prev => {
+      const next = new Set(prev);
+      if (isCurrentlyBookmarked) next.delete(panelId);
+      else next.add(panelId);
+      return next;
+    });
+    try {
+      if (isCurrentlyBookmarked) {
+        await removeBookmarkMutation.mutateAsync({ panelId });
+      } else {
+        await addBookmarkMutation.mutateAsync({ panelId });
+      }
+    } catch (err) {
+      // Rollback optimistic update on failure
+      setBookmarkedPanelIds(prev => {
+        const next = new Set(prev);
+        if (isCurrentlyBookmarked) next.add(panelId);
+        else next.delete(panelId);
+        return next;
+      });
+      toast.error(err instanceof Error ? err.message : 'Failed to update bookmark');
+    } finally {
+      setIsTogglingBookmark(false);
+    }
+  }, [currentPanel, isTogglingBookmark, bookmarkedPanelIds, addBookmarkMutation, removeBookmarkMutation]);
+
   // Keyboard navigation
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -184,6 +231,9 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
   const dialogueText = speechBubble?.text ?? null;
   const hasText = !!(narration || dialogueText);
   const accentColor = speakerName ? getAccentColor(speakerName) : null;
+
+  // Bookmark state for current panel
+  const isBookmarked = panel ? bookmarkedPanelIds.has(panel.panel_id) : false;
 
   return (
     <div
@@ -256,12 +306,26 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
             <span style={{ fontFamily: 'Lora, Georgia, serif', fontSize: '16px', fontWeight: 700, color: 'rgba(255,255,255,0.9)', letterSpacing: '0.02em' }}>
               freeroam
             </span>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2">
               {panel && (
                 <span style={{ fontFamily: 'Lora, Georgia, serif', fontSize: '13px', color: 'rgba(255,255,255,0.6)', fontStyle: 'italic' }}>
                   Page {panel.depth}
                 </span>
               )}
+              {/* Bookmark toggle */}
+              <button
+                onClick={handleToggleBookmark}
+                disabled={isTogglingBookmark || !panel}
+                className="flex items-center justify-center rounded-full transition-all hover:bg-white/20 disabled:opacity-40"
+                style={{ width: '28px', height: '28px', background: 'rgba(255,255,255,0.12)', color: isBookmarked ? '#f5c440' : 'rgba(255,255,255,0.75)' }}
+                title={isBookmarked ? 'Remove bookmark' : 'Add bookmark'}
+              >
+                <Bookmark
+                  size={14}
+                  strokeWidth={2}
+                  fill={isBookmarked ? '#f5c440' : 'none'}
+                />
+              </button>
               <button
                 onClick={onClose}
                 className="flex items-center justify-center rounded-full transition-all hover:bg-white/20"
