@@ -926,67 +926,62 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
                   </button>
                 </div>
               )}
-              {/* Lettered options — shown based on choiceIdeasVisible */}
+              {/* Lettered options — shown based on choiceIdeasVisible, always interactive */}
               {choiceIdeasVisible && choice!.options.map((opt, i) => {
-                const isSelected = choiceAlreadyMade && choice!.selected_choice === opt.text;
+                const isSelected = !!choice!.selected_choice && choice!.selected_choice === opt.text;
                 return (
                   <button
                     key={i}
-                    onClick={() => !choiceAlreadyMade && handleChoice(opt.action_panel_external_id)}
-                    className="w-full flex items-start gap-3 px-4 py-3 rounded-2xl transition-all"
+                    onClick={() => handleChoice(opt.action_panel_external_id)}
+                    className="w-full flex items-start gap-3 px-4 py-3 rounded-2xl transition-all hover:brightness-110 active:scale-95"
                     style={{
-                      background: isSelected ? 'rgba(94,234,212,0.12)' : 'rgba(30,30,40,0.85)',
-                      border: `1px solid ${isSelected ? 'rgba(94,234,212,0.4)' : 'rgba(255,255,255,0.15)'}`,
+                      background: isSelected ? 'rgba(34,197,94,0.25)' : 'rgba(30,30,40,0.85)',
+                      border: 'none',
+                      boxShadow: isSelected ? '0 4px 20px rgba(34,197,94,0.4), 0 2px 8px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.15), inset 0 0 0 1px rgba(34,197,94,0.5)' : 'inset 0 0 0 1px rgba(255,255,255,0.12)',
                       backdropFilter: 'blur(10px)',
                       textAlign: 'left',
-                      cursor: choiceAlreadyMade ? 'default' : 'pointer',
-                      opacity: choiceAlreadyMade && !isSelected ? 0.5 : 1,
+                      cursor: 'pointer',
                     }}
                   >
                     <span
                       className="flex-shrink-0 flex items-center justify-center rounded-full"
-                      style={{ width: '26px', height: '26px', background: isSelected ? 'rgba(94,234,212,0.2)' : 'rgba(255,255,255,0.1)', border: `1px solid ${isSelected ? 'rgba(94,234,212,0.5)' : 'rgba(255,255,255,0.2)'}`, fontFamily: 'Outfit, sans-serif', fontSize: '13px', fontWeight: 600, color: isSelected ? '#5eead4' : 'rgba(255,255,255,0.7)' }}
+                      style={{ width: '26px', height: '26px', background: isSelected ? 'rgba(34,197,94,0.3)' : 'rgba(255,255,255,0.1)', boxShadow: isSelected ? 'inset 0 0 0 1px rgba(34,197,94,0.6)' : 'inset 0 0 0 1px rgba(255,255,255,0.2)', fontFamily: 'Outfit, sans-serif', fontSize: '13px', fontWeight: 600, color: isSelected ? 'rgb(134,239,172)' : 'rgba(255,255,255,0.7)' }}
                     >
                       {String.fromCharCode(65 + i)}
                     </span>
-                    <span style={{ fontFamily: 'Outfit, sans-serif', fontSize: '14px', fontWeight: 500, color: isSelected ? '#fff' : 'rgba(255,255,255,0.9)', lineHeight: 1.45 }}>
+                    <span style={{ fontFamily: 'Outfit, sans-serif', fontSize: '14px', fontWeight: 500, color: '#fff', lineHeight: 1.45 }}>
                       {opt.text}
                     </span>
                   </button>
                 );
               })}
-              {/* OR divider + custom input — only shown when choice not yet made */}
-              {choiceIdeasVisible && !choiceAlreadyMade && (
+              {/* OR divider + custom input — always shown on choice panels */}
+              {choiceIdeasVisible && (
                 <div className="flex items-center gap-3 mt-1">
                   <div style={{ flex: 1, height: '1px', background: 'rgba(255,255,255,0.15)' }} />
                   <span style={{ fontFamily: 'Outfit, sans-serif', fontSize: '12px', color: 'rgba(255,255,255,0.4)' }}>OR</span>
                   <div style={{ flex: 1, height: '1px', background: 'rgba(255,255,255,0.15)' }} />
                 </div>
               )}
-              {!choiceAlreadyMade && (
-                <div
-                  className="flex items-center gap-2 px-4 py-2 rounded-2xl"
-                  style={{ background: 'rgba(30,30,40,0.85)', border: '1px solid rgba(255,255,255,0.15)', backdropFilter: 'blur(10px)' }}
+              <div className="flex items-center gap-2 px-4 py-2 rounded-2xl" style={{ background: 'rgba(30,30,40,0.85)', border: '1px solid rgba(255,255,255,0.15)', backdropFilter: 'blur(10px)' }}>
+                <input
+                  type="text"
+                  value={actionInput}
+                  onChange={(e) => setActionInput(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter' && actionInput.trim()) handleSendAction(actionInput, 'choice'); }}
+                  placeholder="Or type your own"
+                  className="flex-1 outline-none"
+                  style={{ fontFamily: 'Outfit, sans-serif', fontSize: '14px', color: 'rgba(255,255,255,0.75)', background: 'transparent', border: 'none', minWidth: 0 }}
+                />
+                <button
+                  onClick={() => { if (actionInput.trim()) handleSendAction(actionInput, 'choice'); }}
+                  disabled={!actionInput.trim() || isSendingAction}
+                  className="flex items-center justify-center rounded-full flex-shrink-0 transition-all hover:brightness-125 disabled:opacity-40"
+                  style={{ width: '32px', height: '32px', background: 'rgba(255,255,255,0.15)', color: '#fff' }}
                 >
-                  <input
-                    type="text"
-                    value={actionInput}
-                    onChange={(e) => setActionInput(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === 'Enter' && actionInput.trim()) handleSendAction(actionInput, 'choice'); }}
-                    placeholder="Or type your own"
-                    className="flex-1 outline-none"
-                    style={{ fontFamily: 'Outfit, sans-serif', fontSize: '14px', color: 'rgba(255,255,255,0.75)', background: 'transparent', border: 'none', minWidth: 0 }}
-                  />
-                  <button
-                    onClick={() => { if (actionInput.trim()) handleSendAction(actionInput, 'choice'); }}
-                    disabled={!actionInput.trim() || isSendingAction}
-                    className="flex items-center justify-center rounded-full flex-shrink-0 transition-all hover:brightness-125 disabled:opacity-40"
-                    style={{ width: '32px', height: '32px', background: 'rgba(255,255,255,0.15)', color: '#fff' }}
-                  >
-                    {isSendingAction ? <Loader2 size={14} className="animate-spin" /> : <ChevronRight size={16} strokeWidth={2.5} />}
-                  </button>
-                </div>
-              )}
+                  {isSendingAction ? <Loader2 size={14} className="animate-spin" /> : <ChevronRight size={16} strokeWidth={2.5} />}
+                </button>
+              </div>
             </div>
           )}
         {/* Action bar — hidden on choice/requires_action panels */}
