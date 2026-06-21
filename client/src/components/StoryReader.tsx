@@ -933,7 +933,7 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
                   <button
                     key={i}
                     onClick={() => handleChoice(opt.action_panel_external_id)}
-                    className="w-full flex items-start gap-3 px-4 py-3 rounded-2xl transition-all hover:brightness-110 active:scale-95"
+                    className={`w-full flex items-start gap-3 px-4 py-3 rounded-2xl transition-all active:scale-95 group ${isSelected ? 'hover-selected-choice' : 'hover:brightness-110'}`}
                     style={{
                       background: isSelected ? 'rgba(34,197,94,0.25)' : 'rgba(30,30,40,0.85)',
                       border: 'none',
@@ -942,6 +942,8 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
                       textAlign: 'left',
                       cursor: 'pointer',
                     }}
+                    onMouseEnter={(e) => { if (isSelected) (e.currentTarget as HTMLButtonElement).style.background = 'rgba(50,50,60,0.9)'; }}
+                    onMouseLeave={(e) => { if (isSelected) (e.currentTarget as HTMLButtonElement).style.background = 'rgba(34,197,94,0.25)'; }}
                   >
                     <span
                       className="flex-shrink-0 flex items-center justify-center rounded-full"
