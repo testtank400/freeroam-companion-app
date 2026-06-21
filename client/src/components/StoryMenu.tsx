@@ -182,7 +182,7 @@ export default function StoryMenu({
           </div>
 
           {/* Action buttons row */}
-          <div className="flex items-center justify-center gap-2 mb-5">
+          <div className="flex items-center justify-center gap-3 mb-5 flex-wrap">
             {[
               { icon: <RotateCcw size={14} strokeWidth={2} />, label: 'Restart' },
               { icon: <RefreshCw size={14} strokeWidth={2} />, label: 'Regenerate' },
@@ -191,14 +191,16 @@ export default function StoryMenu({
               <button
                 key={label}
                 onClick={() => toast(`${label} — coming soon`)}
-                className="flex items-center gap-1.5 px-4 py-2 rounded-full transition-all hover:brightness-125"
+                className="flex items-center gap-2 rounded-full transition-all hover:brightness-125"
                 style={{
                   fontFamily: LORA,
-                  fontSize: '13px',
+                  fontSize: '14px',
                   fontStyle: 'italic',
-                  color: 'rgba(255,255,255,0.7)',
+                  color: 'rgba(255,255,255,0.75)',
                   background: 'rgba(255,255,255,0.08)',
-                  border: '1px solid rgba(255,255,255,0.12)',
+                  border: '1px solid rgba(255,255,255,0.14)',
+                  padding: '10px 20px',
+                  whiteSpace: 'nowrap',
                 }}
               >
                 {icon}
