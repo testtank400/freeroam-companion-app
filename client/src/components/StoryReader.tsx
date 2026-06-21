@@ -401,9 +401,40 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
   }, [currentPanel, isNavigating, isPolling, loadPanel, world.external_id, utils, stopPolling]);
 
   const handleChoice = useCallback(async (actionPanelId: string) => {
-    if (isNavigating) return;
-    await loadPanel(actionPanelId, world.external_id);
-  }, [isNavigating, loadPanel, world.external_id]);
+    if (isNavigating || isPolling) return;
+    // Try to load the action panel directly first
+    // If it returns 404 (not generated yet), fall back to polling next-ready
+    setIsNavigating(true);
+    try {
+      const data = await utils.worlds.getPanel.fetch({ worldId: world.external_id, panelId: actionPanelId });
+      setCurrentPanel(data as PanelData);
+      setPanelMutation.mutate({ worldId: world.external_id, panelId: actionPanelId });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : '';
+      if (msg.includes('404') || msg.includes('Panel not found')) {
+        // Panel not generated yet — poll next-ready on current panel
+        setIsNavigating(false);
+        if (!currentPanel) return;
+        setIsPolling(true);
+        pollingRef.current = setInterval(async () => {
+          try {
+            const result = await utils.worlds.nextReady.fetch({ panelId: currentPanel.panel_id });
+            if (result.ready) {
+              stopPolling();
+              await loadPanel(result.panel_id, world.external_id);
+            }
+          } catch {
+            // Non-fatal — keep polling
+          }
+        }, 1000);
+        return;
+      }
+      toast.error(msg || 'Failed to load panel');
+    } finally {
+      setIsNavigating(false);
+      setIsLoading(false);
+    }
+  }, [isNavigating, isPolling, loadPanel, world.external_id, utils, currentPanel, setPanelMutation, stopPolling]);
 
   const handleToggleLike = useCallback(async () => {
     if (isTogglingLike) return;
