@@ -256,6 +256,10 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
     narrativeThreads: Array<{ id: string; title: string; importance: string; status: string; notes: string[] }>;
   } | null>(null);
 
+  // Choice ideas visibility preference
+  const [showChoiceIdeasByDefault, setShowChoiceIdeasByDefault] = useState(true);
+  const [choiceIdeasVisible, setChoiceIdeasVisible] = useState(true);
+
   const stopPolling = useCallback(() => {
     if (pollingRef.current) {
       clearInterval(pollingRef.current);
@@ -267,6 +271,8 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
   const loadPanel = useCallback(async (panelId: string, worldId: string) => {
     stopPolling();
     setIsNavigating(true);
+    // Reset choice ideas visibility for new panel based on preference
+    setChoiceIdeasVisible(showChoiceIdeasByDefault);
     try {
       const data = await utils.worlds.getPanel.fetch({ worldId, panelId });
       setCurrentPanel(data as PanelData);
@@ -277,7 +283,7 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
       setIsNavigating(false);
       setIsLoading(false);
     }
-  }, [utils, setPanelMutation, stopPolling]);
+  }, [utils, setPanelMutation, stopPolling, showChoiceIdeasByDefault]);
 
   // Initial load + fetch bookmarks + fetch world detail
   useEffect(() => {
@@ -321,6 +327,14 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
         setWorldDetail({ tags: data.tags, related_worlds: data.related_worlds });
         setIsLiked(!!data.is_liked);
         setLikeCount(data.like_count ?? 0);
+      });
+    // Fetch user preferences for choice ideas setting
+    trpcGet<{ resolved_show_choice_ideas_by_default: boolean }>('preferences.get', {})
+      .then((data) => {
+        if (!data) return;
+        const show = !!data.resolved_show_choice_ideas_by_default;
+        setShowChoiceIdeasByDefault(show);
+        setChoiceIdeasVisible(show);
       });
     // Fetch journal for chapters + journal tab data
     trpcGet<{ summary: string | null; chapters: Array<{ chapter_number: number; panel_external_id: string; image_url: string }>; compressedSummaries: Array<{ type: string; level: number; chapter_numbers: number[]; content: string }>; entityState?: { characters?: Array<{ name: string; state: string; appearance: string; display_headshot_url: string; headshot_url: string }>; locations?: Array<{ name: string; description: string; position: string }>; misc?: Array<{ name: string; description: string; state: string }> }; narrativeThreads?: Array<{ id: string; title: string; importance: string; status: string; notes: string[] }> }>('worlds.getJournal', { worldId: world.external_id })
@@ -893,14 +907,24 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
               className="absolute bottom-0 left-0 right-0 z-20 flex flex-col gap-2 px-4 pb-4 pt-10"
               style={{ background: 'linear-gradient(to top, rgba(0,0,0,0.92) 55%, transparent)' }}
             >
-              {/* Question */}
+              {/* Question + IDEAS/HIDE toggle */}
               {choice.question && (
-                <p style={{ fontFamily: 'Outfit, sans-serif', fontSize: '14px', fontWeight: 500, color: 'rgba(255,255,255,0.7)', marginBottom: '4px' }}>
-                  {choice.question}
-                </p>
+                <div className="flex items-center gap-2 mb-1">
+                  <p style={{ fontFamily: 'Outfit, sans-serif', fontSize: '14px', fontWeight: 500, color: 'rgba(255,255,255,0.7)', flex: 1 }}>
+                    {choice.question}
+                  </p>
+                  <button
+                    onClick={() => setChoiceIdeasVisible(v => !v)}
+                    className="flex items-center gap-1 transition-all hover:brightness-125 flex-shrink-0"
+                    style={{ fontFamily: 'Outfit, sans-serif', fontSize: '12px', fontWeight: 600, color: 'rgba(255,255,255,0.5)', letterSpacing: '0.05em' }}
+                  >
+                    {choiceIdeasVisible ? 'HIDE' : 'IDEAS'}
+                    <ChevronDown size={12} strokeWidth={2.5} style={{ transform: choiceIdeasVisible ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
+                  </button>
+                </div>
               )}
-              {/* Lettered options */}
-              {choice.options.map((opt, i) => (
+              {/* Lettered options — shown based on choiceIdeasVisible */}
+              {choiceIdeasVisible && choice.options.map((opt, i) => (
                 <button
                   key={i}
                   onClick={() => handleChoice(opt.action_panel_external_id)}
@@ -923,12 +947,14 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
                   </span>
                 </button>
               ))}
-              {/* OR divider + custom text input */}
-              <div className="flex items-center gap-3 mt-1">
-                <div style={{ flex: 1, height: '1px', background: 'rgba(255,255,255,0.15)' }} />
-                <span style={{ fontFamily: 'Outfit, sans-serif', fontSize: '12px', color: 'rgba(255,255,255,0.4)' }}>OR</span>
-                <div style={{ flex: 1, height: '1px', background: 'rgba(255,255,255,0.15)' }} />
-              </div>
+              {/* OR divider — only shown when options are visible */}
+              {choiceIdeasVisible && (
+                <div className="flex items-center gap-3 mt-1">
+                  <div style={{ flex: 1, height: '1px', background: 'rgba(255,255,255,0.15)' }} />
+                  <span style={{ fontFamily: 'Outfit, sans-serif', fontSize: '12px', color: 'rgba(255,255,255,0.4)' }}>OR</span>
+                  <div style={{ flex: 1, height: '1px', background: 'rgba(255,255,255,0.15)' }} />
+                </div>
+              )}
               <div
                 className="flex items-center gap-2 px-4 py-2 rounded-2xl"
                 style={{ background: 'rgba(30,30,40,0.85)', border: '1px solid rgba(255,255,255,0.15)', backdropFilter: 'blur(10px)' }}
