@@ -547,7 +547,8 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
   const isSpoken = speechBubble?.style === 'spoken';
   const isNarrationBubble = speechBubble?.style === 'narration';
   const isActionBubble = speechBubble?.style === 'action';
-  const speakerName = isSpoken ? speechBubble?.character ?? null : null;
+  // Replace hyphens with spaces in character names for display (e.g. 'Aerith-Guthrie' → 'Aerith Guthrie')
+  const speakerName = isSpoken ? (speechBubble?.character?.replace(/-/g, ' ') ?? null) : null;
   // Narration: content.narration field, OR speech_bubble with style='narration', OR any unknown/null style (fallback)
   const isUnknownStyle = speechBubble && !isSpoken && !isNarrationBubble && !isActionBubble;
   const narrationText = narration ?? ((isNarrationBubble || isUnknownStyle) ? speechBubble?.text ?? null : null);
