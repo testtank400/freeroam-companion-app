@@ -865,6 +865,7 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
                       margin: 0,
                       paddingLeft: '26px',
                       paddingRight: '26px',
+                      textAlign: 'center',
                     }}
                   >
                     {narrationText}
