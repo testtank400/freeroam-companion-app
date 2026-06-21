@@ -92,6 +92,9 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
   const [visible, setVisible] = useState(false);
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const setPanelMutation = trpc.worlds.setPanel.useMutation();
+  // Swipe-down gesture to open menu
+  const touchStartY = useRef<number | null>(null);
+  const touchStartX = useRef<number | null>(null);
 
   // Bookmark state — set of bookmarked panel IDs for this world
   const [bookmarkedPanelIds, setBookmarkedPanelIds] = useState<Set<string>>(new Set());
@@ -326,11 +329,26 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
             background: '#080808',
           }}
         >
-          {/* Menu trigger pill */}
-          <button
+          {/* Menu trigger — pill indicator + large tap zone covering the top portion */}
+          <div
+            className="absolute top-0 left-0 right-0 z-30 flex flex-col items-center"
+            style={{ height: '56px', cursor: 'pointer' }}
             onClick={() => setMenuOpen(true)}
-            className="absolute top-0 left-1/2 -translate-x-1/2 z-30 flex items-center justify-center pt-2 pb-3 px-6"
-            style={{ cursor: 'pointer' }}
+            onTouchStart={(e) => {
+              touchStartY.current = e.touches[0].clientY;
+              touchStartX.current = e.touches[0].clientX;
+            }}
+            onTouchEnd={(e) => {
+              if (touchStartY.current === null || touchStartX.current === null) return;
+              const dy = e.changedTouches[0].clientY - touchStartY.current;
+              const dx = Math.abs(e.changedTouches[0].clientX - touchStartX.current);
+              // Swipe down ≥ 40px, more vertical than horizontal
+              if (dy > 40 && dx < 60) {
+                setMenuOpen(true);
+              }
+              touchStartY.current = null;
+              touchStartX.current = null;
+            }}
             aria-label="Open story menu"
           >
             <div
@@ -339,9 +357,10 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
                 height: '4px',
                 borderRadius: '2px',
                 background: 'rgba(255,255,255,0.5)',
+                marginTop: '8px',
               }}
             />
-          </button>
+          </div>
 
           {/* Story menu overlay */}
           <StoryMenu
@@ -358,15 +377,15 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
             onRemoveBookmark={handleRemoveBookmarkFromMenu}
           />
 
-          {/* Top bar */}
+          {/* Top bar — z-40 so buttons sit above the trigger zone */}
           <div
-            className="absolute top-0 left-0 right-0 z-30 flex items-center justify-between px-4 pt-3 pb-2"
+            className="absolute top-0 left-0 right-0 z-40 flex items-center justify-between px-4 pt-3 pb-2 pointer-events-none"
             style={{ background: 'linear-gradient(to bottom, rgba(0,0,0,0.5) 0%, transparent 100%)' }}
           >
             <span style={{ fontFamily: 'Lora, Georgia, serif', fontSize: '16px', fontWeight: 700, color: 'rgba(255,255,255,0.9)', letterSpacing: '0.02em' }}>
               freeroam
             </span>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 pointer-events-auto">
               {panel && (
                 <span style={{ fontFamily: 'Lora, Georgia, serif', fontSize: '13px', color: 'rgba(255,255,255,0.6)', fontStyle: 'italic' }}>
                   Page {panel.depth}
