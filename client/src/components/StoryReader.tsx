@@ -752,7 +752,7 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
                   </div>
                 )}
 
-                {/* Dialogue text — Outfit SemiBold, matches Freeroam spoken style */}
+                {/* Dialogue text — Outfit SemiBold, matches Freeroam spoken style exactly */}
                 {dialogueText && (
                   <p
                     style={{
@@ -762,6 +762,8 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
                       color: '#fff',
                       lineHeight: 1.26,
                       letterSpacing: '0.004em',
+                      paintOrder: 'stroke fill',
+                      WebkitTextStroke: '0.9px rgba(0,0,0,0.5)',
                       textShadow: '0 0 1px rgba(0,0,0,0.55), 0 1px 2px rgba(0,0,0,0.75), 0 1px 5px rgba(0,0,0,0.5), 0 2px 16px rgba(0,0,0,0.45)',
                       margin: 0,
                       paddingLeft: '15px',
