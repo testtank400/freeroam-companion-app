@@ -503,15 +503,28 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
       className="fixed inset-0 z-[100]"
       style={{ opacity: visible ? 1 : 0, transition: 'opacity 0.2s ease', background: 'rgb(5,5,5)' }}
     >
-      {/* Ambient blurred backdrop — matches Freeroam: blurred image over near-black bg, no separate scrim */}
+      {/* Ambient blurred backdrop — storyAmbientLayer: blurred image at 50% 50% */}
       <div
         className="absolute inset-0"
         style={{
           backgroundImage: imageUrl ? `url(${imageUrl})` : 'none',
           backgroundSize: 'cover',
-          backgroundPosition: 'center',
-          filter: 'blur(70px) brightness(0.7)',
+          backgroundPosition: '50% 50%',
+          filter: 'blur(70px)',
           transform: 'scale(1.15)',
+        }}
+      />
+      {/* storyAmbientScrim — exact Freeroam values from console extraction */}
+      <div
+        className="absolute inset-0"
+        style={{
+          background: 'radial-gradient(120% 78% at 50% 42%, rgba(0,0,0,0) 40%, rgba(0,0,0,0.34) 100%)',
+        }}
+      />
+      <div
+        className="absolute inset-0"
+        style={{
+          background: 'linear-gradient(rgba(0,0,0,0.55) 0px, rgba(0,0,0,0.12) 18%, rgba(0,0,0,0) 42%, rgba(0,0,0,0) 56%, rgba(0,0,0,0.42) 86%, rgba(0,0,0,0.72))',
         }}
       />
 
@@ -815,6 +828,11 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
           {/* Bottom text overlay */}
           {hasText && !isLoading && !isNavigating && (
             <>
+              {/* storyVnDialogue__scrim — exact Freeroam gradient for text readability */}
+              <div
+                className="absolute inset-0 pointer-events-none"
+                style={{ background: 'linear-gradient(rgba(0,0,0,0), rgba(0,0,0,0.18) 45%, rgba(0,0,0,0.4) 74%, rgba(0,0,0,0.58))' }}
+              />
               <div
                 className="absolute bottom-0 left-0 right-0 z-10 px-5"
                 style={{ paddingBottom: '110px' }}
@@ -834,8 +852,8 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
                     >
                       {speakerName}
                     </p>
-                    {/* Accent underline */}
-                    <div style={{ width: '32px', height: '2px', background: accentColor, borderRadius: '1px', opacity: 0.8 }} />
+                    {/* Accent underline — storyVnLine__rule: gradient fades right, exact Freeroam value */}
+                    <div style={{ width: '48px', height: '2px', background: `linear-gradient(90deg, ${accentColor}, ${accentColor} 58%, rgba(0,0,0,0))`, borderRadius: '1px' }} />
                   </div>
                 )}
 
