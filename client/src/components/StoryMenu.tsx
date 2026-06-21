@@ -349,8 +349,11 @@ function JournalPreferences() {
       </div>
 
       {/* Show choice ideas toggle */}
-      <div className="flex items-center justify-between">
-        <p style={{ fontFamily: LORA, fontSize: '13px', color: 'rgba(255,255,255,0.7)', fontStyle: 'italic' }}>Show choice ideas by default</p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <p style={{ fontFamily: LORA, fontSize: '13px', color: 'rgba(255,255,255,0.7)', fontWeight: 600 }}>Show choice ideas by default</p>
+          <p style={{ fontFamily: LORA, fontSize: '12px', color: 'rgba(255,255,255,0.35)', fontStyle: 'italic', marginTop: '3px' }}>When on, the in-story "Ideas" panel starts expanded.</p>
+        </div>
         <button
           onClick={() => handleChange('show_choice_ideas_by_default', draft.show_choice_ideas_by_default === true ? false : true)}
           className="relative flex-shrink-0 rounded-full transition-all"
@@ -359,6 +362,11 @@ function JournalPreferences() {
           <div style={{ position: 'absolute', top: '3px', left: draft.show_choice_ideas_by_default ? '22px' : '3px', width: '16px', height: '16px', borderRadius: '50%', background: '#fff', transition: 'left 0.15s ease' }} />
         </button>
       </div>
+
+      {/* Content settings disclaimer */}
+      <p style={{ fontFamily: LORA, fontSize: '12px', fontStyle: 'italic', color: 'rgba(255,255,255,0.3)' }}>
+        These settings guide generation, but aren’t perfect. Content may occasionally vary.
+      </p>
 
       {/* Story preferences textarea */}
       <div>
