@@ -278,7 +278,22 @@ function JournalPreferences() {
     }
   };
 
-  const CONTENT_OPTIONS = ['permissive', 'moderate', 'strict'];
+  const CONTENT_OPTIONS = [{ value: 'standard', label: 'Standard' }, { value: 'permissive', label: 'Permissive' }];
+  const LANGUAGE_OPTIONS = [
+    { value: 'en', label: 'English' },
+    { value: 'es', label: 'Español' },
+    { value: 'fr', label: 'Français' },
+    { value: 'de', label: 'Deutsch' },
+    { value: 'it', label: 'Italiano' },
+    { value: 'pt', label: 'Português' },
+    { value: 'ja', label: '日本語' },
+    { value: 'ko', label: '한국어' },
+    { value: 'zh', label: '中文' },
+  ];
+  const STORY_PREFS_LIMIT = 2000;
+  const storyPrefsLen = draft?.story_preferences?.length ?? 0;
+  const storyPrefsPct = storyPrefsLen / STORY_PREFS_LIMIT;
+  const storyPrefsColor = storyPrefsPct >= 1 ? 'oklch(0.65 0.22 25)' : storyPrefsPct >= 0.9 ? 'oklch(0.769 0.188 70.08)' : 'rgba(255,255,255,0.35)';
 
   if (isLoading) {
     return <p style={{ fontFamily: LORA, fontSize: '13px', fontStyle: 'italic', color: 'rgba(255,255,255,0.35)', textAlign: 'center', padding: '24px 0' }}>Loading preferences...</p>;
@@ -293,15 +308,27 @@ function JournalPreferences() {
         These are global preferences that apply to all your stories on Freeroam.
       </p>
 
+      {/* Language dropdown */}
+      <div>
+        <p style={{ fontFamily: LORA, fontSize: '12px', fontWeight: 700, color: 'rgba(255,255,255,0.55)', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.1em' }}>Language</p>
+        <select
+          value={draft.language}
+          onChange={(e) => handleChange('language', e.target.value)}
+          style={{ width: '100%', fontFamily: LORA, fontSize: '14px', color: '#fff', background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '10px', padding: '10px 14px', outline: 'none', cursor: 'pointer' }}
+        >
+          {LANGUAGE_OPTIONS.map(l => <option key={l.value} value={l.value} style={{ background: '#1a1a2e' }}>{l.label}</option>)}
+        </select>
+      </div>
+
       {/* Image content setting */}
       <div>
-        <p style={{ fontFamily: LORA, fontSize: '12px', fontWeight: 700, color: 'rgba(255,255,255,0.55)', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.1em' }}>Image Content</p>
+        <p style={{ fontFamily: LORA, fontSize: '12px', fontWeight: 700, color: 'rgba(255,255,255,0.55)', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.1em' }}>Images</p>
         <div className="flex gap-2 flex-wrap">
           {CONTENT_OPTIONS.map(opt => (
-            <button key={opt} onClick={() => handleChange('image_content_setting', opt)}
-              className="px-3 py-1.5 rounded-full transition-all"
-              style={{ fontFamily: LORA, fontSize: '13px', fontStyle: 'italic', textTransform: 'capitalize', color: draft.image_content_setting === opt ? '#fff' : 'rgba(255,255,255,0.45)', background: draft.image_content_setting === opt ? 'rgba(255,255,255,0.15)' : 'rgba(255,255,255,0.06)', border: `1px solid ${draft.image_content_setting === opt ? 'rgba(255,255,255,0.3)' : 'rgba(255,255,255,0.1)'}` }}>
-              {opt}
+            <button key={opt.value} onClick={() => handleChange('image_content_setting', opt.value)}
+              className="px-4 py-2 rounded-full transition-all"
+              style={{ fontFamily: LORA, fontSize: '13px', color: draft.image_content_setting === opt.value ? '#fff' : 'rgba(255,255,255,0.45)', background: draft.image_content_setting === opt.value ? 'rgba(255,255,255,0.18)' : 'rgba(255,255,255,0.06)', border: `1px solid ${draft.image_content_setting === opt.value ? 'rgba(255,255,255,0.35)' : 'rgba(255,255,255,0.1)'}` }}>
+              {opt.label}
             </button>
           ))}
         </div>
@@ -309,13 +336,13 @@ function JournalPreferences() {
 
       {/* Writing content setting */}
       <div>
-        <p style={{ fontFamily: LORA, fontSize: '12px', fontWeight: 700, color: 'rgba(255,255,255,0.55)', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.1em' }}>Writing Content</p>
+        <p style={{ fontFamily: LORA, fontSize: '12px', fontWeight: 700, color: 'rgba(255,255,255,0.55)', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.1em' }}>Writing</p>
         <div className="flex gap-2 flex-wrap">
           {CONTENT_OPTIONS.map(opt => (
-            <button key={opt} onClick={() => handleChange('writing_content_setting', opt)}
-              className="px-3 py-1.5 rounded-full transition-all"
-              style={{ fontFamily: LORA, fontSize: '13px', fontStyle: 'italic', textTransform: 'capitalize', color: draft.writing_content_setting === opt ? '#fff' : 'rgba(255,255,255,0.45)', background: draft.writing_content_setting === opt ? 'rgba(255,255,255,0.15)' : 'rgba(255,255,255,0.06)', border: `1px solid ${draft.writing_content_setting === opt ? 'rgba(255,255,255,0.3)' : 'rgba(255,255,255,0.1)'}` }}>
-              {opt}
+            <button key={opt.value} onClick={() => handleChange('writing_content_setting', opt.value)}
+              className="px-4 py-2 rounded-full transition-all"
+              style={{ fontFamily: LORA, fontSize: '13px', color: draft.writing_content_setting === opt.value ? '#fff' : 'rgba(255,255,255,0.45)', background: draft.writing_content_setting === opt.value ? 'rgba(255,255,255,0.18)' : 'rgba(255,255,255,0.06)', border: `1px solid ${draft.writing_content_setting === opt.value ? 'rgba(255,255,255,0.35)' : 'rgba(255,255,255,0.1)'}` }}>
+              {opt.label}
             </button>
           ))}
         </div>
@@ -335,12 +362,18 @@ function JournalPreferences() {
 
       {/* Story preferences textarea */}
       <div>
-        <p style={{ fontFamily: LORA, fontSize: '12px', fontWeight: 700, color: 'rgba(255,255,255,0.55)', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.1em' }}>Story Preferences</p>
+        <div className="flex items-center justify-between mb-2">
+          <p style={{ fontFamily: LORA, fontSize: '12px', fontWeight: 700, color: 'rgba(255,255,255,0.55)', textTransform: 'uppercase', letterSpacing: '0.1em' }}>Story Preferences</p>
+          <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '11px', color: storyPrefsColor, fontWeight: storyPrefsPct >= 0.9 ? 700 : 400 }}>
+            {storyPrefsLen.toLocaleString()} / {STORY_PREFS_LIMIT.toLocaleString()}
+            {storyPrefsLen > STORY_PREFS_LIMIT && <span style={{ marginLeft: 4, color: 'oklch(0.65 0.22 25)' }}>⚠ over limit</span>}
+          </span>
+        </div>
         <textarea
           value={draft.story_preferences}
           onChange={(e) => handleChange('story_preferences', e.target.value)}
           rows={10}
-          style={{ width: '100%', fontFamily: LORA, fontSize: '13px', color: 'rgba(255,255,255,0.85)', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '10px', padding: '12px', lineHeight: 1.6, resize: 'vertical', outline: 'none' }}
+          style={{ width: '100%', fontFamily: LORA, fontSize: '13px', color: 'rgba(255,255,255,0.85)', background: 'rgba(255,255,255,0.06)', border: `1px solid ${storyPrefsLen > STORY_PREFS_LIMIT ? 'oklch(0.65 0.22 25 / 0.5)' : 'rgba(255,255,255,0.15)'}`, borderRadius: '10px', padding: '12px', lineHeight: 1.6, resize: 'vertical', outline: 'none' }}
         />
       </div>
 
