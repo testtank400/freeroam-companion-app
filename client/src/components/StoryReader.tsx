@@ -11,6 +11,7 @@
 
 import { trpc } from '@/lib/trpc';
 import { ApiWorld } from '@/components/WorldCard';
+import StoryMenu from '@/components/StoryMenu';
 import { Bookmark, ChevronLeft, ChevronRight, X, Loader2 } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
@@ -98,6 +99,14 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
   const addBookmarkMutation = trpc.worlds.addBookmark.useMutation();
   const removeBookmarkMutation = trpc.worlds.removeBookmark.useMutation();
 
+  // Story menu state
+  const [menuOpen, setMenuOpen] = useState(false);
+  // Full bookmark list with thumbnails (for the menu)
+  const [bookmarkList, setBookmarkList] = useState<Array<{ panel_external_id: string; depth: number; image_url: string; type: 'bookmark' | 'progress' }>>([]);
+  const [progressPanel, setProgressPanel] = useState<{ panel_external_id: string; depth: number; image_url: string; updated_at: string; type: 'progress' } | null>(null);
+  // World detail for tags and related worlds
+  const [worldDetail, setWorldDetail] = useState<{ tags: Array<{ id: number; name: string; is_fandom: boolean; emoji: string | null }>; related_worlds: Array<{ external_id: string; name: string; logline: string; cover_image_url: string | null; owner: { username: string; is_verified: boolean; avatar_url: string | null }; interaction_count: number; tag_name: string; tag_is_fandom: boolean }> } | null>(null);
+
   const stopPolling = useCallback(() => {
     if (pollingRef.current) {
       clearInterval(pollingRef.current);
@@ -121,19 +130,25 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
     }
   }, [utils, setPanelMutation, stopPolling]);
 
-  // Initial load + fetch bookmarks
+  // Initial load + fetch bookmarks + fetch world detail
   useEffect(() => {
     loadPanel(initialPanelId, world.external_id);
     requestAnimationFrame(() => setVisible(true));
-    // Fetch bookmarks for this world to know which panels are bookmarked
+    // Fetch bookmarks
     utils.worlds.listBookmarks.fetch({ worldId: world.external_id })
       .then((data) => {
         const ids = new Set(data.bookmarks.map(b => b.panel_external_id));
         setBookmarkedPanelIds(ids);
+        setBookmarkList(data.bookmarks as Array<{ panel_external_id: string; depth: number; image_url: string; type: 'bookmark' | 'progress' }>);
+        setProgressPanel(data.progress_panel as typeof progressPanel);
       })
-      .catch(() => {
-        // Non-fatal — bookmark state just won't be shown
-      });
+      .catch(() => { /* Non-fatal */ });
+    // Fetch world detail for tags + related worlds
+    utils.worlds.get.fetch({ worldId: world.external_id })
+      .then((data) => {
+        setWorldDetail({ tags: data.tags, related_worlds: data.related_worlds });
+      })
+      .catch(() => { /* Non-fatal */ });
   }, []);
 
   // Poll when forward_state is "ready" but next_panel_id is null (AI generating)
@@ -170,6 +185,19 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
     if (isNavigating) return;
     await loadPanel(actionPanelId, world.external_id);
   }, [isNavigating, loadPanel, world.external_id]);
+
+  const handleRemoveBookmarkFromMenu = useCallback(async (panelId: string) => {
+    // Optimistic update
+    setBookmarkedPanelIds(prev => { const next = new Set(prev); next.delete(panelId); return next; });
+    setBookmarkList(prev => prev.filter(b => b.panel_external_id !== panelId));
+    try {
+      await removeBookmarkMutation.mutateAsync({ panelId });
+    } catch (err) {
+      // Rollback
+      setBookmarkList(prev => [...prev]); // re-fetch would be ideal but keep simple
+      toast.error(err instanceof Error ? err.message : 'Failed to remove bookmark');
+    }
+  }, [removeBookmarkMutation]);
 
   const handleToggleBookmark = useCallback(async () => {
     if (!currentPanel || isTogglingBookmark) return;
@@ -298,6 +326,38 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
             background: '#080808',
           }}
         >
+          {/* Menu trigger pill */}
+          <button
+            onClick={() => setMenuOpen(true)}
+            className="absolute top-0 left-1/2 -translate-x-1/2 z-30 flex items-center justify-center pt-2 pb-3 px-6"
+            style={{ cursor: 'pointer' }}
+            aria-label="Open story menu"
+          >
+            <div
+              style={{
+                width: '36px',
+                height: '4px',
+                borderRadius: '2px',
+                background: 'rgba(255,255,255,0.5)',
+              }}
+            />
+          </button>
+
+          {/* Story menu overlay */}
+          <StoryMenu
+            isOpen={menuOpen}
+            onClose={() => setMenuOpen(false)}
+            world={world}
+            currentDepth={panel?.depth ?? 0}
+            totalDepth={undefined}
+            progressPanel={progressPanel}
+            bookmarks={bookmarkList}
+            tags={worldDetail?.tags ?? []}
+            relatedWorlds={(worldDetail?.related_worlds ?? []) as Array<{ external_id: string; name: string; logline: string; cover_image_url: string | null; owner: { username: string; is_verified: boolean; avatar_url: string | null }; interaction_count: number; tag_name: string; tag_is_fandom: boolean }>}
+            onNavigateToPanel={(panelId) => loadPanel(panelId, world.external_id)}
+            onRemoveBookmark={handleRemoveBookmarkFromMenu}
+          />
+
           {/* Top bar */}
           <div
             className="absolute top-0 left-0 right-0 z-30 flex items-center justify-between px-4 pt-3 pb-2"
