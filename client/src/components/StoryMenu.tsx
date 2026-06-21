@@ -103,6 +103,7 @@ interface StoryMenuProps {
   likeCount?: number;
   onToggleLike?: () => void;
   onRestart?: () => void;
+  onRegenerate?: () => void;
 }
 
 const LORA = 'Lora, Georgia, serif';
@@ -496,8 +497,10 @@ export default function StoryMenu({
   currentPanelId, onNavigateToPanel, onNavigateToDepth, onRemoveBookmark,
   isLiked = false, likeCount, onToggleLike,
   onRestart,
+  onRegenerate,
 }: StoryMenuProps) {
   const [confirmRestart, setConfirmRestart] = useState(false);
+  const [confirmRegenerate, setConfirmRegenerate] = useState(false);
   const allBookmarkEntries: BookmarkEntry[] = [
     ...(progressPanel ? [progressPanel] : []),
     ...bookmarks,
@@ -759,12 +762,38 @@ export default function StoryMenu({
                     </button>
                   </div>
                 )}
-                {/* Regenerate + Edit — placeholders */}
-                {[{ icon: <RefreshCw size={15} strokeWidth={2} />, label: 'Regenerate' }, { icon: <Pencil size={15} strokeWidth={2} />, label: 'Edit' }].map(({ icon, label }) => (
-                  <button key={label} onClick={() => toast(`${label} — coming soon`)} className="flex items-center gap-2 rounded-full transition-all hover:brightness-125" style={{ fontFamily: LORA, fontSize: '14px', fontStyle: 'italic', color: 'rgba(255,255,255,0.75)', background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.14)', padding: '10px 22px', whiteSpace: 'nowrap' }}>
-                    {icon}{label}
+                {/* Regenerate — wired with confirmation */}
+                {!confirmRegenerate ? (
+                  <button
+                    onClick={() => setConfirmRegenerate(true)}
+                    className="flex items-center gap-2 rounded-full transition-all hover:brightness-125"
+                    style={{ fontFamily: LORA, fontSize: '14px', fontStyle: 'italic', color: 'rgba(255,255,255,0.75)', background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.14)', padding: '10px 22px', whiteSpace: 'nowrap' }}
+                  >
+                    <RefreshCw size={15} strokeWidth={2} /> Regenerate
                   </button>
-                ))}
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <span style={{ fontFamily: LORA, fontSize: '13px', fontStyle: 'italic', color: 'rgba(255,255,255,0.55)' }}>Regenerate starting scene?</span>
+                    <button
+                      onClick={() => setConfirmRegenerate(false)}
+                      className="px-3 py-1.5 rounded-full transition-all hover:brightness-125"
+                      style={{ fontFamily: LORA, fontSize: '13px', fontStyle: 'italic', color: 'rgba(255,255,255,0.55)', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={() => { setConfirmRegenerate(false); onRegenerate?.(); onClose(); }}
+                      className="px-3 py-1.5 rounded-full transition-all hover:brightness-125"
+                      style={{ fontFamily: LORA, fontSize: '13px', fontStyle: 'italic', color: '#fff', background: 'rgba(139,92,246,0.25)', border: '1px solid rgba(139,92,246,0.4)' }}
+                    >
+                      Regenerate
+                    </button>
+                  </div>
+                )}
+                {/* Edit — placeholder */}
+                <button onClick={() => toast('Edit — coming soon')} className="flex items-center gap-2 rounded-full transition-all hover:brightness-125" style={{ fontFamily: LORA, fontSize: '14px', fontStyle: 'italic', color: 'rgba(255,255,255,0.75)', background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.14)', padding: '10px 22px', whiteSpace: 'nowrap' }}>
+                  <Pencil size={15} strokeWidth={2} /> Edit
+                </button>
               </div>
 
               {/* Bookmarks */}

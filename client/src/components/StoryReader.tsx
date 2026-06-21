@@ -489,6 +489,44 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
             isLiked={isLiked}
             likeCount={likeCount}
             onToggleLike={handleToggleLike}
+            onRegenerate={async () => {
+              try {
+                const cookie = localStorage.getItem('freeroam_cookie') ?? '';
+                const accountId = localStorage.getItem('freeroam_account_id') ?? '';
+                const headers: Record<string, string> = {
+                  'content-type': 'application/json',
+                  ...(cookie ? { 'x-freeroam-cookie': cookie } : {}),
+                  ...(accountId ? { 'x-freeroam-account-id': accountId } : {}),
+                };
+                // Step 1: Regenerate starting scene
+                const regenRes = await fetch('/api/trpc/worlds.regenerateStartingScene?batch=1', {
+                  method: 'POST',
+                  credentials: 'include',
+                  headers,
+                  body: JSON.stringify({ '0': { json: { worldId: world.external_id } } }),
+                });
+                if (!regenRes.ok) { toast.error('Regenerate failed'); return; }
+                // Step 2: Start generation
+                const startRes = await fetch('/api/trpc/worlds.startGeneration?batch=1', {
+                  method: 'POST',
+                  credentials: 'include',
+                  headers,
+                  body: JSON.stringify({ '0': { json: { worldId: world.external_id } } }),
+                });
+                if (!startRes.ok) { toast.error('Start generation failed'); return; }
+                const startJson = await startRes.json();
+                const startData = startJson?.[0]?.result?.data?.json;
+                if (startData?.initial_panel_id) {
+                  await loadPanel(startData.initial_panel_id, world.external_id);
+                  toast.success('Story regenerated successfully');
+                } else {
+                  // already_running — start polling from current panel
+                  toast.success('Regeneration started — generating new content...');
+                }
+              } catch {
+                toast.error('Failed to regenerate story');
+              }
+            }}
             onRestart={async () => {
               try {
                 const cookie = localStorage.getItem('freeroam_cookie') ?? '';
