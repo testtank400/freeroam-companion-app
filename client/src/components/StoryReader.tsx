@@ -510,7 +510,7 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
           backgroundImage: imageUrl ? `url(${imageUrl})` : 'none',
           backgroundSize: 'cover',
           backgroundPosition: 'center',
-          filter: 'blur(70px)',
+          filter: 'blur(70px) brightness(0.7)',
           transform: 'scale(1.15)',
         }}
       />
@@ -818,7 +818,7 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
               {/* Gradient for readability */}
               <div
                 className="absolute inset-0 pointer-events-none"
-                style={{ background: 'linear-gradient(to bottom, transparent 38%, rgba(0,0,0,0.35) 58%, rgba(0,0,0,0.72) 78%, rgba(0,0,0,0.88) 100%)' }}
+                style={{ background: 'linear-gradient(to bottom, transparent 45%, rgba(0,0,0,0.2) 62%, rgba(0,0,0,0.55) 80%, rgba(0,0,0,0.75) 100%)' }}
               />
 
               <div
