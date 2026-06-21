@@ -414,41 +414,10 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
     await loadPanel(targetId, world.external_id);
   }, [currentPanel, isNavigating, isPolling, loadPanel, world.external_id, utils, stopPolling]);
 
-  const handleChoice = useCallback(async (actionPanelId: string) => {
-    if (isNavigating || isPolling) return;
-    // Try to load the action panel directly first
-    // If it returns 404 (not generated yet), fall back to polling next-ready
-    setIsNavigating(true);
-    try {
-      const data = await utils.worlds.getPanel.fetch({ worldId: world.external_id, panelId: actionPanelId });
-      setCurrentPanel(data as PanelData);
-      setPanelMutation.mutate({ worldId: world.external_id, panelId: actionPanelId });
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : '';
-      if (msg.includes('404') || msg.includes('Panel not found')) {
-        // Panel not generated yet — poll next-ready on current panel
-        setIsNavigating(false);
-        if (!currentPanel) return;
-        setIsPolling(true);
-        pollingRef.current = setInterval(async () => {
-          try {
-            const result = await utils.worlds.nextReady.fetch({ panelId: currentPanel.panel_id });
-            if (result.ready) {
-              stopPolling();
-              await loadPanel(result.panel_id, world.external_id);
-            }
-          } catch {
-            // Non-fatal — keep polling
-          }
-        }, 1000);
-        return;
-      }
-      toast.error(msg || 'Failed to load panel');
-    } finally {
-      setIsNavigating(false);
-      setIsLoading(false);
-    }
-  }, [isNavigating, isPolling, loadPanel, world.external_id, utils, currentPanel, setPanelMutation, stopPolling]);
+  const handleChoice = useCallback(async (choiceText: string) => {
+    // Send the choice as an action to Freeroam — this triggers generation of the action panel
+    await handleSendAction(choiceText, 'choice');
+  }, [handleSendAction]);
 
   const handleToggleLike = useCallback(async () => {
     if (isTogglingLike) return;
@@ -658,15 +627,14 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
               />
             </svg>
           )}
-          {/* Icon inside the ring */}
+          {/* Icon inside the ring — only show icon when not using plain spinner ring */}
           {regenerateTimedOut ? (
             <X size={16} strokeWidth={2.5} style={{ color: '#ef4444' }} />
-          ) : isRegeneratePolling ? (
-            <ImageIcon size={14} strokeWidth={2} style={{ opacity: 0.8, animation: 'pulse 1.5s ease-in-out infinite' }} />
-          ) : isPolling && isImagePolling ? (
+          ) : (isRegeneratePolling || (isPolling && isImagePolling)) ? (
             <ImageIcon size={14} strokeWidth={2} style={{ opacity: 0.8, animation: 'pulse 1.5s ease-in-out infinite' }} />
           ) : isPolling ? (
-            <Loader2 size={14} strokeWidth={2} className="animate-spin" style={{ opacity: 0.8 }} />
+            // Plain polling — SVG ring alone is enough, no inner icon
+            null
           ) : (
             <ChevronRight size={22} strokeWidth={2} />
           )}
@@ -1029,7 +997,7 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
                 return (
                   <button
                     key={i}
-                    onClick={() => handleChoice(opt.action_panel_external_id)}
+                    onClick={() => handleChoice(opt.text)}
                     className={`w-full flex items-start gap-3 px-4 py-3 rounded-2xl transition-all active:scale-95 group ${isSelected ? 'hover-selected-choice' : 'hover:brightness-110'}`}
                     style={{
                       background: isSelected ? 'rgba(34,197,94,0.25)' : 'rgba(30,30,40,0.85)',
