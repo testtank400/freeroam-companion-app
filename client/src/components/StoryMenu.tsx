@@ -365,7 +365,7 @@ function JournalPreferences() {
         <button
           onClick={() => handleChange('show_choice_ideas_by_default', draft.show_choice_ideas_by_default === true ? false : true)}
           className="relative flex-shrink-0 rounded-full transition-all"
-          style={{ width: '44px', height: '24px', background: draft.show_choice_ideas_by_default ? 'rgba(255,255,255,0.5)' : 'rgba(255,255,255,0.12)', border: '1px solid rgba(255,255,255,0.2)' }}
+          style={{ width: '44px', height: '24px', background: draft.show_choice_ideas_by_default ? '#5eead4' : 'rgba(255,255,255,0.18)', border: 'none', transition: 'background 0.2s ease' }}
         >
           <div style={{ position: 'absolute', top: '3px', left: draft.show_choice_ideas_by_default ? '22px' : '3px', width: '16px', height: '16px', borderRadius: '50%', background: '#fff', transition: 'left 0.15s ease' }} />
         </button>
