@@ -469,7 +469,7 @@ function JournalThreads({ threads }: { threads: NarrativeThread[] }) {
     <div className="space-y-5">
       {group.map((t) => (
         <div key={t.id}>
-          <p style={{ fontFamily: LORA, fontSize: '10px', fontWeight: 700, color: 'rgba(255,255,255,0.35)', textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: '4px' }}>{label}</p>
+          <p style={{ fontFamily: LORA, fontSize: '10px', fontWeight: 700, color: t.importance === 'major' ? 'rgba(251,191,36,0.8)' : 'rgba(255,255,255,0.35)', textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: '4px' }}>{label}</p>
           <p style={{ fontFamily: LORA, fontSize: '15px', fontWeight: 700, color: '#fff', marginBottom: '10px' }}>{t.title}</p>
           <ul className="space-y-1.5 pl-3" style={{ borderLeft: '2px solid rgba(255,255,255,0.1)' }}>
             {t.notes.map((note, i) => (
