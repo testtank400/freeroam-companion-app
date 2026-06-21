@@ -1020,7 +1020,7 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
         {/* Action bar — hidden on choice/requires_action panels */}
         <div
           className="absolute left-0 right-0 z-30 transition-all duration-300"
-          style={{ bottom: (actionBarVisible && !panel?.requires_action) ? '0' : '-110px' }}
+          style={{ bottom: (actionBarVisible && !panel?.requires_action && !panel?.is_action) ? '0' : '-110px' }}
         >
           {/* Input field row (shown when Act/Direct/Image active) */}
           {activeInputMode && (
