@@ -500,10 +500,20 @@ export default function StoryMenu({
     ...bookmarks,
   ];
 
-  // Page slider state
+  // Page slider state — sync with currentDepth when menu opens or depth changes
   const maxDepth = totalDepth ?? progressPanel?.depth ?? currentDepth;
-  const [sliderInput, setSliderInput] = useState<number>(currentDepth);
+  const [sliderInput, setSliderInput] = useState<number>(currentDepth > 0 ? currentDepth : 1);
   const [isNavigatingToDepth, setIsNavigatingToDepth] = useState(false);
+  const isDraggingRef = useRef(false);
+  const trackRef = useRef<HTMLDivElement>(null);
+
+  // Sync slider input when menu opens or current depth changes
+  const prevIsOpen = useRef(false);
+  if (isOpen && !prevIsOpen.current && currentDepth > 0) {
+    setSliderInput(currentDepth);
+  }
+  prevIsOpen.current = isOpen;
+
   const inputChanged = sliderInput !== currentDepth;
 
   const handleGoToDepth = async () => {
@@ -514,6 +524,43 @@ export default function StoryMenu({
     } finally {
       setIsNavigatingToDepth(false);
     }
+  };
+
+  const getDepthFromEvent = (clientX: number): number => {
+    if (!trackRef.current) return sliderInput;
+    const rect = trackRef.current.getBoundingClientRect();
+    const pct = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+    return Math.max(1, Math.round(pct * maxDepth));
+  };
+
+  const handleTrackMouseDown = (e: React.MouseEvent) => {
+    isDraggingRef.current = true;
+    setSliderInput(getDepthFromEvent(e.clientX));
+    const onMove = (me: MouseEvent) => {
+      if (isDraggingRef.current) setSliderInput(getDepthFromEvent(me.clientX));
+    };
+    const onUp = () => {
+      isDraggingRef.current = false;
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  };
+
+  const handleTrackTouchStart = (e: React.TouchEvent) => {
+    isDraggingRef.current = true;
+    setSliderInput(getDepthFromEvent(e.touches[0].clientX));
+    const onMove = (te: TouchEvent) => {
+      if (isDraggingRef.current) setSliderInput(getDepthFromEvent(te.touches[0].clientX));
+    };
+    const onEnd = () => {
+      isDraggingRef.current = false;
+      window.removeEventListener('touchmove', onMove);
+      window.removeEventListener('touchend', onEnd);
+    };
+    window.addEventListener('touchmove', onMove, { passive: true });
+    window.addEventListener('touchend', onEnd);
   };
 
   const [topTab, setTopTab] = useState<'story' | 'journal'>('story');
@@ -656,24 +703,25 @@ export default function StoryMenu({
                     </button>
                   )}
                 </div>
-                {/* Scrubber track */}
+                {/* Scrubber track — draggable */}
                 <div
-                  className="relative w-full rounded-full cursor-pointer"
-                  style={{ height: '6px', background: 'rgba(255,255,255,0.12)' }}
-                  onClick={(e) => {
-                    const rect = e.currentTarget.getBoundingClientRect();
-                    const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-                    const depth = Math.max(1, Math.round(pct * maxDepth));
-                    setSliderInput(depth);
-                  }}
+                  ref={trackRef}
+                  className="relative w-full rounded-full cursor-pointer select-none"
+                  style={{ height: '20px', display: 'flex', alignItems: 'center' }}
+                  onMouseDown={handleTrackMouseDown}
+                  onTouchStart={handleTrackTouchStart}
                 >
+                  {/* Track background */}
+                  <div className="absolute inset-0 rounded-full" style={{ top: '7px', bottom: '7px', height: '6px', background: 'rgba(255,255,255,0.12)' }} />
+                  {/* Filled portion */}
                   <div
-                    className="absolute left-0 top-0 h-full rounded-full"
-                    style={{ width: `${Math.min(100, (sliderInput / maxDepth) * 100)}%`, background: inputChanged ? '#7c3aed' : 'rgba(255,255,255,0.65)', transition: 'width 0.1s ease' }}
+                    className="absolute rounded-full"
+                    style={{ top: '7px', bottom: '7px', height: '6px', left: 0, width: `${Math.min(100, maxDepth > 0 ? (sliderInput / maxDepth) * 100 : 0)}%`, background: inputChanged ? '#7c3aed' : 'rgba(255,255,255,0.65)' }}
                   />
+                  {/* Thumb */}
                   <div
-                    className="absolute top-1/2 -translate-y-1/2 w-4 h-4 rounded-full"
-                    style={{ left: `calc(${Math.min(100, (sliderInput / maxDepth) * 100)}% - 8px)`, background: inputChanged ? '#7c3aed' : '#fff', boxShadow: '0 0 8px rgba(255,255,255,0.5)', transition: 'left 0.1s ease' }}
+                    className="absolute top-1/2 -translate-y-1/2 w-5 h-5 rounded-full"
+                    style={{ left: `calc(${Math.min(100, maxDepth > 0 ? (sliderInput / maxDepth) * 100 : 0)}% - 10px)`, background: inputChanged ? '#7c3aed' : '#fff', boxShadow: '0 0 8px rgba(255,255,255,0.5)', cursor: 'grab' }}
                   />
                 </div>
               </div>
