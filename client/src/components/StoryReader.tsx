@@ -870,15 +870,15 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
                   </p>
                 )}
 
-                {/* Action text — same style as narration: Outfit Medium italic */}
+                {/* Action text — Freeroam .storyVnLine--action style: slightly smaller, cool blue-white */}
                 {actionText && (
                   <p
                     style={{
                       fontFamily: 'Outfit, sans-serif',
-                      fontSize: 'clamp(1.08rem, 4.4vw, 1.3rem)',
+                      fontSize: 'clamp(1.05rem, 4.2vw, 1.26rem)',
                       fontWeight: 500,
                       fontStyle: 'italic',
-                      color: '#f5ecd9',
+                      color: '#e7eef7',
                       lineHeight: 1.34,
                       textShadow: '0 0 1px rgba(0,0,0,0.55), 0 1px 2px rgba(0,0,0,0.75)',
                       margin: 0,
