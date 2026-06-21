@@ -1,13 +1,13 @@
 // StoryReader.tsx
-// Full-screen story panel reader matching Freeroam's layout:
-// - Ambient blurred backdrop (panel image fills the sides)
-// - Dark scrim over the backdrop
-// - Center portrait panel image filling full viewport height
-// - Navigation halos on left/right edges
-// - Speech bubble (white comic bubble, upper-left)
-// - Narration text overlay (bottom of image)
-// - Choice options below panel when awaiting_choice
-// - Polling every 1s when forward_state === "ready" and next_panel_id is null
+// Full-screen story panel reader — custom design inspired by Freeroam but elevated.
+// Layout:
+//   - Ambient blurred backdrop (panel image fills the sides, dark scrim over it)
+//   - Center portrait panel filling full viewport height
+//   - Navigation halos on left/right edges
+//   - Spoken dialogue: large bold white Lora text at bottom, character name in accent color above with a colored underline
+//   - Narration: italic Lora text at bottom, slightly smaller
+//   - No speech bubble — all text rendered as bottom overlay
+//   - Choice options: frosted glass pills below the panel
 
 import { trpc } from '@/lib/trpc';
 import { ApiWorld } from '@/components/WorldCard';
@@ -65,19 +65,21 @@ type PanelData = {
   is_owner: boolean;
 };
 
-// Deterministic color per character name
-const CHARACTER_COLORS = [
-  '#4fc3f7', // light blue
-  '#ce93d8', // light purple
-  '#80cbc4', // teal
-  '#ffcc80', // amber
-  '#f48fb1', // pink
-  '#a5d6a7', // green
+// Deterministic accent color per character name
+const ACCENT_COLORS = [
+  '#7ec8e3', // sky blue
+  '#c4a7e7', // soft purple
+  '#7fd1b9', // mint teal
+  '#f4c97a', // warm amber
+  '#f4a0b5', // rose pink
+  '#9dd49a', // sage green
+  '#f4a261', // peach
+  '#a8dadc', // seafoam
 ];
-function getCharacterColor(name: string): string {
+function getAccentColor(name: string): string {
   let hash = 0;
   for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
-  return CHARACTER_COLORS[Math.abs(hash) % CHARACTER_COLORS.length];
+  return ACCENT_COLORS[Math.abs(hash) % ACCENT_COLORS.length];
 }
 
 export default function StoryReader({ world, initialPanelId, onClose }: StoryReaderProps) {
@@ -119,7 +121,7 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
     requestAnimationFrame(() => setVisible(true));
   }, []);
 
-  // Start polling when forward_state is "ready" but next_panel_id is null
+  // Poll when forward_state is "ready" but next_panel_id is null (AI generating)
   useEffect(() => {
     if (!currentPanel) return;
     const { forward_state, next_panel_id } = currentPanel;
@@ -176,145 +178,105 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
   const canGoBack = !!panel?.prev_panel_id;
   const canGoForward = !isAwaitingChoice && !!panel?.next_panel_id;
 
-  const hasSpeechBubble = !!speechBubble?.text;
+  // Text rendering logic
   const isSpoken = speechBubble?.style === 'spoken';
-  const speakerName = isSpoken ? speechBubble?.character : null;
-  const speakerColor = speakerName ? getCharacterColor(speakerName) : null;
-  const hasNarration = !!narration;
+  const speakerName = isSpoken ? speechBubble?.character ?? null : null;
+  const dialogueText = speechBubble?.text ?? null;
+  const hasText = !!(narration || dialogueText);
+  const accentColor = speakerName ? getAccentColor(speakerName) : null;
 
   return (
     <div
       className="fixed inset-0 z-[100]"
-      style={{
-        opacity: visible ? 1 : 0,
-        transition: 'opacity 0.2s ease',
-      }}
+      style={{ opacity: visible ? 1 : 0, transition: 'opacity 0.2s ease' }}
     >
-      {/* Ambient backdrop — blurred panel image fills the entire screen behind */}
+      {/* Ambient blurred backdrop */}
       <div
         className="absolute inset-0"
         style={{
-          backgroundImage: imageUrl ? `url(${imageUrl})` : undefined,
+          backgroundImage: imageUrl ? `url(${imageUrl})` : 'none',
           backgroundSize: 'cover',
           backgroundPosition: 'center',
-          filter: 'blur(24px) brightness(0.35) saturate(1.4)',
-          transform: 'scale(1.1)', // prevent blur edge artifacts
+          filter: 'blur(28px) brightness(0.3) saturate(1.5)',
+          transform: 'scale(1.12)',
         }}
       />
-      {/* Dark scrim over ambient */}
-      <div className="absolute inset-0" style={{ background: 'rgba(0,0,0,0.55)' }} />
+      {/* Dark scrim */}
+      <div className="absolute inset-0" style={{ background: 'rgba(0,0,0,0.5)' }} />
 
-      {/* Left tap zone / navigation halo */}
+      {/* Left navigation halo */}
       <button
         onClick={() => handleNavigate('prev')}
         disabled={!canGoBack || isNavigating}
-        className="absolute left-0 top-0 bottom-0 z-20 flex items-center justify-start pl-3 sm:pl-5 disabled:opacity-0 transition-opacity"
-        style={{ width: 'calc(50% - 180px)', minWidth: '44px', maxWidth: '120px', cursor: canGoBack ? 'pointer' : 'default' }}
+        className="absolute left-0 top-0 bottom-0 z-20 flex items-center justify-start pl-2 sm:pl-4 disabled:opacity-0 transition-opacity"
+        style={{ width: 'clamp(44px, 15vw, 100px)', cursor: canGoBack ? 'pointer' : 'default' }}
         aria-label="Previous panel"
       >
         <div
-          className="flex items-center justify-center rounded-full transition-all hover:scale-110"
-          style={{
-            width: '40px',
-            height: '40px',
-            background: 'rgba(255,255,255,0.12)',
-            backdropFilter: 'blur(4px)',
-            color: 'rgba(255,255,255,0.85)',
-          }}
+          className="flex items-center justify-center rounded-full transition-all hover:bg-white/20"
+          style={{ width: '40px', height: '40px', background: 'rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.8)' }}
         >
           <ChevronLeft size={22} strokeWidth={2} />
         </div>
       </button>
 
-      {/* Right tap zone / navigation halo */}
+      {/* Right navigation halo */}
       <button
         onClick={() => handleNavigate('next')}
         disabled={(!canGoForward && !isPolling) || isNavigating}
-        className="absolute right-0 top-0 bottom-0 z-20 flex items-center justify-end pr-3 sm:pr-5 disabled:opacity-0 transition-opacity"
-        style={{ width: 'calc(50% - 180px)', minWidth: '44px', maxWidth: '120px', cursor: canGoForward ? 'pointer' : 'default' }}
+        className="absolute right-0 top-0 bottom-0 z-20 flex items-center justify-end pr-2 sm:pr-4 disabled:opacity-0 transition-opacity"
+        style={{ width: 'clamp(44px, 15vw, 100px)', cursor: canGoForward ? 'pointer' : 'default' }}
         aria-label="Next panel"
       >
         <div
-          className="flex items-center justify-center rounded-full transition-all hover:scale-110"
-          style={{
-            width: '40px',
-            height: '40px',
-            background: 'rgba(255,255,255,0.12)',
-            backdropFilter: 'blur(4px)',
-            color: 'rgba(255,255,255,0.85)',
-          }}
+          className="flex items-center justify-center rounded-full transition-all hover:bg-white/20"
+          style={{ width: '40px', height: '40px', background: 'rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.8)' }}
         >
-          {isPolling ? (
-            <Loader2 size={18} className="animate-spin" />
-          ) : (
-            <ChevronRight size={22} strokeWidth={2} />
-          )}
+          {isPolling ? <Loader2 size={18} className="animate-spin" /> : <ChevronRight size={22} strokeWidth={2} />}
         </div>
       </button>
 
-      {/* Center column — panel image at full viewport height */}
-      <div className="absolute inset-0 flex flex-col items-center justify-start pointer-events-none">
-        {/* Top bar */}
+      {/* Center panel */}
+      <div className="absolute inset-0 flex items-start justify-center">
         <div
-          className="w-full flex items-center justify-between px-4 py-2 pointer-events-auto"
-          style={{
-            maxWidth: '400px',
-            position: 'absolute',
-            top: 0,
-            left: '50%',
-            transform: 'translateX(-50%)',
-            zIndex: 30,
-          }}
-        >
-          <span
-            className="font-bold tracking-wide"
-            style={{ fontFamily: 'serif', fontSize: '18px', color: 'rgba(255,255,255,0.9)' }}
-          >
-            freeroam
-          </span>
-          <div className="flex items-center gap-3">
-            {panel && (
-              <span
-                className="text-xs font-semibold"
-                style={{ color: 'rgba(255,255,255,0.7)', fontFamily: 'monospace' }}
-              >
-                Page {panel.depth}
-              </span>
-            )}
-            <button
-              onClick={onClose}
-              className="flex items-center justify-center rounded-full hover:brightness-125 transition-colors"
-              style={{
-                width: '28px',
-                height: '28px',
-                background: 'rgba(255,255,255,0.15)',
-                color: 'rgba(255,255,255,0.8)',
-              }}
-              title="Close reader"
-            >
-              <X size={14} strokeWidth={2} />
-            </button>
-          </div>
-        </div>
-
-        {/* Panel image — fills full viewport height, portrait aspect */}
-        <div
-          className="relative pointer-events-auto"
+          className="relative"
           style={{
             height: '100dvh',
             aspectRatio: '9/16',
             maxWidth: '100vw',
             overflow: 'hidden',
-            background: '#0a0a0a',
+            background: '#080808',
           }}
         >
-          {/* Loading state */}
+          {/* Top bar */}
+          <div
+            className="absolute top-0 left-0 right-0 z-30 flex items-center justify-between px-4 pt-3 pb-2"
+            style={{ background: 'linear-gradient(to bottom, rgba(0,0,0,0.5) 0%, transparent 100%)' }}
+          >
+            <span style={{ fontFamily: 'Lora, Georgia, serif', fontSize: '16px', fontWeight: 700, color: 'rgba(255,255,255,0.9)', letterSpacing: '0.02em' }}>
+              freeroam
+            </span>
+            <div className="flex items-center gap-3">
+              {panel && (
+                <span style={{ fontFamily: 'Lora, Georgia, serif', fontSize: '13px', color: 'rgba(255,255,255,0.6)', fontStyle: 'italic' }}>
+                  Page {panel.depth}
+                </span>
+              )}
+              <button
+                onClick={onClose}
+                className="flex items-center justify-center rounded-full transition-all hover:bg-white/20"
+                style={{ width: '28px', height: '28px', background: 'rgba(255,255,255,0.12)', color: 'rgba(255,255,255,0.75)' }}
+                title="Close"
+              >
+                <X size={14} strokeWidth={2} />
+              </button>
+            </div>
+          </div>
+
+          {/* Loading overlay */}
           {(isLoading || isNavigating) && (
-            <div
-              className="absolute inset-0 z-30 flex items-center justify-center"
-              style={{ background: 'rgba(0,0,0,0.6)' }}
-            >
-              <Loader2 size={36} className="animate-spin" style={{ color: 'rgba(255,255,255,0.7)' }} />
+            <div className="absolute inset-0 z-30 flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.55)' }}>
+              <Loader2 size={36} className="animate-spin" style={{ color: 'rgba(255,255,255,0.6)' }} />
             </div>
           )}
 
@@ -324,96 +286,75 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
               src={imageUrl}
               alt=""
               className="w-full h-full"
-              style={{
-                objectFit: 'contain',
-                objectPosition: 'center top',
-                opacity: isNavigating ? 0.4 : 1,
-                transition: 'opacity 0.15s ease',
-              }}
+              style={{ objectFit: 'contain', objectPosition: 'center top', opacity: isNavigating ? 0.35 : 1, transition: 'opacity 0.15s ease' }}
             />
           )}
 
-          {/* Speech bubble — upper-left, comic style */}
-          {hasSpeechBubble && !isLoading && !isNavigating && (
-            <div
-              className="absolute z-10"
-              style={{ top: '10%', left: '4%', maxWidth: '52%' }}
-            >
-              <div
-                className="relative px-3 py-2"
-                style={{
-                  background: 'white',
-                  borderRadius: '14px',
-                  boxShadow: '0 2px 12px rgba(0,0,0,0.4)',
-                }}
-              >
-                {/* Bubble tail */}
-                <div
-                  style={{
-                    position: 'absolute',
-                    bottom: '-9px',
-                    left: '20px',
-                    width: 0,
-                    height: 0,
-                    borderLeft: '7px solid transparent',
-                    borderRight: '4px solid transparent',
-                    borderTop: '9px solid white',
-                  }}
-                />
-                {speakerName && speakerColor && (
-                  <p
-                    style={{
-                      fontFamily: 'sans-serif',
-                      fontSize: '11px',
-                      fontWeight: 700,
-                      color: speakerColor,
-                      marginBottom: '2px',
-                      letterSpacing: '0.02em',
-                    }}
-                  >
-                    {speakerName}
-                  </p>
-                )}
-                <p
-                  style={{
-                    fontFamily: 'sans-serif',
-                    fontSize: 'clamp(11px, 2.2vw, 13px)',
-                    fontWeight: 600,
-                    color: '#111',
-                    lineHeight: 1.35,
-                    margin: 0,
-                  }}
-                >
-                  {speechBubble!.text}
-                </p>
-              </div>
-            </div>
-          )}
-
-          {/* Narration gradient + text overlay — bottom */}
-          {hasNarration && !isLoading && !isNavigating && (
+          {/* Bottom text overlay */}
+          {hasText && !isLoading && !isNavigating && (
             <>
+              {/* Gradient for readability */}
               <div
                 className="absolute inset-0 pointer-events-none"
-                style={{
-                  background: 'linear-gradient(to bottom, transparent 45%, rgba(0,0,0,0.45) 68%, rgba(0,0,0,0.72) 100%)',
-                }}
+                style={{ background: 'linear-gradient(to bottom, transparent 38%, rgba(0,0,0,0.35) 58%, rgba(0,0,0,0.72) 78%, rgba(0,0,0,0.88) 100%)' }}
               />
-              <div
-                className="absolute bottom-0 left-0 right-0 z-10 px-5 pb-6"
-              >
-                <p
-                  className="text-center font-bold leading-snug"
-                  style={{
-                    fontFamily: 'Georgia, "Times New Roman", serif',
-                    fontSize: 'clamp(15px, 3.8vw, 20px)',
-                    color: '#ffffff',
-                    textShadow: '0 1px 10px rgba(0,0,0,0.95), 0 0 24px rgba(0,0,0,0.7)',
-                    fontStyle: 'italic',
-                  }}
-                >
-                  {narration}
-                </p>
+
+              <div className="absolute bottom-0 left-0 right-0 z-10 px-5 pb-7">
+                {/* Character name label (spoken dialogue only) */}
+                {speakerName && accentColor && (
+                  <div className="mb-2">
+                    <p
+                      style={{
+                        fontFamily: 'Lora, Georgia, serif',
+                        fontSize: '14px',
+                        fontWeight: 600,
+                        color: accentColor,
+                        letterSpacing: '0.03em',
+                        marginBottom: '4px',
+                      }}
+                    >
+                      {speakerName}
+                    </p>
+                    {/* Accent underline */}
+                    <div style={{ width: '32px', height: '2px', background: accentColor, borderRadius: '1px', opacity: 0.8 }} />
+                  </div>
+                )}
+
+                {/* Dialogue text */}
+                {dialogueText && (
+                  <p
+                    style={{
+                      fontFamily: 'Lora, Georgia, serif',
+                      fontSize: 'clamp(18px, 4.5vw, 26px)',
+                      fontWeight: 700,
+                      color: '#ffffff',
+                      lineHeight: 1.3,
+                      textShadow: '0 2px 12px rgba(0,0,0,0.9)',
+                      margin: 0,
+                    }}
+                  >
+                    {dialogueText}
+                  </p>
+                )}
+
+                {/* Narration text */}
+                {narration && (
+                  <p
+                    style={{
+                      fontFamily: 'Lora, Georgia, serif',
+                      fontSize: 'clamp(16px, 4vw, 22px)',
+                      fontWeight: 400,
+                      fontStyle: 'italic',
+                      color: 'rgba(255,255,255,0.92)',
+                      lineHeight: 1.4,
+                      textShadow: '0 2px 12px rgba(0,0,0,0.9)',
+                      margin: 0,
+                      textAlign: 'center',
+                    }}
+                  >
+                    {narration}
+                  </p>
+                )}
               </div>
             </>
           )}
@@ -421,53 +362,44 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
           {/* Polling indicator */}
           {isPolling && !isNavigating && (
             <div
-              className="absolute bottom-4 right-4 z-20 flex items-center gap-2 px-3 py-1.5 rounded-full"
-              style={{
-                background: 'rgba(0,0,0,0.6)',
-                backdropFilter: 'blur(4px)',
-              }}
+              className="absolute bottom-5 right-4 z-20 flex items-center gap-2 px-3 py-1.5 rounded-full"
+              style={{ background: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(6px)' }}
             >
-              <Loader2 size={12} className="animate-spin" style={{ color: 'rgba(255,255,255,0.7)' }} />
-              <span style={{ fontFamily: 'sans-serif', fontSize: '11px', color: 'rgba(255,255,255,0.6)', fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase' }}>
+              <Loader2 size={12} className="animate-spin" style={{ color: 'rgba(255,255,255,0.6)' }} />
+              <span style={{ fontFamily: 'Lora, Georgia, serif', fontSize: '11px', fontStyle: 'italic', color: 'rgba(255,255,255,0.55)' }}>
                 Generating...
               </span>
             </div>
           )}
-        </div>
 
-        {/* Choice options — below the panel */}
-        {isAwaitingChoice && choice && !isLoading && !isNavigating && (
-          <div
-            className="pointer-events-auto flex flex-col gap-2 px-4 py-3"
-            style={{
-              width: '100%',
-              maxWidth: '400px',
-              position: 'absolute',
-              bottom: 0,
-              left: '50%',
-              transform: 'translateX(-50%)',
-              zIndex: 30,
-              background: 'linear-gradient(to top, rgba(0,0,0,0.85) 60%, transparent)',
-            }}
-          >
-            {choice.options.map((opt, i) => (
-              <button
-                key={i}
-                onClick={() => handleChoice(opt.action_panel_external_id)}
-                className="w-full px-4 py-3 rounded-xl text-sm font-semibold tracking-wide transition-all hover:brightness-110 active:scale-95"
-                style={{
-                  background: 'rgba(255,255,255,0.15)',
-                  border: '1px solid rgba(255,255,255,0.25)',
-                  color: 'rgba(255,255,255,0.95)',
-                  backdropFilter: 'blur(8px)',
-                  fontFamily: 'sans-serif',
-                }}
-              >
-                {opt.text}
-              </button>
-            ))}
-          </div>
-        )}
+          {/* Choice options */}
+          {isAwaitingChoice && choice && !isLoading && !isNavigating && (
+            <div
+              className="absolute bottom-0 left-0 right-0 z-20 flex flex-col gap-2 px-4 pb-5 pt-8"
+              style={{ background: 'linear-gradient(to top, rgba(0,0,0,0.88) 60%, transparent)' }}
+            >
+              {choice.options.map((opt, i) => (
+                <button
+                  key={i}
+                  onClick={() => handleChoice(opt.action_panel_external_id)}
+                  className="w-full px-4 py-3 rounded-xl transition-all hover:brightness-110 active:scale-95"
+                  style={{
+                    fontFamily: 'Lora, Georgia, serif',
+                    fontSize: '15px',
+                    fontWeight: 600,
+                    color: 'rgba(255,255,255,0.95)',
+                    background: 'rgba(255,255,255,0.12)',
+                    border: '1px solid rgba(255,255,255,0.2)',
+                    backdropFilter: 'blur(8px)',
+                    textAlign: 'left',
+                  }}
+                >
+                  {opt.text}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
