@@ -510,7 +510,7 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
           backgroundImage: imageUrl ? `url(${imageUrl})` : 'none',
           backgroundSize: 'cover',
           backgroundPosition: 'center',
-          filter: 'blur(70px) brightness(0.45) saturate(1.2)',
+          filter: 'blur(70px)',
           transform: 'scale(1.15)',
         }}
       />
