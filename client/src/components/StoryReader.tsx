@@ -501,21 +501,19 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
   return (
     <div
       className="fixed inset-0 z-[100]"
-      style={{ opacity: visible ? 1 : 0, transition: 'opacity 0.2s ease' }}
+      style={{ opacity: visible ? 1 : 0, transition: 'opacity 0.2s ease', background: 'rgb(5,5,5)' }}
     >
-      {/* Ambient blurred backdrop */}
+      {/* Ambient blurred backdrop — matches Freeroam: blurred image over near-black bg, no separate scrim */}
       <div
         className="absolute inset-0"
         style={{
           backgroundImage: imageUrl ? `url(${imageUrl})` : 'none',
           backgroundSize: 'cover',
           backgroundPosition: 'center',
-          filter: 'blur(28px) brightness(0.3) saturate(1.5)',
-          transform: 'scale(1.12)',
+          filter: 'blur(70px) brightness(0.45) saturate(1.2)',
+          transform: 'scale(1.15)',
         }}
       />
-      {/* Dark scrim */}
-      <div className="absolute inset-0" style={{ background: 'rgba(0,0,0,0.5)' }} />
 
       {/* Full-viewport invisible tap zones — match Freeroam's 25% width tap areas */}
       {canGoBack && !isNavigating && (
