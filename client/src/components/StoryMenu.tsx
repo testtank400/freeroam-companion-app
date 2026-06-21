@@ -94,7 +94,9 @@ interface StoryMenuProps {
   entityLocations?: EntityLocation[];
   entityMisc?: EntityMisc[];
   narrativeThreads?: NarrativeThread[];
+  currentPanelId?: string;
   onNavigateToPanel: (panelId: string) => void;
+  onNavigateToDepth?: (depth: number) => void;
   onRemoveBookmark: (panelId: string) => void;
   // Like state
   isLiked?: boolean;
@@ -490,13 +492,29 @@ export default function StoryMenu({
   isOpen, onClose, world, currentDepth, totalDepth,
   progressPanel, bookmarks, chapters, tags, relatedWorlds,
   journalSummary, compressedSummaries = [], canEditSummary, entityCharacters = [], entityLocations = [], entityMisc = [], narrativeThreads = [],
-  onNavigateToPanel, onRemoveBookmark,
+  currentPanelId, onNavigateToPanel, onNavigateToDepth, onRemoveBookmark,
   isLiked = false, likeCount, onToggleLike,
 }: StoryMenuProps) {
   const allBookmarkEntries: BookmarkEntry[] = [
     ...(progressPanel ? [progressPanel] : []),
     ...bookmarks,
   ];
+
+  // Page slider state
+  const maxDepth = totalDepth ?? progressPanel?.depth ?? currentDepth;
+  const [sliderInput, setSliderInput] = useState<number>(currentDepth);
+  const [isNavigatingToDepth, setIsNavigatingToDepth] = useState(false);
+  const inputChanged = sliderInput !== currentDepth;
+
+  const handleGoToDepth = async () => {
+    if (!onNavigateToDepth || isNavigatingToDepth || !inputChanged) return;
+    setIsNavigatingToDepth(true);
+    try {
+      await onNavigateToDepth(sliderInput);
+    } finally {
+      setIsNavigatingToDepth(false);
+    }
+  };
 
   const [topTab, setTopTab] = useState<'story' | 'journal'>('story');
   const [journalTab, setJournalTab] = useState<'summary' | 'state' | 'threads' | 'preferences'>('summary');
@@ -599,16 +617,64 @@ export default function StoryMenu({
 
               {/* Page slider */}
               <div className="rounded-2xl px-5 py-4 mb-5" style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.08)' }}>
-                <div className="flex items-center justify-between mb-3">
-                  <span style={{ fontFamily: LORA, fontSize: '13px', color: 'rgba(255,255,255,0.5)', fontStyle: 'italic' }}>Page</span>
-                  <span style={{ fontFamily: LORA, fontSize: '20px', fontWeight: 700, color: '#fff' }}>
-                    {currentDepth}
-                    {totalDepth ? <span style={{ fontSize: '14px', color: 'rgba(255,255,255,0.4)', fontWeight: 400 }}> of {totalDepth}</span> : null}
-                  </span>
+                {/* Number input row */}
+                <div className="flex items-center gap-2 mb-3">
+                  <span style={{ fontFamily: LORA, fontSize: '13px', color: 'rgba(255,255,255,0.5)', fontStyle: 'italic', flexShrink: 0 }}>Page</span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={maxDepth}
+                    value={sliderInput}
+                    onChange={(e) => {
+                      const v = parseInt(e.target.value, 10);
+                      if (!isNaN(v)) setSliderInput(Math.max(1, Math.min(maxDepth, v)));
+                    }}
+                    onKeyDown={(e) => { if (e.key === 'Enter') handleGoToDepth(); }}
+                    style={{
+                      width: '80px',
+                      fontFamily: LORA,
+                      fontSize: '18px',
+                      fontWeight: 700,
+                      color: '#fff',
+                      background: 'rgba(255,255,255,0.08)',
+                      border: '1px solid rgba(255,255,255,0.18)',
+                      borderRadius: '8px',
+                      padding: '4px 8px',
+                      outline: 'none',
+                      textAlign: 'center',
+                    }}
+                  />
+                  <span style={{ fontFamily: LORA, fontSize: '14px', color: 'rgba(255,255,255,0.4)', flexShrink: 0 }}>of {maxDepth}</span>
+                  {inputChanged && (
+                    <button
+                      onClick={handleGoToDepth}
+                      disabled={isNavigatingToDepth}
+                      className="flex items-center justify-center px-3 py-1 rounded-full transition-all hover:brightness-110 disabled:opacity-50"
+                      style={{ fontFamily: LORA, fontSize: '13px', fontWeight: 700, color: '#fff', background: '#7c3aed', border: 'none', minWidth: '44px' }}
+                    >
+                      {isNavigatingToDepth ? '...' : 'Go'}
+                    </button>
+                  )}
                 </div>
-                <div className="relative w-full rounded-full" style={{ height: '4px', background: 'rgba(255,255,255,0.12)' }}>
-                  <div className="absolute left-0 top-0 h-full rounded-full" style={{ width: totalDepth ? `${Math.min(100, (currentDepth / totalDepth) * 100)}%` : '50%', background: 'rgba(255,255,255,0.65)', transition: 'width 0.3s ease' }} />
-                  <div className="absolute top-1/2 -translate-y-1/2 w-3.5 h-3.5 rounded-full" style={{ left: totalDepth ? `calc(${Math.min(100, (currentDepth / totalDepth) * 100)}% - 7px)` : 'calc(50% - 7px)', background: '#fff', boxShadow: '0 0 8px rgba(255,255,255,0.6)' }} />
+                {/* Scrubber track */}
+                <div
+                  className="relative w-full rounded-full cursor-pointer"
+                  style={{ height: '6px', background: 'rgba(255,255,255,0.12)' }}
+                  onClick={(e) => {
+                    const rect = e.currentTarget.getBoundingClientRect();
+                    const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+                    const depth = Math.max(1, Math.round(pct * maxDepth));
+                    setSliderInput(depth);
+                  }}
+                >
+                  <div
+                    className="absolute left-0 top-0 h-full rounded-full"
+                    style={{ width: `${Math.min(100, (sliderInput / maxDepth) * 100)}%`, background: inputChanged ? '#7c3aed' : 'rgba(255,255,255,0.65)', transition: 'width 0.1s ease' }}
+                  />
+                  <div
+                    className="absolute top-1/2 -translate-y-1/2 w-4 h-4 rounded-full"
+                    style={{ left: `calc(${Math.min(100, (sliderInput / maxDepth) * 100)}% - 8px)`, background: inputChanged ? '#7c3aed' : '#fff', boxShadow: '0 0 8px rgba(255,255,255,0.5)', transition: 'left 0.1s ease' }}
+                  />
                 </div>
               </div>
 

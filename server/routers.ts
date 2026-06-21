@@ -1196,6 +1196,35 @@ export const appRouter = router({
         return response.json() as Promise<{ success: boolean; message: string; bookmarked: boolean }>;
       }),
 
+    /** Get the panel at a specific depth (for page slider navigation) */
+    getPanelAtDepth: publicProcedure
+      .input(z.object({
+        worldId: z.string(),
+        fromPanelId: z.string(),
+        targetDepth: z.number().int().min(1),
+      }))
+      .query(async ({ input, ctx }) => {
+        const cookie = getFreeroamCookie(ctx);
+        if (!cookie) throw new Error("Cookie not configured in environment");
+
+        const url = `https://getfreeroam.com/api/world/${encodeURIComponent(input.worldId)}/panel-at-depth?from_panel_external_id=${encodeURIComponent(input.fromPanelId)}&target_depth=${input.targetDepth}`;
+        const response = await fetch(url, {
+          headers: {
+            accept: "*/*",
+            "accept-language": "en-US,en;q=0.9",
+            cookie,
+            origin: "https://getfreeroam.com",
+            referer: "https://getfreeroam.com",
+            "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36",
+          },
+        });
+        if (!response.ok) {
+          const text = await response.text();
+          throw new Error(`Get panel at depth failed (${response.status}): ${text}`);
+        }
+        return response.json() as Promise<{ panel_external_id: string; depth: number }>;
+      }),
+
     /** Like a world */
     like: publicProcedure
       .input(z.object({ worldId: z.string() }))

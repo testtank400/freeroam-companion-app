@@ -446,7 +446,6 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
             onClose={() => setMenuOpen(false)}
             world={world}
             currentDepth={panel?.depth ?? 0}
-            totalDepth={undefined}
             progressPanel={progressPanel}
             bookmarks={bookmarkList}
             tags={worldDetail?.tags ?? []}
@@ -459,7 +458,33 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
             entityLocations={journalData?.entityLocations}
             entityMisc={journalData?.entityMisc}
             narrativeThreads={journalData?.narrativeThreads}
+            currentPanelId={panel?.panel_id}
+            totalDepth={progressPanel?.depth}
             onNavigateToPanel={(panelId) => loadPanel(panelId, world.external_id)}
+            onNavigateToDepth={async (depth) => {
+              if (!panel) return;
+              try {
+                const cookie = localStorage.getItem('freeroam_cookie') ?? '';
+                const accountId = localStorage.getItem('freeroam_account_id') ?? '';
+                const params = encodeURIComponent(JSON.stringify({ '0': { json: { worldId: world.external_id, fromPanelId: panel.panel_id, targetDepth: depth } } }));
+                const res = await fetch(`/api/trpc/worlds.getPanelAtDepth?batch=1&input=${params}`, {
+                  credentials: 'include',
+                  headers: {
+                    ...(cookie ? { 'x-freeroam-cookie': cookie } : {}),
+                    ...(accountId ? { 'x-freeroam-account-id': accountId } : {}),
+                  },
+                });
+                if (!res.ok) return;
+                const json = await res.json();
+                const data = json?.[0]?.result?.data?.json;
+                if (data?.panel_external_id) {
+                  await loadPanel(data.panel_external_id, world.external_id);
+                  setMenuOpen(false);
+                }
+              } catch {
+                toast.error('Failed to navigate to page');
+              }
+            }}
             onRemoveBookmark={handleRemoveBookmarkFromMenu}
             isLiked={isLiked}
             likeCount={likeCount}
