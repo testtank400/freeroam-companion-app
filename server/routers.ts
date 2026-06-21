@@ -1729,6 +1729,72 @@ export const appRouter = router({
       };
     }),
   }),
+
+  // ─── User Preferences (global, not per-world) ────────────────────────────────────────
+  preferences: router({
+    /** Get the user's global story preferences */
+    get: publicProcedure
+      .query(async ({ ctx }) => {
+        const cookie = getFreeroamCookie(ctx);
+        if (!cookie) throw new Error("Cookie not configured in environment");
+
+        const response = await fetch("https://getfreeroam.com/api/profile/preferences", {
+          headers: {
+            accept: "*/*",
+            "accept-language": "en-US,en;q=0.9",
+            cookie,
+            origin: "https://getfreeroam.com",
+            referer: "https://getfreeroam.com",
+            "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36",
+          },
+        });
+        if (!response.ok) {
+          const text = await response.text();
+          throw new Error(`Get preferences failed (${response.status}): ${text}`);
+        }
+        return response.json() as Promise<{
+          language: string;
+          image_content_setting: string;
+          writing_content_setting: string;
+          story_preferences: string;
+          show_choice_ideas_by_default: boolean | null;
+          resolved_show_choice_ideas_by_default: boolean;
+        }>;
+      }),
+
+    /** Update the user's global story preferences */
+    update: publicProcedure
+      .input(z.object({
+        language: z.string().optional(),
+        image_content_setting: z.string().optional(),
+        writing_content_setting: z.string().optional(),
+        story_preferences: z.string().optional(),
+        show_choice_ideas_by_default: z.boolean().nullable().optional(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const cookie = getFreeroamCookie(ctx);
+        if (!cookie) throw new Error("Cookie not configured in environment");
+
+        const response = await fetch("https://getfreeroam.com/api/profile/preferences", {
+          method: "PUT",
+          headers: {
+            accept: "*/*",
+            "accept-language": "en-US,en;q=0.9",
+            "content-type": "application/json",
+            cookie,
+            origin: "https://getfreeroam.com",
+            referer: "https://getfreeroam.com",
+            "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36",
+          },
+          body: JSON.stringify(input),
+        });
+        if (!response.ok) {
+          const text = await response.text();
+          throw new Error(`Update preferences failed (${response.status}): ${text}`);
+        }
+        return response.json() as Promise<{ message: string; preferences: Record<string, unknown> }>;
+      }),
+  }),
 });
 
 export type AppRouter = typeof appRouter;

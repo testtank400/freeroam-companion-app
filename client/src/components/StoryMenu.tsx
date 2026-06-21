@@ -223,6 +223,142 @@ function JournalSummary({
   );
 }
 
+function JournalPreferences() {
+  const [prefs, setPrefs] = useState<{
+    language: string;
+    image_content_setting: string;
+    writing_content_setting: string;
+    story_preferences: string;
+    show_choice_ideas_by_default: boolean | null;
+  } | null>(null);
+  const [draft, setDraft] = useState<typeof prefs>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isDirty, setIsDirty] = useState(false);
+  const updateMutation = trpc.preferences.update.useMutation();
+
+  // Load preferences on mount
+  useState(() => {
+    const cookie = localStorage.getItem('freeroam_cookie') ?? '';
+    const accountId = localStorage.getItem('freeroam_account_id') ?? '';
+    const params = encodeURIComponent(JSON.stringify({ '0': { json: {} } }));
+    fetch(`/api/trpc/preferences.get?batch=1&input=${params}`, {
+      credentials: 'include',
+      headers: {
+        ...(cookie ? { 'x-freeroam-cookie': cookie } : {}),
+        ...(accountId ? { 'x-freeroam-account-id': accountId } : {}),
+      },
+    })
+      .then(r => r.json())
+      .then(json => {
+        const data = json?.[0]?.result?.data?.json;
+        if (data) { setPrefs(data); setDraft(data); }
+      })
+      .catch(() => {})
+      .finally(() => setIsLoading(false));
+  });
+
+  const handleChange = (field: string, value: string | boolean | null) => {
+    setDraft(prev => prev ? { ...prev, [field]: value } : prev);
+    setIsDirty(true);
+  };
+
+  const handleSave = async () => {
+    if (!draft) return;
+    setIsSaving(true);
+    try {
+      await updateMutation.mutateAsync(draft);
+      setPrefs(draft);
+      setIsDirty(false);
+      toast.success('Preferences saved.');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to save preferences');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const CONTENT_OPTIONS = ['permissive', 'moderate', 'strict'];
+
+  if (isLoading) {
+    return <p style={{ fontFamily: LORA, fontSize: '13px', fontStyle: 'italic', color: 'rgba(255,255,255,0.35)', textAlign: 'center', padding: '24px 0' }}>Loading preferences...</p>;
+  }
+  if (!draft) {
+    return <p style={{ fontFamily: LORA, fontSize: '13px', fontStyle: 'italic', color: 'rgba(255,255,255,0.35)', textAlign: 'center', padding: '24px 0' }}>Could not load preferences.</p>;
+  }
+
+  return (
+    <div className="space-y-5">
+      <p style={{ fontFamily: LORA, fontSize: '11px', fontStyle: 'italic', color: 'rgba(255,255,255,0.3)', marginBottom: '4px' }}>
+        These are global preferences that apply to all your stories on Freeroam.
+      </p>
+
+      {/* Image content setting */}
+      <div>
+        <p style={{ fontFamily: LORA, fontSize: '12px', fontWeight: 700, color: 'rgba(255,255,255,0.55)', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.1em' }}>Image Content</p>
+        <div className="flex gap-2 flex-wrap">
+          {CONTENT_OPTIONS.map(opt => (
+            <button key={opt} onClick={() => handleChange('image_content_setting', opt)}
+              className="px-3 py-1.5 rounded-full transition-all"
+              style={{ fontFamily: LORA, fontSize: '13px', fontStyle: 'italic', textTransform: 'capitalize', color: draft.image_content_setting === opt ? '#fff' : 'rgba(255,255,255,0.45)', background: draft.image_content_setting === opt ? 'rgba(255,255,255,0.15)' : 'rgba(255,255,255,0.06)', border: `1px solid ${draft.image_content_setting === opt ? 'rgba(255,255,255,0.3)' : 'rgba(255,255,255,0.1)'}` }}>
+              {opt}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Writing content setting */}
+      <div>
+        <p style={{ fontFamily: LORA, fontSize: '12px', fontWeight: 700, color: 'rgba(255,255,255,0.55)', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.1em' }}>Writing Content</p>
+        <div className="flex gap-2 flex-wrap">
+          {CONTENT_OPTIONS.map(opt => (
+            <button key={opt} onClick={() => handleChange('writing_content_setting', opt)}
+              className="px-3 py-1.5 rounded-full transition-all"
+              style={{ fontFamily: LORA, fontSize: '13px', fontStyle: 'italic', textTransform: 'capitalize', color: draft.writing_content_setting === opt ? '#fff' : 'rgba(255,255,255,0.45)', background: draft.writing_content_setting === opt ? 'rgba(255,255,255,0.15)' : 'rgba(255,255,255,0.06)', border: `1px solid ${draft.writing_content_setting === opt ? 'rgba(255,255,255,0.3)' : 'rgba(255,255,255,0.1)'}` }}>
+              {opt}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Show choice ideas toggle */}
+      <div className="flex items-center justify-between">
+        <p style={{ fontFamily: LORA, fontSize: '13px', color: 'rgba(255,255,255,0.7)', fontStyle: 'italic' }}>Show choice ideas by default</p>
+        <button
+          onClick={() => handleChange('show_choice_ideas_by_default', draft.show_choice_ideas_by_default === true ? false : true)}
+          className="relative flex-shrink-0 rounded-full transition-all"
+          style={{ width: '44px', height: '24px', background: draft.show_choice_ideas_by_default ? 'rgba(255,255,255,0.5)' : 'rgba(255,255,255,0.12)', border: '1px solid rgba(255,255,255,0.2)' }}
+        >
+          <div style={{ position: 'absolute', top: '3px', left: draft.show_choice_ideas_by_default ? '22px' : '3px', width: '16px', height: '16px', borderRadius: '50%', background: '#fff', transition: 'left 0.15s ease' }} />
+        </button>
+      </div>
+
+      {/* Story preferences textarea */}
+      <div>
+        <p style={{ fontFamily: LORA, fontSize: '12px', fontWeight: 700, color: 'rgba(255,255,255,0.55)', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.1em' }}>Story Preferences</p>
+        <textarea
+          value={draft.story_preferences}
+          onChange={(e) => handleChange('story_preferences', e.target.value)}
+          rows={10}
+          style={{ width: '100%', fontFamily: LORA, fontSize: '13px', color: 'rgba(255,255,255,0.85)', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '10px', padding: '12px', lineHeight: 1.6, resize: 'vertical', outline: 'none' }}
+        />
+      </div>
+
+      {/* Save button */}
+      {isDirty && (
+        <div className="flex items-center gap-3">
+          <button onClick={() => { setDraft(prefs); setIsDirty(false); }} disabled={isSaving} className="flex items-center gap-2 px-4 py-2 rounded-full transition-all hover:brightness-125 disabled:opacity-50" style={{ fontFamily: LORA, fontSize: '13px', fontStyle: 'italic', color: 'rgba(255,255,255,0.65)', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)' }}>
+            <XIcon size={13} strokeWidth={2} /> Cancel
+          </button>
+          <button onClick={handleSave} disabled={isSaving} className="flex items-center gap-2 px-5 py-2 rounded-full transition-all hover:brightness-125 disabled:opacity-50" style={{ fontFamily: LORA, fontSize: '13px', fontStyle: 'italic', color: '#fff', background: 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.25)' }}>
+            <Check size={13} strokeWidth={2.5} /> {isSaving ? 'Saving...' : 'Save'}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function JournalState({ characters, locations, misc }: { characters: EntityCharacter[]; locations: EntityLocation[]; misc: EntityMisc[] }) {
   return (
     <div className="space-y-6">
@@ -522,11 +658,7 @@ export default function StoryMenu({
               {journalTab === 'summary' && <JournalSummary compressedSummaries={compressedSummaries} canEdit={canEditSummary} worldId={world.external_id} />}
               {journalTab === 'state' && <JournalState characters={entityCharacters} locations={entityLocations} misc={entityMisc} />}
               {journalTab === 'threads' && <JournalThreads threads={narrativeThreads} />}
-              {journalTab === 'preferences' && (
-                <div className="text-center py-8">
-                  <p style={{ fontFamily: LORA, fontSize: '14px', fontStyle: 'italic', color: 'rgba(255,255,255,0.35)' }}>Story preferences — coming soon.</p>
-                </div>
-              )}
+              {journalTab === 'preferences' && <JournalPreferences />}
             </>
           )}
 
