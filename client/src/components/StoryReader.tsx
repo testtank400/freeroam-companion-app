@@ -647,8 +647,8 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
           className="relative"
           style={{
             height: '100dvh',
-            aspectRatio: '9/16',
-            maxWidth: '100vw',
+            // On mobile (narrow screens), fill full width; on wider screens constrain to 9:16
+            width: 'min(100vw, calc(100dvh * 9 / 16))',
             overflow: 'hidden',
             background: '#080808',
           }}
