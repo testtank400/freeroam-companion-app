@@ -12,7 +12,7 @@
 import { trpc } from '@/lib/trpc';
 import { ApiWorld } from '@/components/WorldCard';
 import StoryMenu from '@/components/StoryMenu';
-import { Bookmark, ChevronLeft, ChevronRight, X, Loader2 } from 'lucide-react';
+import { Bookmark, ChevronLeft, ChevronRight, X, Loader2, ImageIcon } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
@@ -101,6 +101,62 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
   const [isTogglingBookmark, setIsTogglingBookmark] = useState(false);
   const addBookmarkMutation = trpc.worlds.addBookmark.useMutation();
   const removeBookmarkMutation = trpc.worlds.removeBookmark.useMutation();
+
+  // Regenerate polling state
+  const [isRegeneratePolling, setIsRegeneratePolling] = useState(false);
+  const [regenerateTimedOut, setRegenerateTimedOut] = useState(false);
+  const regeneratePollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const stopRegeneratePolling = useCallback(() => {
+    if (regeneratePollRef.current) {
+      clearInterval(regeneratePollRef.current);
+      regeneratePollRef.current = null;
+    }
+    setIsRegeneratePolling(false);
+  }, []);
+
+  const startRegeneratePolling = useCallback((worldId: string) => {
+    setIsRegeneratePolling(true);
+    setRegenerateTimedOut(false);
+    let elapsed = 0;
+    const INTERVAL = 1500;
+    const TIMEOUT = 60000;
+    regeneratePollRef.current = setInterval(async () => {
+      elapsed += INTERVAL;
+      if (elapsed >= TIMEOUT) {
+        stopRegeneratePolling();
+        setRegenerateTimedOut(true);
+        setTimeout(() => setRegenerateTimedOut(false), 3000);
+        return;
+      }
+      try {
+        const cookie = localStorage.getItem('freeroam_cookie') ?? '';
+        const accountId = localStorage.getItem('freeroam_account_id') ?? '';
+        const params = encodeURIComponent(JSON.stringify({ '0': { json: { worldId } } }));
+        const res = await fetch(`/api/trpc/worlds.get?batch=1&input=${params}`, {
+          credentials: 'include',
+          headers: {
+            ...(cookie ? { 'x-freeroam-cookie': cookie } : {}),
+            ...(accountId ? { 'x-freeroam-account-id': accountId } : {}),
+          },
+        });
+        if (!res.ok) return;
+        const json = await res.json();
+        const data = json?.[0]?.result?.data?.json;
+        const panelId = data?.panel_id;
+        if (panelId) {
+          stopRegeneratePolling();
+          await loadPanel(panelId, worldId);
+          toast.success('Story regenerated successfully');
+        }
+      } catch {
+        // Non-fatal — keep polling
+      }
+    }, INTERVAL);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stopRegeneratePolling]);
+
+  useEffect(() => () => stopRegeneratePolling(), [stopRegeneratePolling]);
 
   // Like state
   const [isLiked, setIsLiked] = useState(false);
@@ -382,16 +438,45 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
       {/* Right navigation halo */}
       <button
         onClick={() => handleNavigate('next')}
-        disabled={(!canGoForward && !isPolling) || isNavigating}
+        disabled={(!canGoForward && !isPolling && !isRegeneratePolling) || isNavigating}
         className="absolute right-0 top-0 bottom-0 z-20 flex items-center justify-end pr-2 sm:pr-4 disabled:opacity-0 transition-opacity"
         style={{ width: 'clamp(44px, 15vw, 100px)', cursor: canGoForward ? 'pointer' : 'default' }}
         aria-label="Next panel"
       >
         <div
-          className="flex items-center justify-center rounded-full transition-all hover:bg-white/20"
-          style={{ width: '40px', height: '40px', background: 'rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.8)' }}
+          className="relative flex items-center justify-center rounded-full transition-all hover:bg-white/20"
+          style={{ width: '40px', height: '40px', background: 'rgba(255,255,255,0.1)', color: regenerateTimedOut ? '#ef4444' : 'rgba(255,255,255,0.8)' }}
         >
-          {isPolling ? <Loader2 size={18} className="animate-spin" /> : <ChevronRight size={22} strokeWidth={2} />}
+          {/* Spinning ring for polling states */}
+          {(isPolling || isRegeneratePolling || regenerateTimedOut) && (
+            <svg
+              className="absolute inset-0"
+              viewBox="0 0 40 40"
+              style={{
+                animation: regenerateTimedOut ? 'none' : 'spin 1s linear infinite',
+              }}
+            >
+              <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+              <circle
+                cx="20" cy="20" r="17"
+                fill="none"
+                stroke={regenerateTimedOut ? '#ef4444' : 'rgba(255,255,255,0.7)'}
+                strokeWidth="2.5"
+                strokeDasharray="80 26"
+                strokeLinecap="round"
+              />
+            </svg>
+          )}
+          {/* Icon inside the ring */}
+          {regenerateTimedOut ? (
+            <X size={16} strokeWidth={2.5} style={{ color: '#ef4444' }} />
+          ) : isRegeneratePolling ? (
+            <ImageIcon size={14} strokeWidth={2} style={{ opacity: 0.8, animation: 'pulse 1.5s ease-in-out infinite' }} />
+          ) : isPolling ? (
+            <ImageIcon size={14} strokeWidth={2} style={{ opacity: 0.8, animation: 'pulse 1.5s ease-in-out infinite' }} />
+          ) : (
+            <ChevronRight size={22} strokeWidth={2} />
+          )}
         </div>
       </button>
 
@@ -520,8 +605,8 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
                   await loadPanel(startData.initial_panel_id, world.external_id);
                   toast.success('Story regenerated successfully');
                 } else {
-                  // already_running — start polling from current panel
-                  toast.success('Regeneration started — generating new content...');
+                  // already_running — poll Get World until panel_id appears
+                  startRegeneratePolling(world.external_id);
                 }
               } catch {
                 toast.error('Failed to regenerate story');
