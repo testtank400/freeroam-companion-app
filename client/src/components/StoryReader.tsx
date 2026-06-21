@@ -815,12 +815,6 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
           {/* Bottom text overlay */}
           {hasText && !isLoading && !isNavigating && (
             <>
-              {/* Gradient for readability */}
-              <div
-                className="absolute inset-0 pointer-events-none"
-                style={{ background: 'linear-gradient(to bottom, transparent 45%, rgba(0,0,0,0.2) 62%, rgba(0,0,0,0.55) 80%, rgba(0,0,0,0.75) 100%)' }}
-              />
-
               <div
                 className="absolute bottom-0 left-0 right-0 z-10 px-5"
                 style={{ paddingBottom: '110px' }}
