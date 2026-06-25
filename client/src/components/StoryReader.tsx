@@ -178,7 +178,10 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
       // Determine if this is an image action (check action text prefix)
       const isImageAction = text.toLowerCase().startsWith('change the image to');
       // Handle next panel navigation based on forward_state
-      if (result.forward_state === 'generating' || result.forward_state === 'ready') {
+      if (result.forward_state === 'awaiting_choice' && result.next_panel_id) {
+        // Choice panel is already generated — navigate to it immediately
+        await loadPanel(result.next_panel_id, world.external_id);
+      } else if (result.forward_state === 'generating' || result.forward_state === 'ready') {
         // Start polling next-ready immediately — panel may not be generated yet
         setIsPolling(true);
         if (isImageAction) setIsImagePolling(true);
