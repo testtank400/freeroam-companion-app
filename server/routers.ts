@@ -1196,6 +1196,64 @@ export const appRouter = router({
         return response.json() as Promise<{ success: boolean; message: string; bookmarked: boolean }>;
       }),
 
+    /** Get characters currently in the story for a given panel */
+    getWorldCharacters: publicProcedure
+      .input(z.object({ worldId: z.string(), panelId: z.string() }))
+      .query(async ({ input, ctx }) => {
+        const cookie = getFreeroamCookie(ctx);
+        if (!cookie) throw new Error("Cookie not configured in environment");
+
+        const url = `https://getfreeroam.com/api/world/${input.worldId}/characters/current?current_panel_external_id=${input.panelId}`;
+        const response = await fetch(url, {
+          headers: {
+            accept: "*/*",
+            "accept-language": "en-US,en;q=0.9",
+            cookie,
+            origin: "https://getfreeroam.com",
+            referer: "https://getfreeroam.com",
+            "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36",
+          },
+        });
+        if (!response.ok) {
+          const text = await response.text();
+          throw new Error(`Get world characters failed (${response.status}): ${text}`);
+        }
+        return response.json() as Promise<{
+          world_characters: Array<{
+            id: number;
+            external_id: string;
+            name: string;
+            backstory: string;
+            appearance: string;
+            headshot_url: string;
+            display_headshot_url: string | null;
+            source: string;
+            removable: boolean;
+            is_main_character: boolean;
+            is_saved: boolean;
+            is_yours: boolean;
+            creator_name: string;
+            tags: Array<{ name: string; is_fandom: boolean; emoji: string }>;
+          }>;
+          story_characters: Array<{
+            id: number;
+            external_id: string;
+            name: string;
+            backstory: string;
+            appearance: string;
+            headshot_url: string;
+            display_headshot_url: string | null;
+            source: string;
+            removable: boolean;
+            is_main_character: boolean;
+            is_saved: boolean;
+            is_yours: boolean;
+            creator_name: string;
+            tags: Array<{ name: string; is_fandom: boolean; emoji: string }>;
+          }>;
+        }>;
+      }),
+
     /** Send an action (choice, take-action, image, steer-story) */
     sendAction: publicProcedure
       .input(z.object({

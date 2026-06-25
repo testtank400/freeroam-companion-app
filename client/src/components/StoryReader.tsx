@@ -12,6 +12,7 @@
 import { trpc } from '@/lib/trpc';
 import { ApiWorld } from '@/components/WorldCard';
 import StoryMenu from '@/components/StoryMenu';
+import CharacterPanel from '@/components/CharacterPanel';
 import { Bookmark, ChevronLeft, ChevronRight, X, Loader2, ImageIcon, Home, ChevronDown, ChevronUp, Zap, Clapperboard, Users, Image as ImageLucide, Share2 } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
@@ -103,6 +104,9 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
   const addBookmarkMutation = trpc.worlds.addBookmark.useMutation();
   const removeBookmarkMutation = trpc.worlds.removeBookmark.useMutation();
 
+  // Character panel state
+  const [charPanelOpen, setCharPanelOpen] = useState(false);
+
   // Action bar state
   const [actionBarVisible, setActionBarVisible] = useState(true);
   const [activeInputMode, setActiveInputMode] = useState<'act' | 'direct' | 'image' | null>(null);
@@ -120,7 +124,17 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
     }
   };
 
-  const handleSendAction = useCallback(async (text: string, actionType: 'choice' | 'take-action' | 'image' | 'steer-story') => {
+  const handleSendAction = useCallback(async (
+    text: string,
+    actionType: 'choice' | 'take-action' | 'image' | 'steer-story',
+    characterChanges?: {
+      add_character_ids: string[];
+      remove_character_ids: string[];
+      new_main_character_id: string | null;
+      old_main_character_id: string | null;
+      batch_character_update: boolean;
+    } | null
+  ) => {
     if (!panel || !text.trim() || isSendingAction) return;
     setIsSendingAction(true);
     setActiveInputMode(null);
@@ -132,7 +146,7 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
         actionText: text,
         displayText: text,
         actionType,
-        characterChanges: null,
+        characterChanges: characterChanges ?? null,
       });
       // Display the action panel content directly
       const actionPanel = {
@@ -1129,15 +1143,15 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
             {/* Pill action buttons */}
             <div className="flex items-center gap-1.5 overflow-x-auto flex-1" style={{ scrollbarWidth: 'none' }}>
               {[
-                { icon: <Zap size={13} strokeWidth={2} />, label: 'Act', mode: 'act' as const },
-                { icon: <Clapperboard size={13} strokeWidth={2} />, label: 'Direct', mode: 'direct' as const },
-                { icon: <Users size={13} strokeWidth={2} />, label: 'Characters', mode: null },
-                { icon: <ImageLucide size={13} strokeWidth={2} />, label: 'Image', mode: 'image' as const },
-                { icon: <Share2 size={13} strokeWidth={2} />, label: 'Share', mode: null },
-              ].map(({ icon, label, mode }) => (
+                { icon: <Zap size={13} strokeWidth={2} />, label: 'Act', mode: 'act' as const, action: null },
+                { icon: <Clapperboard size={13} strokeWidth={2} />, label: 'Direct', mode: 'direct' as const, action: null },
+                { icon: <Users size={13} strokeWidth={2} />, label: 'Characters', mode: null, action: () => setCharPanelOpen(true) },
+                { icon: <ImageLucide size={13} strokeWidth={2} />, label: 'Image', mode: 'image' as const, action: null },
+                { icon: <Share2 size={13} strokeWidth={2} />, label: 'Share', mode: null, action: null },
+              ].map(({ icon, label, mode, action }) => (
                 <button
                   key={label}
-                  onClick={() => mode ? handleActionBarButton(mode) : toast(`${label} — coming soon`)}
+                  onClick={() => action ? action() : mode ? handleActionBarButton(mode) : toast(`${label} — coming soon`)}
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-full flex-shrink-0 transition-all hover:brightness-125"
                   style={{
                     fontFamily: 'Lora, Georgia, serif',
@@ -1180,6 +1194,29 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
         )}
         </div>
       </div>
+
+      {/* Character Panel */}
+      <CharacterPanel
+        isOpen={charPanelOpen}
+        onClose={() => setCharPanelOpen(false)}
+        worldId={world.external_id}
+        panelId={panel?.panel_id ?? ''}
+        onSaveChanges={async (addIds, removeIds) => {
+          await handleSendAction(
+            addIds.length > 0
+              ? `Add characters: ${addIds.join(', ')}`
+              : `Remove characters: ${removeIds.join(', ')}`,
+            'choice',
+            {
+              add_character_ids: addIds,
+              remove_character_ids: removeIds,
+              new_main_character_id: null,
+              old_main_character_id: null,
+              batch_character_update: true,
+            }
+          );
+        }}
+      />
     </div>
   );
 }
