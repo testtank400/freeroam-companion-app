@@ -447,9 +447,14 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
     if (!currentPanel || isNavigating || isPolling) return;
     const targetId = direction === 'prev' ? currentPanel.prev_panel_id : currentPanel.next_panel_id;
     if (!targetId) return;
-    // For action panels going forward: the next panel may not be generated yet.
-    // Start polling next-ready instead of loading directly to avoid 404.
+    // For action panels going forward: check cache first, then poll if not cached
     if (direction === 'next' && currentPanel.is_action) {
+      // If next panel is already cached, use it instantly
+      if (targetId && panelCache.current.has(targetId)) {
+        await loadPanel(targetId, world.external_id);
+        return;
+      }
+      // Not cached — start polling next-ready
       setIsPolling(true);
       pollingRef.current = setInterval(async () => {
         try {
