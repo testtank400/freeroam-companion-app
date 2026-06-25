@@ -88,6 +88,25 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
   const utils = trpc.useUtils();
   const [currentPanel, setCurrentPanel] = useState<PanelData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+
+  // Lock body scroll when reader is open to prevent mobile browser chrome from toggling
+  useEffect(() => {
+    const prev = document.body.style.overflow;
+    const prevPos = document.body.style.position;
+    const prevTop = document.body.style.top;
+    const scrollY = window.scrollY;
+    document.body.style.overflow = 'hidden';
+    document.body.style.position = 'fixed';
+    document.body.style.top = `-${scrollY}px`;
+    document.body.style.width = '100%';
+    return () => {
+      document.body.style.overflow = prev;
+      document.body.style.position = prevPos;
+      document.body.style.top = prevTop;
+      document.body.style.width = '';
+      window.scrollTo(0, scrollY);
+    };
+  }, []);
   const [isNavigating, setIsNavigating] = useState(false);
   const [isPolling, setIsPolling] = useState(false);
   const [isImagePolling, setIsImagePolling] = useState(false); // true when polling for image generation specifically
