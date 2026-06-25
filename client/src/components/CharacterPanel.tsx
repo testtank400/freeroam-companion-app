@@ -365,14 +365,14 @@ export default function CharacterPanel({
                         {/* Top-left badge — 'You' for main, clickable 'Play as' for others */}
                         {char.is_main_character ? (
                           <div
-                            className="absolute top-2 left-2 px-2 py-0.5 rounded-md"
+                            className="absolute top-2 left-2 px-2.5 py-1 rounded-full"
                             style={{
                               fontFamily: 'Outfit, sans-serif',
-                              fontSize: '11px',
-                              fontWeight: 700,
+                              fontSize: '12px',
+                              fontWeight: 600,
                               color: '#fff',
-                              background: 'rgba(234,179,8,0.85)',
-                              backdropFilter: 'blur(4px)',
+                              background: 'rgba(0,0,0,0.55)',
+                              backdropFilter: 'blur(6px)',
                             }}
                           >
                             You
@@ -383,16 +383,16 @@ export default function CharacterPanel({
                               e.stopPropagation();
                               setPendingPlayAs(prev => prev === char.external_id ? null : char.external_id);
                             }}
-                            className="absolute top-2 left-2 px-2 py-0.5 rounded-md transition-all hover:brightness-125"
+                            className="absolute top-2 left-2 px-2.5 py-1 rounded-full transition-all hover:brightness-125"
                             style={{
                               fontFamily: 'Outfit, sans-serif',
-                              fontSize: '11px',
-                              fontWeight: 700,
+                              fontSize: '12px',
+                              fontWeight: 600,
                               color: '#fff',
                               background: pendingPlayAs === char.external_id
-                                ? 'rgba(34,197,94,0.85)'
-                                : 'rgba(0,0,0,0.6)',
-                              backdropFilter: 'blur(4px)',
+                                ? 'rgba(34,197,94,0.75)'
+                                : 'rgba(0,0,0,0.55)',
+                              backdropFilter: 'blur(6px)',
                               border: 'none',
                             }}
                           >
