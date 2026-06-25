@@ -61,7 +61,7 @@ type PanelData = {
     depth: number;
     is_chat: boolean;
   };
-  next_panel: unknown;
+  next_panel: (Omit<PanelData, 'next_panel'> & { next_panel: unknown }) | null;
   show_jump_to_latest: boolean;
   jump_to_latest_panel_id: string | null;
   is_owner: boolean;
@@ -447,8 +447,35 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
       }, 1000);
       return;
     }
+    // For forward navigation: use the embedded next_panel data if available (instant, no fetch)
+    if (direction === 'next' && currentPanel.next_panel) {
+      const embedded = currentPanel.next_panel as PanelData;
+      stopPolling();
+      setIsNavigating(true);
+      setChoiceIdeasVisible(showChoiceIdeasByDefault);
+      setCurrentPanel({ ...embedded, next_panel: embedded.next_panel ?? null } as PanelData);
+      setPanelMutation.mutate({ worldId: world.external_id, panelId: embedded.panel_id });
+      setIsNavigating(false);
+      setIsLoading(false);
+      // If the embedded panel also has a next_panel_id but no next_panel data, start polling if needed
+      if (embedded.forward_state === 'ready' && !embedded.next_panel_id) {
+        setIsPolling(true);
+        pollingRef.current = setInterval(async () => {
+          try {
+            const result = await utils.worlds.nextReady.fetch({ panelId: embedded.panel_id });
+            if (result.ready) {
+              stopPolling();
+              await loadPanel(result.panel_id, world.external_id);
+            }
+          } catch {
+            // Non-fatal — keep polling
+          }
+        }, 1000);
+      }
+      return;
+    }
     await loadPanel(targetId, world.external_id);
-  }, [currentPanel, isNavigating, isPolling, loadPanel, world.external_id, utils, stopPolling]);
+  }, [currentPanel, isNavigating, isPolling, loadPanel, world.external_id, utils, stopPolling, showChoiceIdeasByDefault, setPanelMutation]);
 
   const handleChoice = useCallback(async (choiceText: string) => {
     // Send the choice as an action to Freeroam — this triggers generation of the action panel
