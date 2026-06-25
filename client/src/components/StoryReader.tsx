@@ -112,6 +112,8 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
   const [isImagePolling, setIsImagePolling] = useState(false); // true when polling for image generation specifically
   const [visible, setVisible] = useState(false);
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Panel cache: store visited panels by panel_id for instant back/forward navigation
+  const panelCache = useRef<Map<string, PanelData>>(new Map());
   const setPanelMutation = trpc.worlds.setPanel.useMutation();
   // Swipe-down gesture to open menu
   const touchStartY = useRef<number | null>(null);
@@ -321,12 +323,27 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
 
   const loadPanel = useCallback(async (panelId: string, worldId: string) => {
     stopPolling();
-    setIsNavigating(true);
-    // Reset choice ideas visibility for new panel based on preference
     setChoiceIdeasVisible(showChoiceIdeasByDefault);
+    // Check panel cache first for instant navigation
+    const cached = panelCache.current.get(panelId);
+    if (cached) {
+      setCurrentPanel(cached);
+      setPanelMutation.mutate({ worldId, panelId });
+      setIsLoading(false);
+      return;
+    }
+    setIsNavigating(true);
     try {
       const data = await utils.worlds.getPanel.fetch({ worldId, panelId });
-      setCurrentPanel(data as PanelData);
+      const panel = data as PanelData;
+      // Store in cache
+      panelCache.current.set(panelId, panel);
+      // Also cache the embedded next_panel if present
+      if (panel.next_panel) {
+        const next = panel.next_panel as PanelData;
+        if (next.panel_id) panelCache.current.set(next.panel_id, next);
+      }
+      setCurrentPanel(panel);
       setPanelMutation.mutate({ worldId, panelId });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to load panel');
@@ -453,7 +470,15 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
       stopPolling();
       setIsNavigating(true);
       setChoiceIdeasVisible(showChoiceIdeasByDefault);
-      setCurrentPanel({ ...embedded, next_panel: embedded.next_panel ?? null } as PanelData);
+      const embeddedPanel = { ...embedded, next_panel: embedded.next_panel ?? null } as PanelData;
+      // Store in cache for backward navigation
+      panelCache.current.set(embedded.panel_id, embeddedPanel);
+      // Also cache the embedded panel's next_panel if present
+      if (embedded.next_panel) {
+        const next2 = embedded.next_panel as PanelData;
+        if (next2.panel_id) panelCache.current.set(next2.panel_id, next2);
+      }
+      setCurrentPanel(embeddedPanel);
       setPanelMutation.mutate({ worldId: world.external_id, panelId: embedded.panel_id });
       setIsNavigating(false);
       setIsLoading(false);
