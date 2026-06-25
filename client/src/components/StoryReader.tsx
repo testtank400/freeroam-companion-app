@@ -1216,6 +1216,20 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
             }
           );
         }}
+        onPlayAs={async (newMainId, oldMainId, newMainName) => {
+          setCharPanelOpen(false);
+          await handleSendAction(
+            `Changed main character to ${newMainName} - the story will now be written from their perspective`,
+            'choice',
+            {
+              add_character_ids: [],
+              remove_character_ids: [],
+              new_main_character_id: newMainId,
+              old_main_character_id: oldMainId,
+              batch_character_update: true,
+            }
+          );
+        }}
       />
     </div>
   );

@@ -42,6 +42,7 @@ type CharacterPanelProps = {
   worldId: string;
   panelId: string;
   onSaveChanges: (addIds: string[], removeIds: string[]) => Promise<void>;
+  onPlayAs: (newMainId: string, oldMainId: string, newMainName: string) => Promise<void>;
 };
 
 type PendingChange = {
@@ -55,7 +56,9 @@ export default function CharacterPanel({
   worldId,
   panelId,
   onSaveChanges,
+  onPlayAs,
 }: CharacterPanelProps) {
+  const [isPlayingAs, setIsPlayingAs] = useState(false);
   const [view, setView] = useState<'main' | 'library' | 'detail'>('main');
   const [storyChars, setStoryChars] = useState<StoryCharacter[]>([]);
   const [pendingChanges, setPendingChanges] = useState<Map<string, 'add' | 'remove'>>(new Map());
@@ -363,6 +366,36 @@ export default function CharacterPanel({
                             ) : (
                               <span style={{ fontSize: '16px', lineHeight: 1, marginTop: '-1px' }}>−</span>
                             )}
+                          </button>
+                        )}
+
+                        {/* Play as button for non-main characters */}
+                        {!char.is_main_character && !pendingChanges.has(char.external_id) && (
+                          <button
+                            onClick={async (e) => {
+                              e.stopPropagation();
+                              const mainChar = storyChars.find(sc => sc.is_main_character);
+                              if (!mainChar || isPlayingAs) return;
+                              setIsPlayingAs(true);
+                              try {
+                                await onPlayAs(char.external_id, mainChar.external_id, char.name.replace(/-/g, ' '));
+                              } finally {
+                                setIsPlayingAs(false);
+                              }
+                            }}
+                            disabled={isPlayingAs}
+                            className="absolute bottom-10 left-0 right-0 mx-2 flex items-center justify-center py-1.5 rounded-lg transition-all hover:brightness-125 disabled:opacity-40"
+                            style={{
+                              fontFamily: 'Outfit, sans-serif',
+                              fontSize: '11px',
+                              fontWeight: 700,
+                              color: '#fff',
+                              background: 'rgba(0,0,0,0.65)',
+                              backdropFilter: 'blur(4px)',
+                              border: '1px solid rgba(255,255,255,0.15)',
+                            }}
+                          >
+                            {isPlayingAs ? '...' : 'Play as'}
                           </button>
                         )}
 
