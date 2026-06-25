@@ -992,19 +992,6 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
             </>
           )}
 
-          {/* Polling indicator */}
-          {isPolling && !isNavigating && (
-            <div
-              className="absolute bottom-5 right-4 z-20 flex items-center gap-2 px-3 py-1.5 rounded-full"
-              style={{ background: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(6px)' }}
-            >
-              <Loader2 size={12} className="animate-spin" style={{ color: 'rgba(255,255,255,0.6)' }} />
-              <span style={{ fontFamily: 'Lora, Georgia, serif', fontSize: '11px', fontStyle: 'italic', color: 'rgba(255,255,255,0.55)' }}>
-                Generating...
-              </span>
-            </div>
-          )}
-
           {/* Choice options — Freeroam-style with lettered options, OR divider, custom input */}
           {hasChoice && !isLoading && !isNavigating && (
             <div
