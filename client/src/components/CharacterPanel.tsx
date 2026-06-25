@@ -106,8 +106,8 @@ export default function CharacterPanel({
     try {
       const cookie = localStorage.getItem('freeroam_cookie') ?? '';
       const accountId = localStorage.getItem('freeroam_account_id') ?? '';
-      const params = encodeURIComponent(JSON.stringify({ '0': { json: { sort: 'recent' } } }));
-      const res = await fetch(`/api/trpc/characters.listAll?batch=1&input=${params}`, {
+      const params = encodeURIComponent(JSON.stringify({ '0': { json: {} } }));
+      const res = await fetch(`/api/trpc/characters.library?batch=1&input=${params}`, {
         credentials: 'include',
         headers: {
           ...(cookie ? { 'x-freeroam-cookie': cookie } : {}),
@@ -116,8 +116,18 @@ export default function CharacterPanel({
       });
       if (!res.ok) return;
       const json = await res.json();
+      // characters.library returns an array of character objects directly
       const chars = json?.[0]?.result?.data?.json ?? [];
-      setLibraryChars(chars);
+      // Map to LibraryCharacter shape
+      setLibraryChars(chars.map((c: { external_id: string; name: string; headshot_url: string | null; backstory: string | null; is_yours?: boolean; is_saved?: boolean }) => ({
+        external_id: c.external_id,
+        name: c.name,
+        headshot_url: c.headshot_url,
+        backstory: c.backstory ?? '',
+        appearance: '',
+        is_yours: c.is_yours,
+        is_saved: c.is_saved,
+      })));
     } catch {
       // Non-fatal
     } finally {
