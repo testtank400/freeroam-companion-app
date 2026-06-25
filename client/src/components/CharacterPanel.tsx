@@ -59,6 +59,7 @@ export default function CharacterPanel({
   onPlayAs,
 }: CharacterPanelProps) {
   const [isPlayingAs, setIsPlayingAs] = useState(false);
+  const [pendingPlayAs, setPendingPlayAs] = useState<string | null>(null); // external_id of char to play as
   const [view, setView] = useState<'main' | 'library' | 'detail'>('main');
   const [storyChars, setStoryChars] = useState<StoryCharacter[]>([]);
   const [pendingChanges, setPendingChanges] = useState<Map<string, 'add' | 'remove'>>(new Map());
@@ -94,6 +95,7 @@ export default function CharacterPanel({
     if (isOpen) {
       setView('main');
       setPendingChanges(new Map());
+      setPendingPlayAs(null);
       loadStoryChars();
     }
   }, [isOpen, loadStoryChars]);
@@ -189,6 +191,23 @@ export default function CharacterPanel({
       if (type === 'add') addIds.push(id);
       else if (type === 'remove') removeIds.push(id);
     });
+    // Handle play-as change
+    if (pendingPlayAs) {
+      const mainChar = storyChars.find(sc => sc.is_main_character);
+      const newMainChar = storyChars.find(sc => sc.external_id === pendingPlayAs);
+      if (mainChar && newMainChar) {
+        setIsSaving(true);
+        try {
+          await onPlayAs(pendingPlayAs, mainChar.external_id, newMainChar.name.replace(/-/g, ' '));
+          onClose();
+        } catch (err) {
+          toast.error(err instanceof Error ? err.message : 'Failed to change main character');
+        } finally {
+          setIsSaving(false);
+        }
+        return;
+      }
+    }
     if (addIds.length === 0 && removeIds.length === 0) {
       onClose();
       return;
@@ -204,7 +223,7 @@ export default function CharacterPanel({
     }
   };
 
-  const hasPendingChanges = pendingChanges.size > 0;
+  const hasPendingChanges = pendingChanges.size > 0 || !!pendingPlayAs;
 
   // Filter library characters
   const filteredLibrary = libraryChars.filter(char => {
@@ -372,30 +391,25 @@ export default function CharacterPanel({
                         {/* Play as button for non-main characters */}
                         {!char.is_main_character && !pendingChanges.has(char.external_id) && (
                           <button
-                            onClick={async (e) => {
+                            onClick={(e) => {
                               e.stopPropagation();
-                              const mainChar = storyChars.find(sc => sc.is_main_character);
-                              if (!mainChar || isPlayingAs) return;
-                              setIsPlayingAs(true);
-                              try {
-                                await onPlayAs(char.external_id, mainChar.external_id, char.name.replace(/-/g, ' '));
-                              } finally {
-                                setIsPlayingAs(false);
-                              }
+                              // Toggle pending play-as state
+                              setPendingPlayAs(prev => prev === char.external_id ? null : char.external_id);
                             }}
-                            disabled={isPlayingAs}
-                            className="absolute bottom-10 left-0 right-0 mx-2 flex items-center justify-center py-1.5 rounded-lg transition-all hover:brightness-125 disabled:opacity-40"
+                            className="absolute bottom-10 left-0 right-0 mx-2 flex items-center justify-center py-1.5 rounded-lg transition-all hover:brightness-125"
                             style={{
                               fontFamily: 'Outfit, sans-serif',
                               fontSize: '11px',
                               fontWeight: 700,
                               color: '#fff',
-                              background: 'rgba(0,0,0,0.65)',
+                              background: pendingPlayAs === char.external_id
+                                ? 'rgba(34,197,94,0.5)'
+                                : 'rgba(0,0,0,0.65)',
                               backdropFilter: 'blur(4px)',
-                              border: '1px solid rgba(255,255,255,0.15)',
+                              border: `1px solid ${pendingPlayAs === char.external_id ? 'rgba(34,197,94,0.7)' : 'rgba(255,255,255,0.15)'}`,
                             }}
                           >
-                            {isPlayingAs ? '...' : 'Play as'}
+                            {pendingPlayAs === char.external_id ? '✓ Play as' : 'Play as'}
                           </button>
                         )}
 
