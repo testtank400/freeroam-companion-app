@@ -60,7 +60,7 @@ export default function CharacterPanel({
 }: CharacterPanelProps) {
   const [isPlayingAs, setIsPlayingAs] = useState(false);
   const [pendingPlayAs, setPendingPlayAs] = useState<string | null>(null); // external_id of char to play as
-  const [view, setView] = useState<'main' | 'library' | 'detail'>('main');
+  const [view, setView] = useState<'main' | 'library' | 'detail' | 'story-detail'>('main');
   const [storyChars, setStoryChars] = useState<StoryCharacter[]>([]);
   const [pendingChanges, setPendingChanges] = useState<Map<string, 'add' | 'remove'>>(new Map());
   const [isLoadingChars, setIsLoadingChars] = useState(false);
@@ -72,8 +72,10 @@ export default function CharacterPanel({
   const [libraryChars, setLibraryChars] = useState<LibraryCharacter[]>([]);
   const [isLoadingLibrary, setIsLoadingLibrary] = useState(false);
 
-  // Detail state
+  // Detail state (library character)
   const [detailChar, setDetailChar] = useState<LibraryCharacter | null>(null);
+  // Story character detail state
+  const [storyDetailChar, setStoryDetailChar] = useState<StoryCharacter | null>(null);
 
   const utils = trpc.useUtils();
 
@@ -322,7 +324,8 @@ export default function CharacterPanel({
                     return (
                       <div
                         key={char.external_id}
-                        className="relative flex-shrink-0"
+                        className="relative flex-shrink-0 cursor-pointer"
+                        onClick={() => { setStoryDetailChar(char); setView('story-detail'); }}
                         style={{
                           width: '140px',
                           height: '200px',
@@ -707,6 +710,130 @@ export default function CharacterPanel({
                 <Plus size={16} strokeWidth={2.5} />
                 Add to Story
               </button>
+            </div>
+          </>
+        )}
+
+        {/* ── VIEW 4: STORY CHARACTER DETAIL ── */}
+        {view === 'story-detail' && storyDetailChar && (
+          <>
+            <div className="px-6 pt-6 pb-4 flex-shrink-0">
+              <div className="flex items-center gap-3 mb-4">
+                <button
+                  onClick={() => setView('main')}
+                  className="flex items-center gap-1 transition-all hover:brightness-125"
+                  style={{ fontFamily: 'Outfit, sans-serif', fontSize: '14px', color: 'rgba(255,255,255,0.5)' }}
+                >
+                  <ArrowLeft size={16} strokeWidth={2} />
+                  Back
+                </button>
+                <h2 style={{ fontFamily: 'Outfit, sans-serif', fontSize: '18px', fontWeight: 700, color: '#fff', flex: 1, textAlign: 'center' }}>
+                  {storyDetailChar.name.replace(/-/g, ' ')}
+                </h2>
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto px-6 pb-4">
+              <div className="flex gap-5">
+                {/* Portrait */}
+                <div className="flex-shrink-0">
+                  {(storyDetailChar.display_headshot_url || storyDetailChar.headshot_url) ? (
+                    <img
+                      src={storyDetailChar.display_headshot_url || storyDetailChar.headshot_url}
+                      alt={storyDetailChar.name}
+                      style={{ width: '120px', height: '160px', objectFit: 'cover', objectPosition: 'center top', borderRadius: '12px', border: `1px solid ${storyDetailChar.is_main_character ? 'rgba(234,179,8,0.5)' : 'rgba(255,255,255,0.1)'}` }}
+                    />
+                  ) : (
+                    <div
+                      className="flex items-center justify-center"
+                      style={{ width: '120px', height: '160px', borderRadius: '12px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', fontSize: '48px', color: 'rgba(255,255,255,0.2)' }}
+                    >
+                      {storyDetailChar.name[0]}
+                    </div>
+                  )}
+                  {storyDetailChar.is_main_character && (
+                    <div className="mt-2 text-center" style={{ fontFamily: 'Outfit, sans-serif', fontSize: '11px', fontWeight: 700, color: 'rgba(234,179,8,0.9)', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+                      Main Character
+                    </div>
+                  )}
+                </div>
+
+                {/* Name field */}
+                <div className="flex-1 flex flex-col gap-4">
+                  <div>
+                    <label style={{ fontFamily: 'Outfit, sans-serif', fontSize: '13px', fontWeight: 700, color: 'rgba(255,255,255,0.6)', display: 'block', marginBottom: '6px' }}>
+                      Name
+                    </label>
+                    <div
+                      className="px-3 py-2 rounded-xl"
+                      style={{ fontFamily: 'Outfit, sans-serif', fontSize: '14px', color: '#fff', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}
+                    >
+                      {storyDetailChar.name.replace(/-/g, ' ')}
+                    </div>
+                  </div>
+                  <div>
+                    <label style={{ fontFamily: 'Outfit, sans-serif', fontSize: '13px', fontWeight: 700, color: 'rgba(255,255,255,0.6)', display: 'block', marginBottom: '6px' }}>
+                      Creator
+                    </label>
+                    <div
+                      className="px-3 py-2 rounded-xl"
+                      style={{ fontFamily: 'Outfit, sans-serif', fontSize: '14px', color: 'rgba(255,255,255,0.7)', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}
+                    >
+                      {storyDetailChar.creator_name || 'Unknown'}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Personality */}
+              {storyDetailChar.backstory && (
+                <div className="mt-4">
+                  <label style={{ fontFamily: 'Outfit, sans-serif', fontSize: '13px', fontWeight: 700, color: 'rgba(255,255,255,0.6)', display: 'block', marginBottom: '6px' }}>
+                    Personality
+                  </label>
+                  <div
+                    className="px-3 py-3 rounded-xl"
+                    style={{
+                      fontFamily: 'Outfit, sans-serif',
+                      fontSize: '13px',
+                      color: 'rgba(255,255,255,0.75)',
+                      background: 'rgba(255,255,255,0.06)',
+                      border: '1px solid rgba(255,255,255,0.1)',
+                      lineHeight: 1.6,
+                      maxHeight: '180px',
+                      overflowY: 'auto',
+                      whiteSpace: 'pre-wrap',
+                    }}
+                  >
+                    {storyDetailChar.backstory}
+                  </div>
+                </div>
+              )}
+
+              {/* Appearance */}
+              {storyDetailChar.appearance && (
+                <div className="mt-4">
+                  <label style={{ fontFamily: 'Outfit, sans-serif', fontSize: '13px', fontWeight: 700, color: 'rgba(255,255,255,0.6)', display: 'block', marginBottom: '6px' }}>
+                    Appearance
+                  </label>
+                  <div
+                    className="px-3 py-3 rounded-xl"
+                    style={{
+                      fontFamily: 'Outfit, sans-serif',
+                      fontSize: '13px',
+                      color: 'rgba(255,255,255,0.75)',
+                      background: 'rgba(255,255,255,0.06)',
+                      border: '1px solid rgba(255,255,255,0.1)',
+                      lineHeight: 1.6,
+                      maxHeight: '140px',
+                      overflowY: 'auto',
+                      whiteSpace: 'pre-wrap',
+                    }}
+                  >
+                    {storyDetailChar.appearance}
+                  </div>
+                </div>
+              )}
             </div>
           </>
         )}
