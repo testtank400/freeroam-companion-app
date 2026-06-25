@@ -352,20 +352,43 @@ export default function CharacterPanel({
                           style={{ background: 'linear-gradient(to bottom, transparent 45%, rgba(0,0,0,0.85) 100%)' }}
                         />
 
-                        {/* Top-left badge */}
-                        <div
-                          className="absolute top-2 left-2 px-2 py-0.5 rounded-md"
-                          style={{
-                            fontFamily: 'Outfit, sans-serif',
-                            fontSize: '11px',
-                            fontWeight: 700,
-                            color: '#fff',
-                            background: char.is_main_character ? 'rgba(234,179,8,0.85)' : 'rgba(0,0,0,0.6)',
-                            backdropFilter: 'blur(4px)',
-                          }}
-                        >
-                          {char.is_main_character ? 'You' : 'Play as'}
-                        </div>
+                        {/* Top-left badge — 'You' for main, clickable 'Play as' for others */}
+                        {char.is_main_character ? (
+                          <div
+                            className="absolute top-2 left-2 px-2 py-0.5 rounded-md"
+                            style={{
+                              fontFamily: 'Outfit, sans-serif',
+                              fontSize: '11px',
+                              fontWeight: 700,
+                              color: '#fff',
+                              background: 'rgba(234,179,8,0.85)',
+                              backdropFilter: 'blur(4px)',
+                            }}
+                          >
+                            You
+                          </div>
+                        ) : (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setPendingPlayAs(prev => prev === char.external_id ? null : char.external_id);
+                            }}
+                            className="absolute top-2 left-2 px-2 py-0.5 rounded-md transition-all hover:brightness-125"
+                            style={{
+                              fontFamily: 'Outfit, sans-serif',
+                              fontSize: '11px',
+                              fontWeight: 700,
+                              color: '#fff',
+                              background: pendingPlayAs === char.external_id
+                                ? 'rgba(34,197,94,0.85)'
+                                : 'rgba(0,0,0,0.6)',
+                              backdropFilter: 'blur(4px)',
+                              border: 'none',
+                            }}
+                          >
+                            {pendingPlayAs === char.external_id ? '✓ Play as' : 'Play as'}
+                          </button>
+                        )}
 
                         {/* Minus / restore button */}
                         {char.removable && (
@@ -385,31 +408,6 @@ export default function CharacterPanel({
                             ) : (
                               <span style={{ fontSize: '16px', lineHeight: 1, marginTop: '-1px' }}>−</span>
                             )}
-                          </button>
-                        )}
-
-                        {/* Play as button for non-main characters */}
-                        {!char.is_main_character && !pendingChanges.has(char.external_id) && (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              // Toggle pending play-as state
-                              setPendingPlayAs(prev => prev === char.external_id ? null : char.external_id);
-                            }}
-                            className="absolute bottom-10 left-0 right-0 mx-2 flex items-center justify-center py-1.5 rounded-lg transition-all hover:brightness-125"
-                            style={{
-                              fontFamily: 'Outfit, sans-serif',
-                              fontSize: '11px',
-                              fontWeight: 700,
-                              color: '#fff',
-                              background: pendingPlayAs === char.external_id
-                                ? 'rgba(34,197,94,0.5)'
-                                : 'rgba(0,0,0,0.65)',
-                              backdropFilter: 'blur(4px)',
-                              border: `1px solid ${pendingPlayAs === char.external_id ? 'rgba(34,197,94,0.7)' : 'rgba(255,255,255,0.15)'}`,
-                            }}
-                          >
-                            {pendingPlayAs === char.external_id ? '✓ Play as' : 'Play as'}
                           </button>
                         )}
 
