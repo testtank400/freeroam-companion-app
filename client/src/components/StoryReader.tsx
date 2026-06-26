@@ -154,7 +154,8 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
       new_main_character_id: string | null;
       old_main_character_id: string | null;
       batch_character_update: boolean;
-    } | null
+    } | null,
+    displayText?: string
   ) => {
     if (!panel || !text.trim() || isSendingAction) return;
     setIsSendingAction(true);
@@ -165,7 +166,7 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
         worldId: world.external_id,
         panelId: panel.panel_id,
         actionText: text,
-        displayText: text,
+        displayText: displayText ?? text,
         actionType,
         characterChanges: characterChanges ?? null,
       });
@@ -1295,6 +1296,60 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
               batch_character_update: true,
             }
           );
+        }}
+        onEditCharacter={async (charId, charName, oldBackstory, newBackstory, oldAppearance, newAppearance) => {
+          const backstoryChanged = newBackstory.trim() !== oldBackstory.trim();
+          const appearanceChanged = newAppearance.trim() !== oldAppearance.trim();
+          if (!backstoryChanged && !appearanceChanged) return;
+
+          // 1. Update the character in Freeroam's database
+          const cookie = localStorage.getItem('freeroam_cookie') ?? '';
+          const accountId = localStorage.getItem('freeroam_account_id') ?? '';
+          const updateRes = await fetch('/api/trpc/characters.update?batch=1', {
+            method: 'POST',
+            credentials: 'include',
+            headers: {
+              'content-type': 'application/json',
+              ...(cookie ? { 'x-freeroam-cookie': cookie } : {}),
+              ...(accountId ? { 'x-freeroam-account-id': accountId } : {}),
+            },
+            body: JSON.stringify({
+              '0': {
+                json: {
+                  characterId: charId,
+                  ...(backstoryChanged ? { backstory: newBackstory } : {}),
+                  ...(appearanceChanged ? { appearance: newAppearance } : {}),
+                },
+              },
+            }),
+          });
+          if (!updateRes.ok) {
+            throw new Error('Failed to update character');
+          }
+
+          // 2. Build action_text and display_text based on what changed
+          let actionText = 'A character has been edited by the user.';
+          const displayParts: string[] = [];
+          if (appearanceChanged) {
+            actionText += ` Their appearance was changed from "${oldAppearance}" to "${newAppearance}".`;
+            displayParts.push('new appearance');
+          }
+          if (backstoryChanged) {
+            actionText += ' Their personality was updated.';
+            displayParts.push('updated personality');
+          }
+          actionText += ' Continue writing the story as though this character has always been this way. Do not acknowledge or address these changes in the narrative.';
+          const displayText = `(edited character ${charName}: ${displayParts.join(', ')})`;
+
+          // 3. Send action to notify the AI with correct display text
+          setCharPanelOpen(false);
+          await handleSendAction(actionText, 'choice', {
+            add_character_ids: [],
+            remove_character_ids: [],
+            new_main_character_id: null,
+            old_main_character_id: null,
+            batch_character_update: true,
+          }, displayText);
         }}
       />
     </div>

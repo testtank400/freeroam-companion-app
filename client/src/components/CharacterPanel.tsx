@@ -43,6 +43,14 @@ type CharacterPanelProps = {
   panelId: string;
   onSaveChanges: (addIds: string[], removeIds: string[]) => Promise<void>;
   onPlayAs: (newMainId: string, oldMainId: string, newMainName: string) => Promise<void>;
+  onEditCharacter: (
+    charId: string,
+    charName: string,
+    oldBackstory: string,
+    newBackstory: string,
+    oldAppearance: string,
+    newAppearance: string
+  ) => Promise<void>;
 };
 
 type PendingChange = {
@@ -57,6 +65,7 @@ export default function CharacterPanel({
   panelId,
   onSaveChanges,
   onPlayAs,
+  onEditCharacter,
 }: CharacterPanelProps) {
   const [isPlayingAs, setIsPlayingAs] = useState(false);
   const [pendingPlayAs, setPendingPlayAs] = useState<string | null>(null); // external_id of char to play as
@@ -714,130 +723,174 @@ export default function CharacterPanel({
           </>
         )}
 
-        {/* ── VIEW 4: STORY CHARACTER DETAIL ── */}
+        {/* ── VIEW 4: STORY CHARACTER DETAIL (editable) ── */}
         {view === 'story-detail' && storyDetailChar && (
-          <>
-            <div className="px-6 pt-6 pb-4 flex-shrink-0">
-              <div className="flex items-center gap-3 mb-4">
-                <button
-                  onClick={() => setView('main')}
-                  className="flex items-center gap-1 transition-all hover:brightness-125"
-                  style={{ fontFamily: 'Outfit, sans-serif', fontSize: '14px', color: 'rgba(255,255,255,0.5)' }}
-                >
-                  <ArrowLeft size={16} strokeWidth={2} />
-                  Back
-                </button>
-                <h2 style={{ fontFamily: 'Outfit, sans-serif', fontSize: '18px', fontWeight: 700, color: '#fff', flex: 1, textAlign: 'center' }}>
-                  {storyDetailChar.name.replace(/-/g, ' ')}
-                </h2>
-              </div>
-            </div>
-
-            <div className="flex-1 overflow-y-auto px-6 pb-4">
-              <div className="flex gap-5">
-                {/* Portrait */}
-                <div className="flex-shrink-0">
-                  {(storyDetailChar.display_headshot_url || storyDetailChar.headshot_url) ? (
-                    <img
-                      src={storyDetailChar.display_headshot_url || storyDetailChar.headshot_url}
-                      alt={storyDetailChar.name}
-                      style={{ width: '120px', height: '160px', objectFit: 'cover', objectPosition: 'center top', borderRadius: '12px', border: `1px solid ${storyDetailChar.is_main_character ? 'rgba(234,179,8,0.5)' : 'rgba(255,255,255,0.1)'}` }}
-                    />
-                  ) : (
-                    <div
-                      className="flex items-center justify-center"
-                      style={{ width: '120px', height: '160px', borderRadius: '12px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', fontSize: '48px', color: 'rgba(255,255,255,0.2)' }}
-                    >
-                      {storyDetailChar.name[0]}
-                    </div>
-                  )}
-                  {storyDetailChar.is_main_character && (
-                    <div className="mt-2 text-center" style={{ fontFamily: 'Outfit, sans-serif', fontSize: '11px', fontWeight: 700, color: 'rgba(234,179,8,0.9)', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
-                      Main Character
-                    </div>
-                  )}
-                </div>
-
-                {/* Name field */}
-                <div className="flex-1 flex flex-col gap-4">
-                  <div>
-                    <label style={{ fontFamily: 'Outfit, sans-serif', fontSize: '13px', fontWeight: 700, color: 'rgba(255,255,255,0.6)', display: 'block', marginBottom: '6px' }}>
-                      Name
-                    </label>
-                    <div
-                      className="px-3 py-2 rounded-xl"
-                      style={{ fontFamily: 'Outfit, sans-serif', fontSize: '14px', color: '#fff', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}
-                    >
-                      {storyDetailChar.name.replace(/-/g, ' ')}
-                    </div>
-                  </div>
-                  <div>
-                    <label style={{ fontFamily: 'Outfit, sans-serif', fontSize: '13px', fontWeight: 700, color: 'rgba(255,255,255,0.6)', display: 'block', marginBottom: '6px' }}>
-                      Creator
-                    </label>
-                    <div
-                      className="px-3 py-2 rounded-xl"
-                      style={{ fontFamily: 'Outfit, sans-serif', fontSize: '14px', color: 'rgba(255,255,255,0.7)', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}
-                    >
-                      {storyDetailChar.creator_name || 'Unknown'}
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Personality */}
-              {storyDetailChar.backstory && (
-                <div className="mt-4">
-                  <label style={{ fontFamily: 'Outfit, sans-serif', fontSize: '13px', fontWeight: 700, color: 'rgba(255,255,255,0.6)', display: 'block', marginBottom: '6px' }}>
-                    Personality
-                  </label>
-                  <div
-                    className="px-3 py-3 rounded-xl"
-                    style={{
-                      fontFamily: 'Outfit, sans-serif',
-                      fontSize: '13px',
-                      color: 'rgba(255,255,255,0.75)',
-                      background: 'rgba(255,255,255,0.06)',
-                      border: '1px solid rgba(255,255,255,0.1)',
-                      lineHeight: 1.6,
-                      maxHeight: '180px',
-                      overflowY: 'auto',
-                      whiteSpace: 'pre-wrap',
-                    }}
-                  >
-                    {storyDetailChar.backstory}
-                  </div>
-                </div>
-              )}
-
-              {/* Appearance */}
-              {storyDetailChar.appearance && (
-                <div className="mt-4">
-                  <label style={{ fontFamily: 'Outfit, sans-serif', fontSize: '13px', fontWeight: 700, color: 'rgba(255,255,255,0.6)', display: 'block', marginBottom: '6px' }}>
-                    Appearance
-                  </label>
-                  <div
-                    className="px-3 py-3 rounded-xl"
-                    style={{
-                      fontFamily: 'Outfit, sans-serif',
-                      fontSize: '13px',
-                      color: 'rgba(255,255,255,0.75)',
-                      background: 'rgba(255,255,255,0.06)',
-                      border: '1px solid rgba(255,255,255,0.1)',
-                      lineHeight: 1.6,
-                      maxHeight: '140px',
-                      overflowY: 'auto',
-                      whiteSpace: 'pre-wrap',
-                    }}
-                  >
-                    {storyDetailChar.appearance}
-                  </div>
-                </div>
-              )}
-            </div>
-          </>
+          <StoryDetailEditView
+            char={storyDetailChar}
+            onBack={() => setView('main')}
+            onEditCharacter={onEditCharacter}
+          />
         )}
       </div>
     </div>
+  );
+}
+
+// ── Separate component to manage edit state cleanly ──
+function StoryDetailEditView({
+  char,
+  onBack,
+  onEditCharacter,
+}: {
+  char: {
+    external_id: string;
+    name: string;
+    backstory: string;
+    appearance: string;
+    headshot_url: string;
+    display_headshot_url: string | null;
+    is_main_character: boolean;
+    creator_name: string;
+  };
+  onBack: () => void;
+  onEditCharacter: (charId: string, charName: string, oldBackstory: string, newBackstory: string, oldAppearance: string, newAppearance: string) => Promise<void>;
+}) {
+  const [editBackstory, setEditBackstory] = useState(char.backstory);
+  const [editAppearance, setEditAppearance] = useState(char.appearance);
+  const [isSaving, setIsSaving] = useState(false);
+  const backstoryChanged = editBackstory.trim() !== char.backstory.trim();
+  const appearanceChanged = editAppearance.trim() !== char.appearance.trim();
+  const hasChanges = backstoryChanged || appearanceChanged;
+
+  return (
+    <>
+      <div className="px-6 pt-6 pb-4 flex-shrink-0">
+        <div className="flex items-center gap-3 mb-4">
+          <button
+            onClick={onBack}
+            className="flex items-center gap-1 transition-all hover:brightness-125"
+            style={{ fontFamily: 'Outfit, sans-serif', fontSize: '14px', color: 'rgba(255,255,255,0.5)' }}
+          >
+            <ArrowLeft size={16} strokeWidth={2} />
+            Back
+          </button>
+          <h2 style={{ fontFamily: 'Outfit, sans-serif', fontSize: '18px', fontWeight: 700, color: '#fff', flex: 1, textAlign: 'center' }}>
+            {char.name.replace(/-/g, ' ')}
+          </h2>
+        </div>
+      </div>
+
+      <div className="flex-1 overflow-y-auto px-6 pb-4">
+        <div className="flex gap-5">
+          {/* Portrait */}
+          <div className="flex-shrink-0">
+            {(char.display_headshot_url || char.headshot_url) ? (
+              <img
+                src={char.display_headshot_url || char.headshot_url}
+                alt={char.name}
+                style={{ width: '120px', height: '160px', objectFit: 'cover', objectPosition: 'center top', borderRadius: '12px', border: `1px solid ${char.is_main_character ? 'rgba(234,179,8,0.5)' : 'rgba(255,255,255,0.1)'}` }}
+              />
+            ) : (
+              <div className="flex items-center justify-center" style={{ width: '120px', height: '160px', borderRadius: '12px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', fontSize: '48px', color: 'rgba(255,255,255,0.2)' }}>
+                {char.name[0]}
+              </div>
+            )}
+            {char.is_main_character && (
+              <div className="mt-2 text-center" style={{ fontFamily: 'Outfit, sans-serif', fontSize: '11px', fontWeight: 700, color: 'rgba(234,179,8,0.9)', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+                Main Character
+              </div>
+            )}
+          </div>
+
+          {/* Name + Creator */}
+          <div className="flex-1 flex flex-col gap-4">
+            <div>
+              <label style={{ fontFamily: 'Outfit, sans-serif', fontSize: '13px', fontWeight: 700, color: 'rgba(255,255,255,0.6)', display: 'block', marginBottom: '6px' }}>Name</label>
+              <div className="px-3 py-2 rounded-xl" style={{ fontFamily: 'Outfit, sans-serif', fontSize: '14px', color: '#fff', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}>
+                {char.name.replace(/-/g, ' ')}
+              </div>
+            </div>
+            <div>
+              <label style={{ fontFamily: 'Outfit, sans-serif', fontSize: '13px', fontWeight: 700, color: 'rgba(255,255,255,0.6)', display: 'block', marginBottom: '6px' }}>Creator</label>
+              <div className="px-3 py-2 rounded-xl" style={{ fontFamily: 'Outfit, sans-serif', fontSize: '14px', color: 'rgba(255,255,255,0.7)', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}>
+                {char.creator_name || 'Unknown'}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Personality — editable textarea */}
+        <div className="mt-4">
+          <label style={{ fontFamily: 'Outfit, sans-serif', fontSize: '13px', fontWeight: 700, color: 'rgba(255,255,255,0.6)', display: 'block', marginBottom: '6px' }}>Personality</label>
+          <textarea
+            value={editBackstory}
+            onChange={(e) => setEditBackstory(e.target.value)}
+            rows={6}
+            className="w-full outline-none resize-none"
+            style={{
+              fontFamily: 'Outfit, sans-serif',
+              fontSize: '13px',
+              color: 'rgba(255,255,255,0.85)',
+              background: 'rgba(255,255,255,0.06)',
+              border: `1px solid ${backstoryChanged ? 'rgba(255,255,255,0.3)' : 'rgba(255,255,255,0.1)'}`,
+              borderRadius: '12px',
+              padding: '12px',
+              lineHeight: 1.6,
+            }}
+          />
+        </div>
+
+        {/* Appearance — editable textarea */}
+        <div className="mt-4">
+          <label style={{ fontFamily: 'Outfit, sans-serif', fontSize: '13px', fontWeight: 700, color: 'rgba(255,255,255,0.6)', display: 'block', marginBottom: '6px' }}>Appearance</label>
+          <textarea
+            value={editAppearance}
+            onChange={(e) => setEditAppearance(e.target.value)}
+            rows={6}
+            className="w-full outline-none resize-none"
+            style={{
+              fontFamily: 'Outfit, sans-serif',
+              fontSize: '13px',
+              color: 'rgba(255,255,255,0.85)',
+              background: 'rgba(255,255,255,0.06)',
+              border: `1px solid ${appearanceChanged ? 'rgba(255,255,255,0.3)' : 'rgba(255,255,255,0.1)'}`,
+              borderRadius: '12px',
+              padding: '12px',
+              lineHeight: 1.6,
+            }}
+          />
+        </div>
+      </div>
+
+      {/* Save Changes button */}
+      <div className="px-6 py-4 flex-shrink-0" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+        <button
+          onClick={async () => {
+            if (!hasChanges || isSaving) return;
+            setIsSaving(true);
+            try {
+              await onEditCharacter(char.external_id, char.name.replace(/-/g, ' '), char.backstory, editBackstory, char.appearance, editAppearance);
+            } catch (err) {
+              // Error handled upstream
+            } finally {
+              setIsSaving(false);
+            }
+          }}
+          disabled={!hasChanges || isSaving}
+          className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl transition-all hover:brightness-125 disabled:opacity-40"
+          style={{
+            fontFamily: 'Outfit, sans-serif',
+            fontSize: '15px',
+            fontWeight: 600,
+            color: hasChanges ? '#fff' : 'rgba(255,255,255,0.5)',
+            background: hasChanges ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.05)',
+            border: `1px solid ${hasChanges ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.08)'}`,
+          }}
+        >
+          {isSaving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} strokeWidth={2} />}
+          {isSaving ? 'Saving...' : 'Save Changes'}
+        </button>
+      </div>
+    </>
   );
 }
