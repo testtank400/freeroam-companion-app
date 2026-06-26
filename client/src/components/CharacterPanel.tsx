@@ -8,7 +8,7 @@
 
 import { trpc } from '@/lib/trpc';
 import { X, Plus, ArrowLeft, Search, Loader2, Save } from 'lucide-react';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { toast } from 'sonner';
 
 type StoryCharacter = {
@@ -753,14 +753,64 @@ function StoryDetailEditView({
     creator_name: string;
   };
   onBack: () => void;
-  onEditCharacter: (charId: string, charName: string, oldBackstory: string, newBackstory: string, oldAppearance: string, newAppearance: string) => Promise<void>;
+  onEditCharacter: (charId: string, charName: string, oldBackstory: string, newBackstory: string, oldAppearance: string, newAppearance: string, photoChanged?: boolean) => Promise<void>;
 }) {
   const [editBackstory, setEditBackstory] = useState(char.backstory);
   const [editAppearance, setEditAppearance] = useState(char.appearance);
   const [isSaving, setIsSaving] = useState(false);
+  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
+  const [newHeadshotUrl, setNewHeadshotUrl] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const backstoryChanged = editBackstory.trim() !== char.backstory.trim();
   const appearanceChanged = editAppearance.trim() !== char.appearance.trim();
-  const hasChanges = backstoryChanged || appearanceChanged;
+  const photoChanged = !!newHeadshotUrl;
+  const hasChanges = backstoryChanged || appearanceChanged || photoChanged;
+
+  const handlePhotoSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setIsUploadingPhoto(true);
+    try {
+      // Convert file to base64 for the tRPC uploadHeadshot procedure
+      const base64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const result = reader.result as string;
+          // Strip the data URL prefix (e.g. 'data:image/png;base64,')
+          resolve(result.split(',')[1]);
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+
+      const cookie = localStorage.getItem('freeroam_cookie') ?? '';
+      const accountId = localStorage.getItem('freeroam_account_id') ?? '';
+      const res = await fetch('/api/trpc/characters.uploadHeadshot?batch=1', {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'content-type': 'application/json',
+          ...(cookie ? { 'x-freeroam-cookie': cookie } : {}),
+          ...(accountId ? { 'x-freeroam-account-id': accountId } : {}),
+        },
+        body: JSON.stringify({
+          '0': { json: { fileBase64: base64, mimeType: file.type, fileName: file.name } },
+        }),
+      });
+      if (res.ok) {
+        const json = await res.json();
+        const url = json?.[0]?.result?.data?.json?.headshot_url;
+        setNewHeadshotUrl(url || URL.createObjectURL(file));
+      } else {
+        setNewHeadshotUrl(URL.createObjectURL(file));
+      }
+    } catch {
+      if (file) setNewHeadshotUrl(URL.createObjectURL(file));
+    } finally {
+      setIsUploadingPhoto(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
 
   return (
     <>
@@ -782,19 +832,48 @@ function StoryDetailEditView({
 
       <div className="flex-1 overflow-y-auto px-6 pb-4">
         <div className="flex gap-5">
-          {/* Portrait */}
+          {/* Portrait — tappable to change photo */}
           <div className="flex-shrink-0">
-            {(char.display_headshot_url || char.headshot_url) ? (
-              <img
-                src={char.display_headshot_url || char.headshot_url}
-                alt={char.name}
-                style={{ width: '120px', height: '160px', objectFit: 'cover', objectPosition: 'center top', borderRadius: '12px', border: `1px solid ${char.is_main_character ? 'rgba(234,179,8,0.5)' : 'rgba(255,255,255,0.1)'}` }}
-              />
-            ) : (
-              <div className="flex items-center justify-center" style={{ width: '120px', height: '160px', borderRadius: '12px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', fontSize: '48px', color: 'rgba(255,255,255,0.2)' }}>
-                {char.name[0]}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={handlePhotoSelect}
+            />
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={isUploadingPhoto}
+              className="relative block transition-all hover:brightness-110"
+              style={{ width: '120px', height: '160px', borderRadius: '12px', overflow: 'hidden', border: `1px solid ${photoChanged ? 'rgba(34,197,94,0.6)' : char.is_main_character ? 'rgba(234,179,8,0.5)' : 'rgba(255,255,255,0.1)'}` }}
+            >
+              {(newHeadshotUrl || char.display_headshot_url || char.headshot_url) ? (
+                <img
+                  src={newHeadshotUrl || char.display_headshot_url || char.headshot_url}
+                  alt={char.name}
+                  className="w-full h-full"
+                  style={{ objectFit: 'cover', objectPosition: 'center top' }}
+                />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center" style={{ background: 'rgba(255,255,255,0.05)', fontSize: '48px', color: 'rgba(255,255,255,0.2)' }}>
+                  {char.name[0]}
+                </div>
+              )}
+              {/* Change Photo overlay */}
+              <div
+                className="absolute inset-0 flex flex-col items-center justify-center gap-1"
+                style={{ background: isUploadingPhoto ? 'rgba(0,0,0,0.6)' : 'rgba(0,0,0,0.35)', backdropFilter: 'blur(1px)' }}
+              >
+                {isUploadingPhoto ? (
+                  <Loader2 size={20} className="animate-spin" style={{ color: '#fff' }} />
+                ) : (
+                  <>
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+                    <span style={{ fontFamily: 'Outfit, sans-serif', fontSize: '10px', fontWeight: 600, color: '#fff' }}>Change Photo</span>
+                  </>
+                )}
               </div>
-            )}
+            </button>
             {char.is_main_character && (
               <div className="mt-2 text-center" style={{ fontFamily: 'Outfit, sans-serif', fontSize: '11px', fontWeight: 700, color: 'rgba(234,179,8,0.9)', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
                 Main Character
@@ -869,7 +948,7 @@ function StoryDetailEditView({
             if (!hasChanges || isSaving) return;
             setIsSaving(true);
             try {
-              await onEditCharacter(char.external_id, char.name.replace(/-/g, ' '), char.backstory, editBackstory, char.appearance, editAppearance);
+              await onEditCharacter(char.external_id, char.name.replace(/-/g, ' '), char.backstory, editBackstory, char.appearance, editAppearance, photoChanged);
             } catch (err) {
               // Error handled upstream
             } finally {

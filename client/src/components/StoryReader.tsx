@@ -1297,10 +1297,10 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
             }
           );
         }}
-        onEditCharacter={async (charId, charName, oldBackstory, newBackstory, oldAppearance, newAppearance) => {
+        onEditCharacter={async (charId: string, charName: string, oldBackstory: string, newBackstory: string, oldAppearance: string, newAppearance: string, photoChanged?: boolean) => {
           const backstoryChanged = newBackstory.trim() !== oldBackstory.trim();
           const appearanceChanged = newAppearance.trim() !== oldAppearance.trim();
-          if (!backstoryChanged && !appearanceChanged) return;
+          if (!backstoryChanged && !appearanceChanged && !photoChanged) return;
 
           // 1. Update the character in Freeroam's database
           const cookie = localStorage.getItem('freeroam_cookie') ?? '';
@@ -1330,7 +1330,7 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
           // 2. Build action_text and display_text based on what changed
           let actionText = 'A character has been edited by the user.';
           const displayParts: string[] = [];
-          if (appearanceChanged) {
+          if (appearanceChanged || photoChanged) {
             actionText += ` Their appearance was changed from "${oldAppearance}" to "${newAppearance}".`;
             displayParts.push('new appearance');
           }
