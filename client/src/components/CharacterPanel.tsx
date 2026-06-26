@@ -950,7 +950,7 @@ function StoryDetailEditView({
             if (!hasChanges || isSaving) return;
             setIsSaving(true);
             try {
-              await onEditCharacter(char.external_id, char.name.replace(/-/g, ' '), char.backstory, editBackstory, char.appearance, editAppearance, photoChanged, newHeadshotUrl ?? undefined);
+              await onEditCharacter(char.external_id, char.name.replace(/-/g, ' '), char.backstory ?? '', editBackstory, char.appearance ?? '', editAppearance, photoChanged, newHeadshotUrl ?? undefined);
             } catch (err) {
               // Error handled upstream
             } finally {

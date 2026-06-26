@@ -1345,8 +1345,8 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
           );
         }}
         onEditCharacter={async (charId: string, charName: string, oldBackstory: string, newBackstory: string, oldAppearance: string, newAppearance: string, photoChanged?: boolean, newHeadshotUrl?: string) => {
-          const backstoryChanged = newBackstory.trim() !== oldBackstory.trim();
-          const appearanceChanged = newAppearance.trim() !== oldAppearance.trim();
+          const backstoryChanged = newBackstory.trim() !== (oldBackstory ?? '').trim();
+          const appearanceChanged = newAppearance.trim() !== (oldAppearance ?? '').trim();
           if (!backstoryChanged && !appearanceChanged && !photoChanged) return;
 
           // 1. Update the character in Freeroam's database
