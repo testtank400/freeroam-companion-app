@@ -997,7 +997,7 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
               />
               <div
                 className="absolute bottom-0 left-0 right-0 z-10 px-5"
-                style={{ paddingBottom: '110px' }}
+                style={{ paddingBottom: 'calc(96px + env(safe-area-inset-bottom, 0px))' }}
               >
                 {/* Character name label (spoken dialogue only) — storyVnLine__name exact CSS */}
                 {speakerName && accentColor && (
@@ -1017,8 +1017,32 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
                     >
                       {speakerName}
                     </p>
-                    {/* storyVnLine__rule: gradient fades right */}
-                    <div style={{ width: '48px', height: '2px', background: `linear-gradient(90deg, ${accentColor}, ${accentColor} 58%, rgba(0,0,0,0))`, borderRadius: '1px', marginTop: '4px' }} />
+                    {/* storyVnLine__rule: exact Freeroam CSS — wider, with dot at left end */}
+                    <div style={{
+                      position: 'relative',
+                      display: 'block',
+                      width: 'min(62%, 260px)',
+                      height: '1.5px',
+                      borderRadius: '1px',
+                      background: `linear-gradient(90deg, currentColor, currentColor 58%, transparent)`,
+                      color: accentColor,
+                      opacity: 0.7,
+                      filter: 'drop-shadow(0 1px 2px rgba(0,0,0,.45))',
+                      marginTop: '4px',
+                    }}>
+                      {/* ::before dot */}
+                      <span style={{
+                        position: 'absolute',
+                        left: 0,
+                        top: '50%',
+                        width: '5px',
+                        height: '5px',
+                        borderRadius: '50%',
+                        background: accentColor,
+                        transform: 'translate(-1px, -50%)',
+                        display: 'block',
+                      }} />
+                    </div>
                   </div>
                 )}
 
@@ -1038,6 +1062,7 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
                       margin: 0,
                       paddingLeft: '26px',
                       paddingRight: '26px',
+                      animation: 'storyVnLineIn .34s cubic-bezier(.22, .61, .36, 1) both',
                     }}
                   >
                     {dialogueText}
@@ -1059,6 +1084,7 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
                       paddingLeft: '26px',
                       paddingRight: '26px',
                       textAlign: 'center',
+                      animation: 'storyVnLineIn .34s cubic-bezier(.22, .61, .36, 1) both',
                     }}
                   >
                     {narrationText}
@@ -1069,7 +1095,7 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
                 {actionText && (
                   <p
                     style={{
-                      fontFamily: 'Outfit, sans-serif',
+                      fontFamily: 'Outfit-Medium, Outfit, sans-serif',
                       fontSize: 'clamp(1.05rem, 4.2vw, 1.26rem)',
                       fontWeight: 500,
                       fontStyle: 'italic',
@@ -1078,9 +1104,31 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
                       textShadow: '0 0 1px rgba(0,0,0,0.55), 0 1px 2px rgba(0,0,0,0.75)',
                       margin: 0,
                       textAlign: 'center',
+                      paddingLeft: '26px',
+                      animation: 'storyVnLineIn .34s cubic-bezier(.22, .61, .36, 1) both',
                     }}
                   >
                     {actionText}
+                  </p>
+                )}
+
+                {/* Thought text — Freeroam .storyVnLine--thought style: lighter italic */}
+                {!narrationText && !dialogueText && !actionText && speechBubble?.style === 'thought' && (
+                  <p
+                    style={{
+                      fontFamily: 'Outfit-Regular, Outfit, sans-serif',
+                      fontSize: 'clamp(1.22rem, 5.3vw, 1.56rem)',
+                      fontWeight: 400,
+                      fontStyle: 'italic',
+                      color: 'hsla(0,0%,100%,.92)',
+                      lineHeight: 1.26,
+                      margin: 0,
+                      paddingLeft: '15px',
+                      paddingRight: '26px',
+                      animation: 'storyVnLineIn .34s cubic-bezier(.22, .61, .36, 1) both',
+                    }}
+                  >
+                    {speechBubble.text}
                   </p>
                 )}
               </div>
@@ -1093,35 +1141,46 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
               className="absolute z-20 flex flex-col items-center"
               style={{
                 right: '12px',
-                bottom: 'calc(110px + 20px)',
+                bottom: 'calc(96px + 20px)',
                 gap: '20px',
                 pointerEvents: 'none',
               }}
             >
-              <button
-                className="flex items-center justify-center rounded-full transition-all hover:brightness-125"
-                style={{ width: '30px', height: '30px', background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(4px)', color: 'rgba(255,255,255,0.7)', pointerEvents: 'auto' }}
-                onClick={() => toast('Feedback — coming soon')}
-                title="Thumbs up"
-              >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3H14z"/><path d="M7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"/></svg>
-              </button>
-              <button
-                className="flex items-center justify-center rounded-full transition-all hover:brightness-125"
-                style={{ width: '30px', height: '30px', background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(4px)', color: 'rgba(255,255,255,0.7)', pointerEvents: 'auto' }}
-                onClick={() => toast('Feedback — coming soon')}
-                title="Thumbs down"
-              >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 15v4a3 3 0 0 0 3 3l4-9V2H5.72a2 2 0 0 0-2 1.7l-1.38 9a2 2 0 0 0 2 2.3H10z"/><path d="M17 2h2.67A2.31 2.31 0 0 1 22 4v7a2.31 2.31 0 0 1-2.33 2H17"/></svg>
-              </button>
-              <button
-                className="flex items-center justify-center rounded-full transition-all hover:brightness-125"
-                style={{ width: '30px', height: '30px', background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(4px)', color: 'rgba(255,255,255,0.7)', pointerEvents: 'auto' }}
-                onClick={() => toast('Edit response — coming soon')}
-                title="Edit response"
-              >
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-              </button>
+              {[{
+                title: 'Thumbs up',
+                onClick: () => toast('Feedback — coming soon'),
+                svg: <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3H14z"/><path d="M7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"/></svg>,
+              }, {
+                title: 'Thumbs down',
+                onClick: () => toast('Feedback — coming soon'),
+                svg: <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M10 15v4a3 3 0 0 0 3 3l4-9V2H5.72a2 2 0 0 0-2 1.7l-1.38 9a2 2 0 0 0 2 2.3H10z"/><path d="M17 2h2.67A2.31 2.31 0 0 1 22 4v7a2.31 2.31 0 0 1-2.33 2H17"/></svg>,
+              }, {
+                title: 'Edit response',
+                onClick: () => toast('Edit response — coming soon'),
+                svg: <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>,
+              }].map(({ title, onClick, svg }) => (
+                <button
+                  key={title}
+                  title={title}
+                  onClick={onClick}
+                  className="transition-all hover:brightness-125"
+                  style={{
+                    width: '30px',
+                    height: '30px',
+                    pointerEvents: 'auto',
+                    color: 'hsla(0,0%,100%,.8)',
+                    filter: 'drop-shadow(0 1px 2px rgba(0,0,0,.9)) drop-shadow(0 0 5px rgba(0,0,0,.45))',
+                    background: 'none',
+                    border: 'none',
+                    padding: 0,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  {svg}
+                </button>
+              ))}
             </div>
           )}
 
@@ -1296,13 +1355,20 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
                   onClick={() => action ? action() : mode ? handleActionBarButton(mode) : toast(`${label} — coming soon`)}
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-full flex-shrink-0 transition-all hover:brightness-125"
                   style={{
-                    fontFamily: 'Lora, Georgia, serif',
-                    fontSize: '13px',
-                    fontStyle: 'italic',
-                    color: activeInputMode === mode ? '#fff' : 'rgba(255,255,255,0.8)',
-                    background: activeInputMode === mode ? 'rgba(255,255,255,0.22)' : 'rgba(255,255,255,0.1)',
-                    border: `1px solid ${activeInputMode === mode ? 'rgba(255,255,255,0.35)' : 'rgba(255,255,255,0.15)'}`,
+                    fontFamily: 'Outfit-Medium, Outfit, sans-serif',
+                    fontSize: '.78rem',
+                    fontWeight: 500,
+                    fontStyle: 'normal',
+                    color: '#fff',
+                    background: activeInputMode === mode ? 'hsla(0,0%,100%,.26)' : 'hsla(0,0%,100%,.18)',
+                    border: `1px solid ${activeInputMode === mode ? 'hsla(0,0%,100%,.85)' : 'hsla(0,0%,100%,.45)'}`,
+                    boxShadow: activeInputMode === mode ? 'inset 0 0 0 1px hsla(0,0%,100%,.25)' : 'none',
+                    padding: '4px 10px',
+                    borderRadius: '13px',
+                    backdropFilter: 'blur(6px)',
+                    WebkitBackdropFilter: 'blur(6px)',
                     whiteSpace: 'nowrap',
+                    transition: 'background .15s ease, border-color .15s ease',
                   }}
                 >
                   {icon}
