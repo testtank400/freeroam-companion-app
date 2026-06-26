@@ -67,21 +67,26 @@ type PanelData = {
   is_owner: boolean;
 };
 
-// Deterministic accent color per character name
-const ACCENT_COLORS = [
-  '#7ec8e3', // sky blue
-  '#c4a7e7', // soft purple
-  '#7fd1b9', // mint teal
-  '#f4c97a', // warm amber
-  '#f4a0b5', // rose pink
-  '#9dd49a', // sage green
-  '#f4a261', // peach
-  '#a8dadc', // seafoam
-];
+// Deterministic accent color per character name — mirrors Freeroam's cyrb53-based characterColor.ts
 function getAccentColor(name: string): string {
-  let hash = 0;
-  for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
-  return ACCENT_COLORS[Math.abs(hash) % ACCENT_COLORS.length];
+  if (!name || typeof name !== 'string') return 'hsl(0, 70%, 40%)';
+  const normalizedName = name.toLowerCase().trim();
+  // cyrb53 hash — mirrors Freeroam's shared-components/src/utils/characterColor.ts
+  const cyrb53 = (str: string, seed = 0): number => {
+    let h1 = 0xdeadbeef ^ seed, h2 = 0x41c6ce57 ^ seed;
+    for (let i = 0; i < str.length; i++) {
+      const ch = str.charCodeAt(i);
+      h1 = Math.imul(h1 ^ ch, 2654435761);
+      h2 = Math.imul(h2 ^ ch, 1597334677);
+    }
+    h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507);
+    h1 ^= Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+    h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507);
+    h2 ^= Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+    return 4294967296 * (2097151 & h2) + (h1 >>> 0);
+  };
+  const hue = cyrb53(normalizedName) % 360;
+  return `hsl(${hue}, 70%, 40%)`;
 }
 
 export default function StoryReader({ world, initialPanelId, onClose }: StoryReaderProps) {
