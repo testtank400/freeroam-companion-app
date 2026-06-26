@@ -206,7 +206,10 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
         location: null,
         usage: result.usage,
       };
-      setCurrentPanel(actionPanel as unknown as PanelData);
+      const actionPanelData = actionPanel as unknown as PanelData;
+      // Store action panel in cache so backward navigation can traverse it
+      panelCache.current.set(result.action_panel_id, actionPanelData);
+      setCurrentPanel(actionPanelData);
       // Save position
       setPanelMutation.mutate({ worldId: world.external_id, panelId: result.action_panel_id });
       // Determine if this is an image action (check action text prefix)
@@ -1374,36 +1377,7 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
           const appearanceChanged = newAppearance.trim() !== (oldAppearance ?? '').trim();
           if (!backstoryChanged && !appearanceChanged && !photoChanged) return;
 
-          // 1. Update the character in Freeroam's database
-          const cookie = localStorage.getItem('freeroam_cookie') ?? '';
-          const accountId = localStorage.getItem('freeroam_account_id') ?? '';
-          const updateRes = await fetch('/api/trpc/characters.update?batch=1', {
-            method: 'POST',
-            credentials: 'include',
-            headers: {
-              'content-type': 'application/json',
-              ...(cookie ? { 'x-freeroam-cookie': cookie } : {}),
-              ...(accountId ? { 'x-freeroam-account-id': accountId } : {}),
-            },
-            body: JSON.stringify({
-              '0': {
-                json: {
-                  characterId: charId,
-                  name: charName, // required by characters.update
-                  // Always include backstory and appearance — PUT replaces the full record,
-                  // so omitting them would wipe the existing content
-                  backstory: newBackstory,
-                  appearance: newAppearance,
-                  ...(photoChanged && newHeadshotUrl ? { headshot_url: newHeadshotUrl } : {}),
-                },
-              },
-            }),
-          });
-          if (!updateRes.ok) {
-            throw new Error('Failed to update character');
-          }
-
-          // 2. Build action_text and display_text based on what changed
+          // Build action_text and display_text based on what changed
           let actionText = 'A character has been edited by the user.';
           const displayParts: string[] = [];
           if (appearanceChanged || photoChanged) {
@@ -1417,15 +1391,43 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
           actionText += ' Continue writing the story as though this character has always been this way. Do not acknowledge or address these changes in the narrative.';
           const displayText = `(edited character ${charName}: ${displayParts.join(', ')})`;
 
-          // 3. Send action to notify the AI with correct display text
+          // Close panel and fire sendAction immediately — don't wait for character update
           setCharPanelOpen(false);
-          await handleSendAction(actionText, 'choice', {
-            add_character_ids: [],
-            remove_character_ids: [],
-            new_main_character_id: null,
-            old_main_character_id: null,
-            batch_character_update: true,
-          }, displayText);
+
+          // Fire character update and sendAction in parallel for minimum latency
+          const cookie = localStorage.getItem('freeroam_cookie') ?? '';
+          const accountId = localStorage.getItem('freeroam_account_id') ?? '';
+          const [, ] = await Promise.all([
+            // 1. Update character in Freeroam's database (background)
+            fetch('/api/trpc/characters.update?batch=1', {
+              method: 'POST',
+              credentials: 'include',
+              headers: {
+                'content-type': 'application/json',
+                ...(cookie ? { 'x-freeroam-cookie': cookie } : {}),
+                ...(accountId ? { 'x-freeroam-account-id': accountId } : {}),
+              },
+              body: JSON.stringify({
+                '0': {
+                  json: {
+                    characterId: charId,
+                    name: charName,
+                    backstory: newBackstory,
+                    appearance: newAppearance,
+                    ...(photoChanged && newHeadshotUrl ? { headshot_url: newHeadshotUrl } : {}),
+                  },
+                },
+              }),
+            }).catch(() => { /* Non-fatal — sendAction still proceeds */ }),
+            // 2. Send action to notify the AI
+            handleSendAction(actionText, 'choice', {
+              add_character_ids: [],
+              remove_character_ids: [],
+              new_main_character_id: null,
+              old_main_character_id: null,
+              batch_character_update: true,
+            }, displayText),
+          ]);
         }}
       />
     </div>
