@@ -120,6 +120,9 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
   // Panel cache: store visited panels by panel_id for instant back/forward navigation
   const panelCache = useRef<Map<string, PanelData>>(new Map());
+  // Refs to latest stopPolling/loadPanel for use in handleSendAction (avoids stale closure)
+  const stopPollingRef = useRef<(() => void) | null>(null);
+  const loadPanelRef = useRef<((panelId: string, worldId: string) => Promise<void>) | null>(null);
   const setPanelMutation = trpc.worlds.setPanel.useMutation();
   // Swipe-down gesture to open menu
   const touchStartY = useRef<number | null>(null);
@@ -208,7 +211,7 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
       // Handle next panel navigation based on forward_state
       if (result.forward_state === 'awaiting_choice' && result.next_panel_id) {
         // Choice panel is already generated — navigate to it immediately
-        await loadPanel(result.next_panel_id, world.external_id);
+        await (loadPanelRef.current ?? loadPanel)(result.next_panel_id, world.external_id);
       } else if (result.forward_state === 'generating' || result.forward_state === 'ready') {
         // Start polling next-ready immediately — panel may not be generated yet
         setIsPolling(true);
@@ -217,8 +220,8 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
           try {
             const pollResult = await utils.worlds.nextReady.fetch({ panelId: result.action_panel_id });
             if (pollResult.ready) {
-              stopPolling();
-              await loadPanel(pollResult.panel_id, world.external_id);
+              (stopPollingRef.current ?? stopPolling)();
+              await (loadPanelRef.current ?? loadPanel)(pollResult.panel_id, world.external_id);
             }
           } catch {
             // Non-fatal — keep polling
@@ -359,6 +362,10 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
       setIsLoading(false);
     }
   }, [utils, setPanelMutation, stopPolling, showChoiceIdeasByDefault]);
+
+  // Keep refs updated with latest versions
+  useEffect(() => { stopPollingRef.current = stopPolling; }, [stopPolling]);
+  useEffect(() => { loadPanelRef.current = loadPanel; }, [loadPanel]);
 
   // Initial load + fetch bookmarks + fetch world detail
   useEffect(() => {
