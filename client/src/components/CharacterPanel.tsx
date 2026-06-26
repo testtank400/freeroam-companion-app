@@ -757,14 +757,14 @@ function StoryDetailEditView({
   onBack: () => void;
   onEditCharacter: (charId: string, charName: string, oldBackstory: string, newBackstory: string, oldAppearance: string, newAppearance: string, photoChanged?: boolean, newHeadshotUrl?: string) => Promise<void>;
 }) {
-  const [editBackstory, setEditBackstory] = useState(char.backstory);
-  const [editAppearance, setEditAppearance] = useState(char.appearance);
+  const [editBackstory, setEditBackstory] = useState(char.backstory ?? '');
+  const [editAppearance, setEditAppearance] = useState(char.appearance ?? '');
   const [isSaving, setIsSaving] = useState(false);
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
   const [newHeadshotUrl, setNewHeadshotUrl] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const backstoryChanged = editBackstory.trim() !== char.backstory.trim();
-  const appearanceChanged = editAppearance.trim() !== char.appearance.trim();
+  const backstoryChanged = editBackstory.trim() !== (char.backstory ?? '').trim();
+  const appearanceChanged = editAppearance.trim() !== (char.appearance ?? '').trim();
   const photoChanged = !!newHeadshotUrl;
   const hasChanges = backstoryChanged || appearanceChanged || photoChanged;
 
