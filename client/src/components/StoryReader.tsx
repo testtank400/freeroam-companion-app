@@ -116,6 +116,9 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
   const [isNavigating, setIsNavigating] = useState(false);
   const [isPolling, setIsPolling] = useState(false);
   const [isImagePolling, setIsImagePolling] = useState(false); // true when polling for image generation specifically
+  // Pending poll: set by handleSendAction to trigger polling from a useEffect with fresh refs
+  const [pendingPollPanelId, setPendingPollPanelId] = useState<string | null>(null);
+  const [pendingPollIsImage, setPendingPollIsImage] = useState(false);
   const [visible, setVisible] = useState(false);
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
   // Panel cache: store visited panels by panel_id for instant back/forward navigation
@@ -213,20 +216,9 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
         // Choice panel is already generated — navigate to it immediately
         await (loadPanelRef.current ?? loadPanel)(result.next_panel_id, world.external_id);
       } else if (result.forward_state === 'generating' || result.forward_state === 'ready') {
-        // Start polling next-ready immediately — panel may not be generated yet
-        setIsPolling(true);
-        if (isImageAction) setIsImagePolling(true);
-        pollingRef.current = setInterval(async () => {
-          try {
-            const pollResult = await utils.worlds.nextReady.fetch({ panelId: result.action_panel_id });
-            if (pollResult.ready) {
-              (stopPollingRef.current ?? stopPolling)();
-              await (loadPanelRef.current ?? loadPanel)(pollResult.panel_id, world.external_id);
-            }
-          } catch {
-            // Non-fatal — keep polling
-          }
-        }, 1000);
+        // Signal useEffect to start polling with fresh refs (avoids stale closure)
+        setPendingPollIsImage(isImageAction);
+        setPendingPollPanelId(result.action_panel_id);
       }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to send action');
@@ -366,6 +358,30 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
   // Keep refs updated with latest versions
   useEffect(() => { stopPollingRef.current = stopPolling; }, [stopPolling]);
   useEffect(() => { loadPanelRef.current = loadPanel; }, [loadPanel]);
+
+  // Start polling when handleSendAction signals a pending poll (avoids stale closure)
+  useEffect(() => {
+    if (!pendingPollPanelId) return;
+    setPendingPollPanelId(null); // consume the signal
+    setIsPolling(true);
+    if (pendingPollIsImage) setIsImagePolling(true);
+    const panelIdToWatch = pendingPollPanelId;
+    pollingRef.current = setInterval(async () => {
+      try {
+        const pollResult = await utils.worlds.nextReady.fetch({ panelId: panelIdToWatch });
+        if (pollResult.ready) {
+          stopPolling();
+          await loadPanel(pollResult.panel_id, world.external_id);
+        }
+      } catch {
+        // Non-fatal — keep polling
+      }
+    }, 1000);
+    return () => {
+      if (pollingRef.current) clearInterval(pollingRef.current);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingPollPanelId]);
 
   // Initial load + fetch bookmarks + fetch world detail
   useEffect(() => {
