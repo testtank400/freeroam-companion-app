@@ -1365,8 +1365,10 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
                 json: {
                   characterId: charId,
                   name: charName, // required by characters.update
-                  ...(backstoryChanged ? { backstory: newBackstory } : {}),
-                  ...(appearanceChanged ? { appearance: newAppearance } : {}),
+                  // Always include backstory and appearance — PUT replaces the full record,
+                  // so omitting them would wipe the existing content
+                  backstory: newBackstory,
+                  appearance: newAppearance,
                   ...(photoChanged && newHeadshotUrl ? { headshot_url: newHeadshotUrl } : {}),
                 },
               },
