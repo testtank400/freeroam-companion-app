@@ -474,7 +474,9 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
   useEffect(() => () => stopPolling(), [stopPolling]);
 
   const handleNavigate = useCallback(async (direction: 'prev' | 'next') => {
-    if (!currentPanel || isNavigating || isPolling) return;
+    // Allow backward navigation even while polling; only block forward when actively polling
+    if (!currentPanel || isNavigating) return;
+    if (direction === 'next' && isPolling) return;
     const targetId = direction === 'prev' ? currentPanel.prev_panel_id : currentPanel.next_panel_id;
     if (!targetId) return;
     // For action panels going forward: check cache first, then poll if not cached
