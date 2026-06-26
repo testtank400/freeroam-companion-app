@@ -664,15 +664,19 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
       className="fixed inset-0 z-[100]"
       style={{ opacity: visible ? 1 : 0, transition: 'opacity 0.2s ease', background: 'rgb(5,5,5)' }}
     >
-      {/* Ambient blurred backdrop — storyAmbientLayer: blurred image at 50% 50% */}
+      {/* Ambient blurred backdrop — storyAmbientLayer: exact Freeroam CSS with drift animation */}
       <div
-        className="absolute inset-0"
         style={{
+          position: 'absolute',
+          inset: '-12%',
           backgroundImage: imageUrl ? `url(${imageUrl})` : 'none',
           backgroundSize: 'cover',
           backgroundPosition: '50% 50%',
-          filter: 'blur(70px)',
-          transform: 'scale(1.15)',
+          backgroundRepeat: 'no-repeat',
+          filter: 'blur(44px) saturate(1.25) brightness(.55)',
+          transform: 'scale(1.18)',
+          willChange: 'transform, opacity',
+          animation: 'storyAmbientDrift 26s ease-in-out infinite alternate',
         }}
       />
       {/* storyAmbientScrim — exact Freeroam values from console extraction */}

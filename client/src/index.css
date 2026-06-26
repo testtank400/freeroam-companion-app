@@ -72,6 +72,16 @@
   to { opacity: 1; transform: translateY(0); }
 }
 
+@keyframes storyAmbientFadeIn {
+  0% { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes storyAmbientDrift {
+  0% { transform: scale(1.14) translate3d(-1.5%, -1%, 0); }
+  to { transform: scale(1.22) translate3d(1.5%, 1.5%, 0); }
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;
