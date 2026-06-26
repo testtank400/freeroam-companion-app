@@ -1317,6 +1317,7 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
               '0': {
                 json: {
                   characterId: charId,
+                  name: charName, // required by characters.update
                   ...(backstoryChanged ? { backstory: newBackstory } : {}),
                   ...(appearanceChanged ? { appearance: newAppearance } : {}),
                 },
