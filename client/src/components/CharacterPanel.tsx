@@ -49,7 +49,9 @@ type CharacterPanelProps = {
     oldBackstory: string,
     newBackstory: string,
     oldAppearance: string,
-    newAppearance: string
+    newAppearance: string,
+    photoChanged?: boolean,
+    newHeadshotUrl?: string
   ) => Promise<void>;
 };
 
@@ -753,7 +755,7 @@ function StoryDetailEditView({
     creator_name: string;
   };
   onBack: () => void;
-  onEditCharacter: (charId: string, charName: string, oldBackstory: string, newBackstory: string, oldAppearance: string, newAppearance: string, photoChanged?: boolean) => Promise<void>;
+  onEditCharacter: (charId: string, charName: string, oldBackstory: string, newBackstory: string, oldAppearance: string, newAppearance: string, photoChanged?: boolean, newHeadshotUrl?: string) => Promise<void>;
 }) {
   const [editBackstory, setEditBackstory] = useState(char.backstory);
   const [editAppearance, setEditAppearance] = useState(char.appearance);
@@ -948,7 +950,7 @@ function StoryDetailEditView({
             if (!hasChanges || isSaving) return;
             setIsSaving(true);
             try {
-              await onEditCharacter(char.external_id, char.name.replace(/-/g, ' '), char.backstory, editBackstory, char.appearance, editAppearance, photoChanged);
+              await onEditCharacter(char.external_id, char.name.replace(/-/g, ' '), char.backstory, editBackstory, char.appearance, editAppearance, photoChanged, newHeadshotUrl ?? undefined);
             } catch (err) {
               // Error handled upstream
             } finally {

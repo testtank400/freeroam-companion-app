@@ -1344,7 +1344,7 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
             }
           );
         }}
-        onEditCharacter={async (charId: string, charName: string, oldBackstory: string, newBackstory: string, oldAppearance: string, newAppearance: string, photoChanged?: boolean) => {
+        onEditCharacter={async (charId: string, charName: string, oldBackstory: string, newBackstory: string, oldAppearance: string, newAppearance: string, photoChanged?: boolean, newHeadshotUrl?: string) => {
           const backstoryChanged = newBackstory.trim() !== oldBackstory.trim();
           const appearanceChanged = newAppearance.trim() !== oldAppearance.trim();
           if (!backstoryChanged && !appearanceChanged && !photoChanged) return;
@@ -1367,6 +1367,7 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
                   name: charName, // required by characters.update
                   ...(backstoryChanged ? { backstory: newBackstory } : {}),
                   ...(appearanceChanged ? { appearance: newAppearance } : {}),
+                  ...(photoChanged && newHeadshotUrl ? { headshot_url: newHeadshotUrl } : {}),
                 },
               },
             }),
