@@ -2159,6 +2159,7 @@ export const appRouter = router({
         panelId: z.string(),
         worldId: z.string(),
         characterName: z.string(), // 'narrator' for narration
+        characterId: z.string().optional(), // Freeroam character external_id
         text: z.string(),
         voiceId: z.string(),
         stability: z.string().optional().default('0.5'),
@@ -2221,6 +2222,7 @@ export const appRouter = router({
           panelId: input.panelId,
           worldId: input.worldId,
           characterName: input.characterName,
+          characterId: input.characterId ?? null,
           voiceId: input.voiceId,
           audioUrl,
         });

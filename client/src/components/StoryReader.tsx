@@ -376,9 +376,14 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
     }
   }, [utils, setPanelMutation, stopPolling, showChoiceIdeasByDefault]);
 
+  // Load voice_enabled setting
+  const { data: voiceEnabledSetting } = trpc.voice.getSetting.useQuery({ key: 'voice_enabled' });
+  const voiceEnabled = voiceEnabledSetting !== 'false'; // default true if not set
+
   // TTS: trigger speech generation and playback for a panel
   const triggerTTS = useCallback(async (panel: PanelData) => {
     if (!panel.panel_content) return;
+    if (!voiceEnabled) return; // Master voice toggle
     const speechBubble = panel.panel_content.speech_bubbles?.[0];
     if (!speechBubble || speechBubble.style !== 'spoken' || !speechBubble.text || !speechBubble.character) return;
 
@@ -387,6 +392,7 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
 
     // Look up voice assignment for this character
     let voiceData = voiceCache.current.get(charName);
+    let charExternalId: string | undefined;
     if (voiceData === undefined) {
       // Not yet cached — fetch from server
       try {
@@ -395,7 +401,7 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
         const matchedEntry = Object.entries(visibleChars).find(([, v]) =>
           v.name?.toLowerCase().replace(/-/g, ' ') === charName.toLowerCase().replace(/-/g, ' ')
         );
-        const charExternalId = matchedEntry?.[1]?.external_id;
+        charExternalId = matchedEntry?.[1]?.external_id;
         if (charExternalId) {
           const assignment = await utils.voice.getVoiceAssignment.fetch({ characterId: charExternalId });
           voiceData = assignment ?? null;
@@ -415,6 +421,7 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
         panelId: panel.panel_id,
         worldId: world.external_id,
         characterName: charName,
+        characterId: charExternalId ?? undefined,
         text,
         voiceId: voiceData.voiceId,
         stability: voiceData.stability ?? '0.5',

@@ -404,6 +404,61 @@ function JournalPreferences() {
           </button>
         </div>
       )}
+
+      {/* Voice Settings — stored in app_settings DB */}
+      <VoiceSettings />
+    </div>
+  );
+}
+
+function VoiceSettings() {
+  const { data: voiceEnabledData, refetch: refetchVoiceEnabled } = trpc.voice.getSetting.useQuery({ key: 'voice_enabled' });
+  const { data: autoPlayData, refetch: refetchAutoPlay } = trpc.voice.getSetting.useQuery({ key: 'auto_play_enabled' });
+  const setSettingMutation = trpc.voice.setSetting.useMutation();
+
+  const voiceEnabled = voiceEnabledData !== 'false'; // default true
+  const autoPlayEnabled = autoPlayData !== 'false'; // default true
+
+  const toggle = async (key: string, currentValue: boolean, refetch: () => void) => {
+    await setSettingMutation.mutateAsync({ key, value: (!currentValue).toString() });
+    refetch();
+  };
+
+  return (
+    <div>
+      <p style={{ fontFamily: LORA, fontSize: '12px', fontWeight: 700, color: 'rgba(255,255,255,0.55)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '12px' }}>Voice Settings</p>
+      <div className="space-y-3">
+        {/* Voice enabled toggle */}
+        <div className="flex items-center justify-between rounded-xl px-4 py-3" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
+          <div>
+            <p style={{ fontFamily: LORA, fontSize: '14px', color: '#fff', marginBottom: '2px' }}>Voice Generation</p>
+            <p style={{ fontFamily: LORA, fontSize: '12px', color: 'rgba(255,255,255,0.45)' }}>Generate and play character voices in the reader</p>
+          </div>
+          <button
+            onClick={() => toggle('voice_enabled', voiceEnabled, refetchVoiceEnabled)}
+            className="flex-shrink-0 rounded-full transition-all"
+            style={{ width: '44px', height: '24px', background: voiceEnabled ? '#5eead4' : 'rgba(255,255,255,0.15)', position: 'relative', border: 'none', cursor: 'pointer' }}
+          >
+            <span style={{ position: 'absolute', top: '2px', left: voiceEnabled ? '22px' : '2px', width: '20px', height: '20px', borderRadius: '50%', background: '#fff', transition: 'left 0.2s ease' }} />
+          </button>
+        </div>
+
+        {/* Auto-play toggle */}
+        <div className="flex items-center justify-between rounded-xl px-4 py-3" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
+          <div>
+            <p style={{ fontFamily: LORA, fontSize: '14px', color: '#fff', marginBottom: '2px' }}>Auto-play Voice</p>
+            <p style={{ fontFamily: LORA, fontSize: '12px', color: 'rgba(255,255,255,0.45)' }}>Automatically play voice when a panel loads</p>
+          </div>
+          <button
+            onClick={() => toggle('auto_play_enabled', autoPlayEnabled, refetchAutoPlay)}
+            className="flex-shrink-0 rounded-full transition-all"
+            style={{ width: '44px', height: '24px', background: autoPlayEnabled ? '#5eead4' : 'rgba(255,255,255,0.15)', position: 'relative', border: 'none', cursor: 'pointer', opacity: voiceEnabled ? 1 : 0.4 }}
+            disabled={!voiceEnabled}
+          >
+            <span style={{ position: 'absolute', top: '2px', left: autoPlayEnabled ? '22px' : '2px', width: '20px', height: '20px', borderRadius: '50%', background: '#fff', transition: 'left 0.2s ease' }} />
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
