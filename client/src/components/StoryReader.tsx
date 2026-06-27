@@ -485,13 +485,13 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
         if (charExternalId) {
           const assignment = await utils.voice.getVoiceAssignment.fetch({ characterId: charExternalId });
           voiceData = assignment ?? null;
-        } else {
-          voiceData = null;
+          // Only cache if we got a definitive result (found external_id and queried DB)
+          voiceCache.current.set(charName, voiceData);
         }
+        // If no external_id found, don't cache null — retry on next panel
       } catch {
-        voiceData = null;
+        // Don't cache on error — retry next time
       }
-      voiceCache.current.set(charName, voiceData);
     }
 
     if (!voiceData) return; // No voice assigned for this character
