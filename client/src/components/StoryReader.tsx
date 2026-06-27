@@ -116,16 +116,12 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
   const [isNavigating, setIsNavigating] = useState(false);
   const [isPolling, setIsPolling] = useState(false);
   const [isImagePolling, setIsImagePolling] = useState(false); // true when polling for image generation specifically
-  // Pending poll: set by handleSendAction to trigger polling from a useEffect with fresh refs
-  const [pendingPollPanelId, setPendingPollPanelId] = useState<string | null>(null);
-  const [pendingPollIsImage, setPendingPollIsImage] = useState(false);
   const [visible, setVisible] = useState(false);
-  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // AbortController-based polling (matches Freeroam's sequential for-loop pattern)
+  const pollAbortRef = useRef<AbortController | null>(null);
   // Panel cache: store visited panels by panel_id for instant back/forward navigation
   const panelCache = useRef<Map<string, PanelData>>(new Map());
-  // Refs to latest stopPolling/loadPanel for use in handleSendAction (avoids stale closure)
-  const stopPollingRef = useRef<(() => void) | null>(null);
-  const skipNextPollRef = useRef(false); // Set after loading via poll to prevent immediate re-poll
+  // Ref to latest loadPanel for use in polling callbacks
   const loadPanelRef = useRef<((panelId: string, worldId: string) => Promise<void>) | null>(null);
   const setPanelMutation = trpc.worlds.setPanel.useMutation();
   const generateSpeechMutation = trpc.voice.generateSpeech.useMutation();
@@ -240,9 +236,8 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
         // Choice panel is already generated — navigate to it immediately
         await (loadPanelRef.current ?? loadPanel)(result.next_panel_id, world.external_id);
       } else if (result.forward_state === 'generating' || result.forward_state === 'ready') {
-        // Signal useEffect to start polling with fresh refs (avoids stale closure)
-        setPendingPollIsImage(isImageAction);
-        setPendingPollPanelId(result.action_panel_id);
+        // Start polling directly using the new AbortController-based pattern
+        startPolling(result.action_panel_id, isImageAction);
       }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to send action');
@@ -338,14 +333,57 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
   const [showChoiceIdeasByDefault, setShowChoiceIdeasByDefault] = useState(true);
   const [choiceIdeasVisible, setChoiceIdeasVisible] = useState(true);
 
+  // Stop any in-progress polling by aborting the AbortController
   const stopPolling = useCallback(() => {
-    if (pollingRef.current) {
-      clearInterval(pollingRef.current);
-      pollingRef.current = null;
+    if (pollAbortRef.current) {
+      pollAbortRef.current.abort();
+      pollAbortRef.current = null;
     }
     setIsPolling(false);
     setIsImagePolling(false);
   }, []);
+
+  // Start polling for next panel using Freeroam's sequential for-loop pattern (500ms, max 240 iterations)
+  const startPolling = useCallback((panelId: string, isImage = false) => {
+    // Abort any existing poll
+    if (pollAbortRef.current) pollAbortRef.current.abort();
+    const controller = new AbortController();
+    pollAbortRef.current = controller;
+    setIsPolling(true);
+    if (isImage) setIsImagePolling(true);
+    (async () => {
+      for (let i = 0; i < 240 && !controller.signal.aborted; i++) {
+        try {
+          const res = await fetch(
+            `/api/trpc/worlds.nextReady?batch=1&input=${encodeURIComponent(JSON.stringify({ '0': { json: { panelId } } }))}`,
+            { credentials: 'include', signal: controller.signal }
+          );
+          if (res.ok) {
+            const data = await res.json();
+            const result = data?.[0]?.result?.data?.json;
+            if (result?.ready && result?.panel_id) {
+              if (!controller.signal.aborted) {
+                pollAbortRef.current = null;
+                setIsPolling(false);
+                setIsImagePolling(false);
+                await loadPanelRef.current?.(result.panel_id, world.external_id);
+              }
+              return;
+            }
+          }
+        } catch {
+          if (controller.signal.aborted) return;
+        }
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+      // Timed out
+      if (!controller.signal.aborted) {
+        pollAbortRef.current = null;
+        setIsPolling(false);
+        setIsImagePolling(false);
+      }
+    })();
+  }, [world.external_id]);
 
   const loadPanel = useCallback(async (panelId: string, worldId: string) => {
     stopPolling();
@@ -486,8 +524,7 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoPlayEnabled, voiceEnabled, narratorVoiceId, world.external_id]);
 
-  // Keep refs updated with latest versions
-  useEffect(() => { stopPollingRef.current = stopPolling; }, [stopPolling]);
+  // Keep loadPanelRef updated with latest loadPanel
   useEffect(() => { loadPanelRef.current = loadPanel; }, [loadPanel]);
 
   // Trigger TTS when panel changes and has spoken dialogue
@@ -502,31 +539,8 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentPanel?.panel_id]);
 
-  // Start polling when handleSendAction signals a pending poll (avoids stale closure)
-  useEffect(() => {
-    if (!pendingPollPanelId) return;
-    setPendingPollPanelId(null); // consume the signal
-    setIsPolling(true);
-    if (pendingPollIsImage) setIsImagePolling(true);
-    const panelIdToWatch = pendingPollPanelId;
-    pollingRef.current = setInterval(async () => {
-      try {
-        const pollResult = await utils.worlds.nextReady.fetch({ panelId: panelIdToWatch });
-        if (pollResult.ready) {
-          // Use refs to avoid stale closures
-          skipNextPollRef.current = true;
-          stopPollingRef.current?.();
-          await loadPanelRef.current?.(pollResult.panel_id, world.external_id);
-        }
-      } catch {
-        // Non-fatal — keep polling
-      }
-    }, 1000);
-    return () => {
-      if (pollingRef.current) clearInterval(pollingRef.current);
-    };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pendingPollPanelId]);
+  // Cleanup: stop polling on unmount
+  useEffect(() => () => stopPolling(), [stopPolling]);
 
   // Initial load + fetch bookmarks + fetch world detail
   useEffect(() => {
@@ -598,31 +612,13 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
   // Poll when forward_state is "ready" but next_panel_id is null (AI generating)
   useEffect(() => {
     if (!currentPanel) return;
-    // Skip polling if we just loaded this panel via a poll (prevents infinite re-poll loop)
-    if (skipNextPollRef.current) {
-      skipNextPollRef.current = false;
-      return;
-    }
     const { forward_state, next_panel_id } = currentPanel;
     if (forward_state === 'ready' && !next_panel_id) {
-      setIsPolling(true);
-      pollingRef.current = setInterval(async () => {
-        try {
-          const result = await utils.worlds.nextReady.fetch({ panelId: currentPanel.panel_id });
-          if (result.ready) {
-            skipNextPollRef.current = true;
-            stopPollingRef.current?.();
-            await loadPanelRef.current?.(result.panel_id, world.external_id);
-          }
-        } catch {
-          // Non-fatal — keep polling
-        }
-      }, 1000);
+      startPolling(currentPanel.panel_id);
     }
-    return () => stopPollingRef.current?.();
+    return () => stopPolling();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentPanel?.panel_id, currentPanel?.forward_state, currentPanel?.next_panel_id]);
-
-  useEffect(() => () => stopPolling(), [stopPolling]);
 
   const handleNavigate = useCallback(async (direction: 'prev' | 'next') => {
     // Allow backward navigation even while polling; only block forward when actively polling
@@ -638,19 +634,7 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
         return;
       }
       // Not cached — start polling next-ready
-      setIsPolling(true);
-      pollingRef.current = setInterval(async () => {
-        try {
-          const result = await utils.worlds.nextReady.fetch({ panelId: currentPanel.panel_id });
-          if (result.ready) {
-            skipNextPollRef.current = true;
-            stopPollingRef.current?.();
-            await loadPanelRef.current?.(result.panel_id, world.external_id);
-          }
-        } catch {
-          // Non-fatal — keep polling
-        }
-      }, 1000);
+      startPolling(currentPanel.panel_id);
       return;
     }
     // For forward navigation: use the embedded next_panel data if available (instant, no fetch)
@@ -673,24 +657,12 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
       setIsLoading(false);
       // If the embedded panel also has a next_panel_id but no next_panel data, start polling if needed
       if (embedded.forward_state === 'ready' && !embedded.next_panel_id) {
-        setIsPolling(true);
-        pollingRef.current = setInterval(async () => {
-          try {
-            const result = await utils.worlds.nextReady.fetch({ panelId: embedded.panel_id });
-            if (result.ready) {
-              skipNextPollRef.current = true;
-              stopPollingRef.current?.();
-              await loadPanelRef.current?.(result.panel_id, world.external_id);
-            }
-          } catch {
-            // Non-fatal — keep polling
-          }
-        }, 1000);
+        startPolling(embedded.panel_id);
       }
       return;
     }
     await loadPanel(targetId, world.external_id);
-  }, [currentPanel, isNavigating, isPolling, loadPanel, world.external_id, utils, stopPolling, showChoiceIdeasByDefault, setPanelMutation]);
+  }, [currentPanel, isNavigating, isPolling, loadPanel, startPolling, world.external_id, stopPolling, showChoiceIdeasByDefault, setPanelMutation]);
 
   const handleChoice = useCallback(async (choiceText: string) => {
     // Send the choice as an action to Freeroam — this triggers generation of the action panel
