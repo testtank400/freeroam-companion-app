@@ -1040,49 +1040,92 @@ export const appRouter = router({
           const text = await response.text();
           throw new Error(`Get panel failed (${response.status}): ${text}`);
         }
-        return response.json() as Promise<{
-          panel_id: string;
-          world_id: string;
-          next_panel_id: string | null;
-          prev_panel_id: string | null;
-          is_action: boolean;
-          requires_action: boolean;
-          depth: number;
-          forward_state: string;
-          panel_content: {
-            type: string;
-            narration: string | null;
-            images: Array<{
-              url: string;
-              prompt: string;
-              generation_type: string | null;
-              visible_characters: Record<string, { name: string; external_id: string }>;
-              shot: string | null;
-              is_nsfw: boolean | null;
-            }>;
-            speech_bubbles: Array<{
-              text: string;
-              character: string;
-              style: string;
-              isRequiresActionChat: boolean;
-            }>;
-            choice: {
-              question: string;
-              options: Array<{ text: string; action_panel_external_id: string }>;
-              selected_choice: string | null;
-              is_chat: boolean;
-            } | null;
-            chapter_header: string | null;
-            chapter_start: unknown;
-            chapter_end: unknown;
-            depth: number;
-            is_chat: boolean;
+        // Explicitly extract fields to avoid tRPC superjson depth limit
+        const raw = await response.json() as Record<string, unknown>;
+        const pc = raw.panel_content as Record<string, unknown> | null;
+        const np = raw.next_panel as Record<string, unknown> | null;
+        const npPc = np?.panel_content as Record<string, unknown> | null;
+
+        const extractPanelContent = (content: Record<string, unknown> | null) => {
+          if (!content) return null;
+          return {
+            type: content.type as string,
+            narration: content.narration as string | null,
+            is_action: content.is_action as boolean,
+            requires_action: content.requires_action as boolean,
+            depth: content.depth as number,
+            is_chat: content.is_chat as boolean,
+            chapter_header: content.chapter_header as string | null,
+            chapter_start: content.chapter_start as unknown,
+            chapter_end: content.chapter_end as unknown,
+            action: content.action as string | null,
+            images: (content.images as Array<Record<string, unknown>> | null)?.map(img => ({
+              url: img.url as string,
+              prompt: img.prompt as string,
+              generation_type: img.generation_type as string | null,
+              visible_characters: img.visible_characters as Record<string, { name: string; external_id: string }>,
+              shot: img.shot as string | null,
+              is_nsfw: img.is_nsfw as boolean | null,
+            })) ?? [],
+            speech_bubbles: (content.speech_bubbles as Array<Record<string, unknown>> | null)?.map(sb => ({
+              text: sb.text as string,
+              character: sb.character as string,
+              style: sb.style as string,
+              isRequiresActionChat: sb.isRequiresActionChat as boolean,
+              position: sb.position as Record<string, number>,
+            })) ?? [],
+            choice: content.choice ? {
+              question: (content.choice as Record<string, unknown>).question as string,
+              options: ((content.choice as Record<string, unknown>).options as Array<{ text: string; action_panel_external_id: string }>) ?? [],
+              selected_choice: (content.choice as Record<string, unknown>).selected_choice as string | null,
+              is_chat: (content.choice as Record<string, unknown>).is_chat as boolean,
+            } : null,
           };
-          next_panel: unknown;
-          show_jump_to_latest: boolean;
-          jump_to_latest_panel_id: string | null;
-          is_owner: boolean;
-        }>;
+        };
+
+        return {
+          panel_id: raw.panel_id as string,
+          world_id: raw.world_id as string,
+          next_panel_id: raw.next_panel_id as string | null,
+          prev_panel_id: raw.prev_panel_id as string | null,
+          is_action: raw.is_action as boolean,
+          requires_action: raw.requires_action as boolean,
+          depth: raw.depth as number,
+          forward_state: raw.forward_state as string,
+          show_jump_to_latest: raw.show_jump_to_latest as boolean,
+          jump_to_latest_panel_id: raw.jump_to_latest_panel_id as string | null,
+          is_owner: raw.is_owner as boolean,
+          text_feedback: raw.text_feedback as unknown[] ?? [],
+          image_prompt_edit_enabled: raw.image_prompt_edit_enabled as boolean ?? false,
+          phone_experiment_enabled: raw.phone_experiment_enabled as boolean ?? false,
+          in_world_time: raw.in_world_time as string | null,
+          location: raw.location as string | null,
+          phone_unread_count: raw.phone_unread_count as number ?? 0,
+          phone: raw.phone as { total: number; by_app: Record<string, unknown>; recent: unknown[]; version: string | null; seen_at_by_app: Record<string, unknown> } ?? { total: 0, by_app: {}, recent: [], version: null, seen_at_by_app: {} },
+          panel_content: extractPanelContent(pc),
+          next_panel: np ? {
+            panel_id: np.panel_id as string,
+            world_id: np.world_id as string ?? raw.world_id as string,
+            next_panel_id: np.next_panel_id as string | null,
+            prev_panel_id: np.prev_panel_id as string | null,
+            is_action: np.is_action as boolean,
+            requires_action: np.requires_action as boolean,
+            depth: np.depth as number,
+            forward_state: np.forward_state as string,
+            show_jump_to_latest: false,
+            jump_to_latest_panel_id: null,
+            is_owner: raw.is_owner as boolean,
+            text_feedback: [],
+            image_prompt_edit_enabled: false,
+            phone_experiment_enabled: false,
+            in_world_time: null,
+            location: null,
+            phone_unread_count: 0,
+            phone: { total: 0, by_app: {}, recent: [], version: null, seen_at_by_app: {} },
+            panel_content: extractPanelContent(npPc),
+            next_panel: null,
+          } : null,
+        };
       }),
 
     /** Save the user's current reading position */
