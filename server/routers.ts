@@ -1298,16 +1298,28 @@ export const appRouter = router({
           const text = await response.text();
           throw new Error(`Send action failed (${response.status}): ${text}`);
         }
-        return response.json() as Promise<{
-          action_panel_id: string;
-          action_panel_content: Record<string, unknown>;
-          next_panel_id: string | null;
-          prev_panel_id: string | null;
-          is_chapter_start: boolean;
-          generation_started: boolean;
-          forward_state: string;
-          usage: Record<string, unknown> | null;
-        }>;
+        const raw = await response.json() as Record<string, unknown>;
+        // Flatten the action_panel_content to avoid tRPC serialization depth limits
+        const apc = raw.action_panel_content as Record<string, unknown> | null;
+        return {
+          action_panel_id: raw.action_panel_id as string,
+          next_panel_id: raw.next_panel_id as string | null,
+          prev_panel_id: raw.prev_panel_id as string | null,
+          is_chapter_start: raw.is_chapter_start as boolean,
+          generation_started: raw.generation_started as boolean,
+          forward_state: raw.forward_state as string,
+          action_panel_content: apc ? {
+            type: apc.type as string,
+            narration: apc.narration as string | null,
+            is_action: apc.is_action as boolean,
+            requires_action: apc.requires_action as boolean,
+            depth: apc.depth as number,
+            speech_bubbles: apc.speech_bubbles as Array<{ text: string; character: string; style: string; position: Record<string, number> }> | null,
+            images: apc.images as Array<{ url: string; prompt: string; visible_characters: Record<string, { name: string; external_id: string }>; shot: string | null; is_nsfw: boolean | null }> | null,
+            choice: apc.choice as { question: string; options: Array<{ text: string; action_panel_external_id: string }>; selected_choice: string | null; is_chat: boolean } | null,
+            action: apc.action as string | null,
+          } : null,
+        };
       }),
 
     /** Regenerate the starting scene of a world */

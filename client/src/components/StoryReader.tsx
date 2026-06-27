@@ -225,7 +225,6 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
         phone_experiment_enabled: false,
         in_world_time: null,
         location: null,
-        usage: result.usage,
       };
       const actionPanelData = actionPanel as unknown as PanelData;
       // Store action panel in cache so backward navigation can traverse it
@@ -487,7 +486,7 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
 
   // Trigger TTS when panel changes and has spoken dialogue
   useEffect(() => {
-    if (!currentPanel || isLoading || isNavigating) return;
+    if (!currentPanel) return;
     // Stop any currently playing audio
     audioRef.current?.pause();
     setIsPlayingAudio(false);
