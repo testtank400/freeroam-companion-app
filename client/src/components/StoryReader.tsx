@@ -125,6 +125,7 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
   const panelCache = useRef<Map<string, PanelData>>(new Map());
   // Refs to latest stopPolling/loadPanel for use in handleSendAction (avoids stale closure)
   const stopPollingRef = useRef<(() => void) | null>(null);
+  const skipNextPollRef = useRef(false); // Set after loading via poll to prevent immediate re-poll
   const loadPanelRef = useRef<((panelId: string, worldId: string) => Promise<void>) | null>(null);
   const setPanelMutation = trpc.worlds.setPanel.useMutation();
   const generateSpeechMutation = trpc.voice.generateSpeech.useMutation();
@@ -513,6 +514,7 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
         const pollResult = await utils.worlds.nextReady.fetch({ panelId: panelIdToWatch });
         if (pollResult.ready) {
           // Use refs to avoid stale closures
+          skipNextPollRef.current = true;
           stopPollingRef.current?.();
           await loadPanelRef.current?.(pollResult.panel_id, world.external_id);
         }
@@ -596,6 +598,11 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
   // Poll when forward_state is "ready" but next_panel_id is null (AI generating)
   useEffect(() => {
     if (!currentPanel) return;
+    // Skip polling if we just loaded this panel via a poll (prevents infinite re-poll loop)
+    if (skipNextPollRef.current) {
+      skipNextPollRef.current = false;
+      return;
+    }
     const { forward_state, next_panel_id } = currentPanel;
     if (forward_state === 'ready' && !next_panel_id) {
       setIsPolling(true);
@@ -603,6 +610,7 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
         try {
           const result = await utils.worlds.nextReady.fetch({ panelId: currentPanel.panel_id });
           if (result.ready) {
+            skipNextPollRef.current = true;
             stopPollingRef.current?.();
             await loadPanelRef.current?.(result.panel_id, world.external_id);
           }
@@ -635,6 +643,7 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
         try {
           const result = await utils.worlds.nextReady.fetch({ panelId: currentPanel.panel_id });
           if (result.ready) {
+            skipNextPollRef.current = true;
             stopPollingRef.current?.();
             await loadPanelRef.current?.(result.panel_id, world.external_id);
           }
@@ -669,6 +678,7 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
           try {
             const result = await utils.worlds.nextReady.fetch({ panelId: embedded.panel_id });
             if (result.ready) {
+              skipNextPollRef.current = true;
               stopPollingRef.current?.();
               await loadPanelRef.current?.(result.panel_id, world.external_id);
             }
