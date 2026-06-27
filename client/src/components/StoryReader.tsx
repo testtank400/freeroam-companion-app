@@ -151,6 +151,7 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
   const [autoAdvanceMinDelay, setAutoAdvanceMinDelay] = useState(2);
   const [autoAdvanceStaticDelay, setAutoAdvanceStaticDelay] = useState(3);
   const autoAdvanceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const currentPanelIdRef = useRef<string | null>(null);
   const { data: autoAdvanceSetting } = trpc.voice.getSetting.useQuery({ key: 'auto_advance_enabled' });
   const { data: readingSpeedSetting } = trpc.voice.getSetting.useQuery({ key: 'auto_advance_reading_speed' });
   const { data: minDelaySetting } = trpc.voice.getSetting.useQuery({ key: 'auto_advance_min_delay' });
@@ -241,7 +242,7 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
       const actionPanelData = actionPanel as unknown as PanelData;
       // Store action panel in cache so backward navigation can traverse it
       panelCache.current.set(result.action_panel_id, actionPanelData);
-      setCurrentPanel(actionPanelData);
+      setCurrentPanel(actionPanelData); currentPanelIdRef.current = (actionPanelData)?.panel_id ?? null;
       // Save position
       setPanelMutation.mutate({ worldId: world.external_id, panelId: result.action_panel_id });
       // Determine if this is an image action (check action text prefix)
@@ -418,7 +419,7 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
       pc != null && Array.isArray(pc.images);
     const cached = panelCache.current.get(panelId);
     if (cached && isPanelContentValid(cached.panel_content)) {
-      setCurrentPanel(cached);
+      setCurrentPanel(cached); currentPanelIdRef.current = (cached)?.panel_id ?? null;
       setPanelMutation.mutate({ worldId, panelId });
       setIsLoading(false);
       return;
@@ -439,7 +440,7 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
           if (next.panel_id && isPanelContentValid(next.panel_content)) panelCache.current.set(next.panel_id, next);
         }
       }
-      setCurrentPanel(panel);
+      setCurrentPanel(panel); currentPanelIdRef.current = (panel)?.panel_id ?? null;
       setPanelMutation.mutate({ worldId, panelId });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to load panel');
@@ -459,6 +460,9 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
     if (!voiceEnabled) return; // Master voice toggle
     const speechBubble = panel.panel_content.speech_bubbles?.[0];
     if (!speechBubble || !speechBubble.text) return;
+    // Abort if panel changed while we were awaiting (rapid navigation)
+    const thisPanelId = panel.panel_id;
+    const checkStillCurrent = () => thisPanelId === currentPanelIdRef.current;
 
     // Handle narration panels via narrator voice
     if (speechBubble.style === 'narration' || !speechBubble.character) {
@@ -475,6 +479,7 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
           similarityBoost: '0.75',
           style: '0',
         });
+        if (!checkStillCurrent()) return; // Panel changed while awaiting — abort
         if (result.audioUrl) {
           setCurrentAudioUrl(result.audioUrl);
           if (autoPlayEnabled) {
@@ -542,10 +547,13 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
               );
               charExternalId = found?.external_id;
             }
+            // Cache null if still not found — prevents repeated getPanelCharacters calls
+            if (!charExternalId) voiceCache.current.set(charName, null);
           } catch {
             // Non-fatal — no fallback available
           }
         }
+        if (!checkStillCurrent()) return; // Panel changed while awaiting — abort
         if (charExternalId) {
           const assignment = await utils.voice.getVoiceAssignment.fetch({ characterId: charExternalId });
           voiceData = assignment ?? null;
@@ -553,7 +561,7 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
           voiceCache.current.set(charName, voiceData);
         }
         // If no external_id found, don't cache null — retry on next panel
-      } catch (e) {
+      } catch {
         // Don't cache on error — retry next time
       }
     } else {
@@ -573,6 +581,7 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
         similarityBoost: voiceData.similarityBoost ?? '0.75',
         style: voiceData.style ?? '0',
       });
+      if (!checkStillCurrent()) return; // Panel changed while awaiting — abort
 
       if (result.audioUrl) {
         setCurrentAudioUrl(result.audioUrl);
@@ -773,7 +782,7 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
         const next2 = embedded.next_panel as PanelData;
         if (next2.panel_id) panelCache.current.set(next2.panel_id, next2);
       }
-      setCurrentPanel(embeddedPanel);
+      setCurrentPanel(embeddedPanel); currentPanelIdRef.current = (embeddedPanel)?.panel_id ?? null;
       setPanelMutation.mutate({ worldId: world.external_id, panelId: embedded.panel_id });
       setIsNavigating(false);
       setIsLoading(false);
@@ -1167,7 +1176,7 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
                 const json = await res.json();
                 const data = json?.[0]?.result?.data?.json;
                 if (data?.panel_id) {
-                  setCurrentPanel(data);
+                  setCurrentPanel(data); currentPanelIdRef.current = (data)?.panel_id ?? null;
                   setPanelMutation.mutate({ worldId: world.external_id, panelId: data.panel_id });
                   setIsLoading(false);
                   setIsNavigating(false);
