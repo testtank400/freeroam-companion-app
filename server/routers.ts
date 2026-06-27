@@ -1240,7 +1240,7 @@ export const appRouter = router({
       }),
 
     /** Get characters currently in the story for a given panel */
-    getWorldCharacters: publicProcedure
+    getPanelCharacters: publicProcedure
       .input(z.object({ worldId: z.string(), panelId: z.string() }))
       .query(async ({ input, ctx }) => {
         const cookie = getFreeroamCookie(ctx);

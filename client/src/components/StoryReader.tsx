@@ -470,7 +470,6 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
 
     const charName = speechBubble.character;
     const text = speechBubble.text;
-    console.log('[TTS] Spoken panel detected, character:', charName);
 
     // Look up voice assignment for this character
     let voiceData = voiceCache.current.get(charName);
@@ -487,28 +486,45 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
         if (worldChar) {
           charExternalId = worldChar.external_id;
         } else {
-          // Fallback: check panel's visible_characters
-          const visibleChars = panel.panel_content.images?.[0]?.visible_characters ?? {};
-          const matchedEntry = Object.entries(visibleChars).find(([, v]) =>
-            v.name?.toLowerCase().replace(/-/g, ' ') === normalizedCharName
-          );
-          charExternalId = matchedEntry?.[1]?.external_id;
+          // Cache miss — call getPanelCharacters to find characters added mid-story
+          try {
+            const panelChars = await utils.worlds.getPanelCharacters.fetch({
+              worldId: world.external_id,
+              panelId: panel.panel_id,
+            });
+            // Merge story_characters into worldCharacters for future lookups
+            const allPanelChars = [
+              ...(panelChars.story_characters ?? []),
+              ...(panelChars.world_characters ?? []),
+            ];
+            if (allPanelChars.length > 0) {
+              setWorldCharacters(prev => {
+                const existing = new Set(prev.map(c => c.external_id));
+                const newChars = allPanelChars
+                  .filter(c => !existing.has(c.external_id))
+                  .map(c => ({ name: c.name, external_id: c.external_id }));
+                return newChars.length > 0 ? [...prev, ...newChars] : prev;
+              });
+              const found = allPanelChars.find(c =>
+                c.name?.toLowerCase().replace(/-/g, ' ') === normalizedCharName
+              );
+              charExternalId = found?.external_id;
+            }
+          } catch {
+            // Non-fatal — no fallback available
+          }
         }
-        console.log('[TTS] charExternalId:', charExternalId, 'from:', worldChar ? 'worldCharacters' : 'visible_characters');
         if (charExternalId) {
           const assignment = await utils.voice.getVoiceAssignment.fetch({ characterId: charExternalId });
           voiceData = assignment ?? null;
-          console.log('[TTS] voice assignment:', JSON.stringify(voiceData));
           // Only cache if we got a definitive result (found external_id and queried DB)
           voiceCache.current.set(charName, voiceData);
         }
         // If no external_id found, don't cache null — retry on next panel
       } catch (e) {
-        console.log('[TTS] error during voice lookup:', e);
         // Don't cache on error — retry next time
       }
     } else {
-      console.log('[TTS] cached voiceData:', JSON.stringify(voiceData));
     }
 
     if (!voiceData) return; // No voice assigned for this character

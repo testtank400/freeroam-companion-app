@@ -95,7 +95,7 @@ export default function CharacterPanel({
     if (!panelId) return;
     setIsLoadingChars(true);
     try {
-      const data = await utils.worlds.getWorldCharacters.fetch({ worldId, panelId });
+      const data = await utils.worlds.getPanelCharacters.fetch({ worldId, panelId });
       setStoryChars([...data.story_characters, ...data.world_characters]);
     } catch {
       // Non-fatal
