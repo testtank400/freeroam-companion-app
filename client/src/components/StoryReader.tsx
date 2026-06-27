@@ -816,7 +816,7 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
       />
 
       {/* Full-viewport invisible tap zones — match Freeroam's 25% width tap areas */}
-      {canGoBack && !isNavigating && (
+      {canGoBack && (
         <div
           className="fixed left-0 top-0 bottom-0 z-10"
           style={{ width: '25vw', cursor: 'pointer' }}
@@ -824,7 +824,7 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
           aria-label="Previous panel"
         />
       )}
-      {(canGoForward || isPolling || isRegeneratePolling) && !isNavigating && (
+      {(canGoForward || isPolling || isRegeneratePolling) && (
         <div
           className="fixed right-0 top-0 bottom-0 z-10"
           style={{ width: '60vw', cursor: 'pointer' }}
