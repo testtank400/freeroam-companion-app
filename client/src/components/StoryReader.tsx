@@ -1297,7 +1297,7 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
           )}
 
           {/* storyVnRail — right-side feedback buttons (placeholder, endpoints TBD) */}
-          {panel && !isLoading && !isNavigating && (
+          {panel && !isLoading && !isNavigating && !panel.is_action && (
             <div
               className="absolute z-20 flex flex-col items-center"
               style={{
