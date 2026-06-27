@@ -1135,12 +1135,7 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
             </div>
           </div>
 
-          {/* Loading overlay */}
-          {(isLoading || isNavigating) && (
-            <div className="absolute inset-0 z-30 flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.55)' }}>
-              <Loader2 size={36} className="animate-spin" style={{ color: 'rgba(255,255,255,0.6)' }} />
-            </div>
-          )}
+          {/* No center loading overlay — right halo spinner is the only indicator */}
 
           {/* Panel image */}
           {imageUrl && (
@@ -1148,12 +1143,12 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
               src={imageUrl}
               alt=""
               className="w-full h-full"
-              style={{ objectFit: 'cover', objectPosition: 'center top', opacity: isNavigating ? 0.35 : 1, transition: 'opacity 0.15s ease' }}
+              style={{ objectFit: 'cover', objectPosition: 'center top' }}
             />
           )}
 
           {/* Bottom text overlay */}
-          {hasText && !isLoading && !isNavigating && (
+          {hasText && !isLoading && (
             <>
               {/* storyVnDialogue__scrim — exact Freeroam gradient for text readability */}
               <div
@@ -1301,7 +1296,7 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
           )}
 
           {/* storyVnRail — right-side feedback buttons (placeholder, endpoints TBD) */}
-          {panel && !isLoading && !isNavigating && !panel.is_action && (
+          {panel && !isLoading && !panel.is_action && (
             <div
               className="absolute z-20 flex flex-col items-center"
               style={{
@@ -1350,7 +1345,7 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
           )}
 
           {/* Choice options — Freeroam-style with lettered options, OR divider, custom input */}
-          {hasChoice && !isLoading && !isNavigating && (
+          {hasChoice && !isLoading && (
             <div
               className="absolute bottom-0 left-0 right-0 z-20 flex flex-col gap-2 px-4 pb-4 pt-10"
               style={{ background: 'linear-gradient(to top, rgba(0,0,0,0.92) 55%, transparent)' }}
