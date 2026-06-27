@@ -157,12 +157,13 @@ export default function VoicePicker({ characterId, characterName, onClose }: Voi
       style={{ background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(8px)' }}
     >
       <div
-        className="flex flex-col rounded-2xl overflow-hidden"
+        className="flex flex-col rounded-2xl"
         style={{
           width: 'min(520px, 95vw)',
-          maxHeight: '90vh',
+          height: 'min(600px, 90vh)',
           background: '#1a1a24',
           border: '1px solid rgba(255,255,255,0.1)',
+          overflow: 'hidden',
         }}
       >
         {/* Header */}
