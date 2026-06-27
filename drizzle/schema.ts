@@ -183,8 +183,9 @@ export const ttsCache = mysqlTable("tts_cache", {
   worldId: varchar("worldId", { length: 128 }).notNull(),
   /** Character name as it appears in the speech bubble (or 'narrator') */
   characterName: varchar("characterName", { length: 255 }).notNull(),
-  /** Freeroam character external_id (nullable for narrator or unknown characters) */
-  characterId: varchar("characterId", { length: 128 }),
+  /** Freeroam character external_id. Uses '__narrator__' sentinel for narration panels.
+   * This is the primary lookup key — never use characterName as a key since names are mutable. */
+  characterId: varchar("characterId", { length: 128 }).notNull().default('__narrator__'),
   /** ElevenLabs voice ID used to generate this clip */
   voiceId: varchar("voiceId", { length: 128 }).notNull(),
   /** S3 URL of the generated audio clip */

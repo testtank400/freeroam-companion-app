@@ -2174,12 +2174,13 @@ export const appRouter = router({
         const db = await getDb();
         if (!db) throw new Error('Database not available');
 
-        // Check cache first
+        // Check cache first — use characterId as the stable lookup key (names are mutable)
+        const lookupCharId = input.characterId ?? '__narrator__';
         const cached = await db.select().from(ttsCache).where(
           and(
             eq(ttsCache.panelId, input.panelId),
             eq(ttsCache.worldId, input.worldId),
-            eq(ttsCache.characterName, input.characterName),
+            eq(ttsCache.characterId, lookupCharId),
           )
         ).limit(1);
         if (cached.length > 0) {
@@ -2217,12 +2218,12 @@ export const appRouter = router({
         const fileKey = `tts/${input.worldId}/${input.panelId}/${input.characterName.replace(/[^a-z0-9]/gi, '_')}.mp3`;
         const { url: audioUrl } = await storagePut(fileKey, audioBuffer, 'audio/mpeg');
 
-        // Store in cache
+        // Store in cache — use characterId as the stable key
         await db.insert(ttsCache).values({
           panelId: input.panelId,
           worldId: input.worldId,
           characterName: input.characterName,
-          characterId: input.characterId ?? null,
+          characterId: lookupCharId,
           voiceId: input.voiceId,
           audioUrl,
         });
