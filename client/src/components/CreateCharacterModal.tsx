@@ -5,9 +5,10 @@
 
 import { trpc } from '@/lib/trpc';
 import { ApiCharacter } from '@/pages/Home';
-import { Globe, ImagePlus, Link, Lock, Upload, X } from 'lucide-react';
+import { Globe, ImagePlus, Link, Lock, Mic, Upload, X } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
+import VoicePicker from './VoicePicker';
 
 type PrivacyStatus = 'private' | 'public' | 'unlisted';
 
@@ -96,6 +97,13 @@ export default function CreateCharacterModal({
   const [isUploading, setIsUploading] = useState(false);
   const [uploadedHeadshotUrl, setUploadedHeadshotUrl] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [voicePickerOpen, setVoicePickerOpen] = useState(false);
+
+  // Fetch current voice assignment for edit mode
+  const { data: voiceAssignment } = trpc.voice.getVoiceAssignment.useQuery(
+    { characterId: editCharacter?.external_id ?? '' },
+    { enabled: isEditMode && !!editCharacter?.external_id }
+  );
 
   const uploadHeadshotMutation = trpc.characters.uploadHeadshot.useMutation();
   const createMutation = trpc.characters.create.useMutation();
@@ -659,6 +667,23 @@ export default function CreateCharacterModal({
             className="flex-shrink-0 flex items-center justify-end gap-3 px-6 py-4"
             style={{ borderTop: '1px solid oklch(1 0 0 / 0.08)' }}
           >
+            {/* Voice button — only shown in edit mode */}
+            {isEditMode && editCharacter && (
+              <button
+                type="button"
+                onClick={() => setVoicePickerOpen(true)}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-sm text-xs font-semibold tracking-wider uppercase transition-all hover:brightness-110 mr-auto"
+                style={{
+                  fontFamily: 'Rajdhani, sans-serif',
+                  background: voiceAssignment ? 'oklch(0.55 0.15 280 / 0.2)' : 'transparent',
+                  border: `1px solid ${voiceAssignment ? 'oklch(0.55 0.15 280 / 0.5)' : 'oklch(1 0 0 / 0.12)'}`,
+                  color: voiceAssignment ? 'oklch(0.75 0.15 280)' : 'oklch(0.5 0.01 264)',
+                }}
+              >
+                <Mic size={12} strokeWidth={2.5} />
+                {voiceAssignment ? voiceAssignment.voiceName : 'Assign Voice'}
+              </button>
+            )}
             <button
               type="button"
               onClick={handleClose}
@@ -690,6 +715,15 @@ export default function CreateCharacterModal({
           </div>
         </form>
       </div>
+
+      {/* Voice Picker overlay */}
+      {voicePickerOpen && isEditMode && editCharacter && (
+        <VoicePicker
+          characterId={editCharacter.external_id}
+          characterName={editCharacter.name.replace(/-/g, ' ')}
+          onClose={() => setVoicePickerOpen(false)}
+        />
+      )}
     </div>
   );
 }

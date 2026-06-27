@@ -150,3 +150,58 @@ export const worldCollectionMembers = mysqlTable("world_collection_members", {
 
 export type WorldCollectionMember = typeof worldCollectionMembers.$inferSelect;
 export type InsertWorldCollectionMember = typeof worldCollectionMembers.$inferInsert;
+
+// Character voice assignments — maps Freeroam character IDs to ElevenLabs voice IDs
+export const characterVoices = mysqlTable("character_voices", {
+  id: int("id").autoincrement().primaryKey(),
+  /** Freeroam character external_id (UUID string) */
+  characterId: varchar("characterId", { length: 128 }).notNull().unique(),
+  /** ElevenLabs voice ID */
+  voiceId: varchar("voiceId", { length: 128 }).notNull(),
+  /** Human-readable voice name for display */
+  voiceName: varchar("voiceName", { length: 255 }).notNull(),
+  /** Voice stability setting (0.0 - 1.0) */
+  stability: text("stability").default("0.5"),
+  /** Voice similarity boost setting (0.0 - 1.0) */
+  similarityBoost: text("similarityBoost").default("0.75"),
+  /** Voice style setting (0.0 - 1.0, optional) */
+  style: text("style").default("0"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type CharacterVoice = typeof characterVoices.$inferSelect;
+export type InsertCharacterVoice = typeof characterVoices.$inferInsert;
+
+// TTS cache — stores generated audio URLs keyed by panel + character
+// Prevents regenerating the same audio clip and incurring extra ElevenLabs costs
+export const ttsCache = mysqlTable("tts_cache", {
+  id: int("id").autoincrement().primaryKey(),
+  /** Freeroam panel external_id (UUID string) */
+  panelId: varchar("panelId", { length: 128 }).notNull(),
+  /** Freeroam world external_id (UUID string) */
+  worldId: varchar("worldId", { length: 128 }).notNull(),
+  /** Character name as it appears in the speech bubble (or 'narrator') */
+  characterName: varchar("characterName", { length: 255 }).notNull(),
+  /** ElevenLabs voice ID used to generate this clip */
+  voiceId: varchar("voiceId", { length: 128 }).notNull(),
+  /** S3 URL of the generated audio clip */
+  audioUrl: text("audioUrl").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type TtsCache = typeof ttsCache.$inferSelect;
+export type InsertTtsCache = typeof ttsCache.$inferInsert;
+
+// App settings — key-value store for global app configuration
+export const appSettings = mysqlTable("app_settings", {
+  id: int("id").autoincrement().primaryKey(),
+  /** Setting key (e.g. 'narrator_voice_id', 'auto_play_enabled') */
+  key: varchar("key", { length: 128 }).notNull().unique(),
+  /** Setting value (JSON-serialized for complex values) */
+  value: text("value"),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type AppSetting = typeof appSettings.$inferSelect;
+export type InsertAppSetting = typeof appSettings.$inferInsert;

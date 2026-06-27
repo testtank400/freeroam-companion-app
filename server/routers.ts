@@ -2073,6 +2073,192 @@ export const appRouter = router({
         return response.json() as Promise<{ message: string; preferences: Record<string, unknown> }>;
       }),
   }),
+
+  // ─── ElevenLabs Voice ───────────────────────────────────────────────────────
+  voice: router({
+    /** List all available ElevenLabs voices for the user */
+    listVoices: publicProcedure.query(async () => {
+      const apiKey = process.env.ELEVEN_LABS_API_KEY;
+      if (!apiKey) throw new Error('ElevenLabs API key not configured');
+      const res = await fetch('https://api.elevenlabs.io/v2/voices?page_size=100', {
+        headers: { 'xi-api-key': apiKey },
+      });
+      if (!res.ok) throw new Error(`ElevenLabs listVoices failed (${res.status})`);
+      const data = await res.json() as { voices: Array<{ voice_id: string; name: string; category: string; labels: Record<string, string>; preview_url: string | null }> };
+      return data.voices;
+    }),
+
+    /** Get the voice assignment for a character */
+    getVoiceAssignment: publicProcedure
+      .input(z.object({ characterId: z.string() }))
+      .query(async ({ input }) => {
+        const { getDb } = await import('./db');
+        const { characterVoices } = await import('../drizzle/schema');
+        const { eq } = await import('drizzle-orm');
+        const db = await getDb();
+        if (!db) return null;
+        const rows = await db.select().from(characterVoices).where(eq(characterVoices.characterId, input.characterId)).limit(1);
+        return rows[0] ?? null;
+      }),
+
+    /** Assign or update a voice for a character */
+    assignVoice: publicProcedure
+      .input(z.object({
+        characterId: z.string(),
+        voiceId: z.string(),
+        voiceName: z.string(),
+        stability: z.string().optional().default('0.5'),
+        similarityBoost: z.string().optional().default('0.75'),
+        style: z.string().optional().default('0'),
+      }))
+      .mutation(async ({ input }) => {
+        const { getDb } = await import('./db');
+        const { characterVoices } = await import('../drizzle/schema');
+        const { eq } = await import('drizzle-orm');
+        const db = await getDb();
+        if (!db) throw new Error('Database not available');
+        // Upsert: update if exists, insert if not
+        const existing = await db.select().from(characterVoices).where(eq(characterVoices.characterId, input.characterId)).limit(1);
+        if (existing.length > 0) {
+          await db.update(characterVoices).set({
+            voiceId: input.voiceId,
+            voiceName: input.voiceName,
+            stability: input.stability,
+            similarityBoost: input.similarityBoost,
+            style: input.style,
+          }).where(eq(characterVoices.characterId, input.characterId));
+        } else {
+          await db.insert(characterVoices).values({
+            characterId: input.characterId,
+            voiceId: input.voiceId,
+            voiceName: input.voiceName,
+            stability: input.stability,
+            similarityBoost: input.similarityBoost,
+            style: input.style,
+          });
+        }
+        return { ok: true };
+      }),
+
+    /** Remove a voice assignment for a character */
+    removeVoice: publicProcedure
+      .input(z.object({ characterId: z.string() }))
+      .mutation(async ({ input }) => {
+        const { getDb } = await import('./db');
+        const { characterVoices } = await import('../drizzle/schema');
+        const { eq } = await import('drizzle-orm');
+        const db = await getDb();
+        if (!db) throw new Error('Database not available');
+        await db.delete(characterVoices).where(eq(characterVoices.characterId, input.characterId));
+        return { ok: true };
+      }),
+
+    /** Generate TTS audio for a panel — checks cache first, generates if miss, stores in S3 */
+    generateSpeech: publicProcedure
+      .input(z.object({
+        panelId: z.string(),
+        worldId: z.string(),
+        characterName: z.string(), // 'narrator' for narration
+        text: z.string(),
+        voiceId: z.string(),
+        stability: z.string().optional().default('0.5'),
+        similarityBoost: z.string().optional().default('0.75'),
+        style: z.string().optional().default('0'),
+      }))
+      .mutation(async ({ input }) => {
+        const { getDb } = await import('./db');
+        const { ttsCache } = await import('../drizzle/schema');
+        const { eq, and } = await import('drizzle-orm');
+        const { storagePut } = await import('./storage');
+        const db = await getDb();
+        if (!db) throw new Error('Database not available');
+
+        // Check cache first
+        const cached = await db.select().from(ttsCache).where(
+          and(
+            eq(ttsCache.panelId, input.panelId),
+            eq(ttsCache.worldId, input.worldId),
+            eq(ttsCache.characterName, input.characterName),
+          )
+        ).limit(1);
+        if (cached.length > 0) {
+          return { audioUrl: cached[0].audioUrl, fromCache: true };
+        }
+
+        // Generate via ElevenLabs
+        const apiKey = process.env.ELEVEN_LABS_API_KEY;
+        if (!apiKey) throw new Error('ElevenLabs API key not configured');
+
+        const ttsRes = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${input.voiceId}?output_format=mp3_44100_128`, {
+          method: 'POST',
+          headers: {
+            'xi-api-key': apiKey,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            text: input.text,
+            model_id: 'eleven_multilingual_v2',
+            voice_settings: {
+              stability: parseFloat(input.stability),
+              similarity_boost: parseFloat(input.similarityBoost),
+              style: parseFloat(input.style),
+            },
+          }),
+        });
+
+        if (!ttsRes.ok) {
+          const errText = await ttsRes.text();
+          throw new Error(`ElevenLabs TTS failed (${ttsRes.status}): ${errText}`);
+        }
+
+        // Upload audio to S3
+        const audioBuffer = Buffer.from(await ttsRes.arrayBuffer());
+        const fileKey = `tts/${input.worldId}/${input.panelId}/${input.characterName.replace(/[^a-z0-9]/gi, '_')}.mp3`;
+        const { url: audioUrl } = await storagePut(fileKey, audioBuffer, 'audio/mpeg');
+
+        // Store in cache
+        await db.insert(ttsCache).values({
+          panelId: input.panelId,
+          worldId: input.worldId,
+          characterName: input.characterName,
+          voiceId: input.voiceId,
+          audioUrl,
+        });
+
+        return { audioUrl, fromCache: false };
+      }),
+
+    /** Get an app setting by key */
+    getSetting: publicProcedure
+      .input(z.object({ key: z.string() }))
+      .query(async ({ input }) => {
+        const { getDb } = await import('./db');
+        const { appSettings } = await import('../drizzle/schema');
+        const { eq } = await import('drizzle-orm');
+        const db = await getDb();
+        if (!db) return null;
+        const rows = await db.select().from(appSettings).where(eq(appSettings.key, input.key)).limit(1);
+        return rows[0]?.value ?? null;
+      }),
+
+    /** Set an app setting */
+    setSetting: publicProcedure
+      .input(z.object({ key: z.string(), value: z.string().nullable() }))
+      .mutation(async ({ input }) => {
+        const { getDb } = await import('./db');
+        const { appSettings } = await import('../drizzle/schema');
+        const { eq } = await import('drizzle-orm');
+        const db = await getDb();
+        if (!db) throw new Error('Database not available');
+        const existing = await db.select().from(appSettings).where(eq(appSettings.key, input.key)).limit(1);
+        if (existing.length > 0) {
+          await db.update(appSettings).set({ value: input.value }).where(eq(appSettings.key, input.key));
+        } else {
+          await db.insert(appSettings).values({ key: input.key, value: input.value });
+        }
+        return { ok: true };
+      }),
+  }),
 });
 
 export type AppRouter = typeof appRouter;

@@ -127,6 +127,24 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
   const stopPollingRef = useRef<(() => void) | null>(null);
   const loadPanelRef = useRef<((panelId: string, worldId: string) => Promise<void>) | null>(null);
   const setPanelMutation = trpc.worlds.setPanel.useMutation();
+  const generateSpeechMutation = trpc.voice.generateSpeech.useMutation();
+
+  // TTS state
+  const [autoPlayEnabled, setAutoPlayEnabled] = useState(true);
+  const [isPlayingAudio, setIsPlayingAudio] = useState(false);
+  const [currentAudioUrl, setCurrentAudioUrl] = useState<string | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  // Voice assignments cache: character_name -> voice data (null = no voice assigned, undefined = not yet fetched)
+  const voiceCache = useRef<Map<string, { voiceId: string; voiceName: string; stability: string | null; similarityBoost: string | null; style: string | null } | null>>(new Map());
+
+  // Load auto-play setting on mount
+  const { data: autoPlaySetting } = trpc.voice.getSetting.useQuery({ key: 'auto_play_enabled' });
+  useEffect(() => {
+    if (autoPlaySetting !== undefined && autoPlaySetting !== null) {
+      setAutoPlayEnabled(autoPlaySetting !== 'false');
+    }
+  }, [autoPlaySetting]);
+
   // Swipe-down gesture to open menu
   const touchStartY = useRef<number | null>(null);
   const touchStartX = useRef<number | null>(null);
@@ -358,9 +376,84 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
     }
   }, [utils, setPanelMutation, stopPolling, showChoiceIdeasByDefault]);
 
+  // TTS: trigger speech generation and playback for a panel
+  const triggerTTS = useCallback(async (panel: PanelData) => {
+    if (!panel.panel_content) return;
+    const speechBubble = panel.panel_content.speech_bubbles?.[0];
+    if (!speechBubble || speechBubble.style !== 'spoken' || !speechBubble.text || !speechBubble.character) return;
+
+    const charName = speechBubble.character;
+    const text = speechBubble.text;
+
+    // Look up voice assignment for this character
+    let voiceData = voiceCache.current.get(charName);
+    if (voiceData === undefined) {
+      // Not yet cached — fetch from server
+      try {
+        // Find the character's external_id from the panel's visible_characters
+        const visibleChars = panel.panel_content.images?.[0]?.visible_characters ?? {};
+        const matchedEntry = Object.entries(visibleChars).find(([, v]) =>
+          v.name?.toLowerCase().replace(/-/g, ' ') === charName.toLowerCase().replace(/-/g, ' ')
+        );
+        const charExternalId = matchedEntry?.[1]?.external_id;
+        if (charExternalId) {
+          const assignment = await utils.voice.getVoiceAssignment.fetch({ characterId: charExternalId });
+          voiceData = assignment ?? null;
+        } else {
+          voiceData = null;
+        }
+      } catch {
+        voiceData = null;
+      }
+      voiceCache.current.set(charName, voiceData);
+    }
+
+    if (!voiceData) return; // No voice assigned for this character
+
+    try {
+      const result = await generateSpeechMutation.mutateAsync({
+        panelId: panel.panel_id,
+        worldId: world.external_id,
+        characterName: charName,
+        text,
+        voiceId: voiceData.voiceId,
+        stability: voiceData.stability ?? '0.5',
+        similarityBoost: voiceData.similarityBoost ?? '0.75',
+        style: voiceData.style ?? '0',
+      });
+
+      if (result.audioUrl) {
+        setCurrentAudioUrl(result.audioUrl);
+        if (autoPlayEnabled) {
+          audioRef.current?.pause();
+          const audio = new Audio(result.audioUrl);
+          audioRef.current = audio;
+          audio.play().catch(() => {}); // Ignore autoplay policy errors
+          setIsPlayingAudio(true);
+          audio.onended = () => setIsPlayingAudio(false);
+        }
+      }
+    } catch {
+      // Non-fatal — TTS failure should not interrupt navigation
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoPlayEnabled, world.external_id]);
+
   // Keep refs updated with latest versions
   useEffect(() => { stopPollingRef.current = stopPolling; }, [stopPolling]);
   useEffect(() => { loadPanelRef.current = loadPanel; }, [loadPanel]);
+
+  // Trigger TTS when panel changes and has spoken dialogue
+  useEffect(() => {
+    if (!currentPanel || isLoading || isNavigating) return;
+    // Stop any currently playing audio
+    audioRef.current?.pause();
+    setIsPlayingAudio(false);
+    setCurrentAudioUrl(null);
+    // Fire TTS in background (non-blocking)
+    triggerTTS(currentPanel);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentPanel?.panel_id]);
 
   // Start polling when handleSendAction signals a pending poll (avoids stale closure)
   useEffect(() => {
@@ -948,6 +1041,28 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
                 <span style={{ fontFamily: 'Lora, Georgia, serif', fontSize: '13px', color: 'rgba(255,255,255,0.6)', fontStyle: 'italic' }}>
                   Page {panel.depth}
                 </span>
+              )}
+              {/* Audio controls — shown when audio is available */}
+              {currentAudioUrl && (
+                <button
+                  onClick={() => {
+                    if (isPlayingAudio) {
+                      audioRef.current?.pause();
+                      setIsPlayingAudio(false);
+                    } else {
+                      audioRef.current?.play().catch(() => {});
+                      setIsPlayingAudio(true);
+                    }
+                  }}
+                  className="flex items-center justify-center rounded-full transition-all hover:bg-white/20"
+                  style={{ width: '28px', height: '28px', background: 'rgba(255,255,255,0.12)', color: isPlayingAudio ? '#a78bfa' : 'rgba(255,255,255,0.75)' }}
+                  title={isPlayingAudio ? 'Pause voice' : 'Play voice'}
+                >
+                  {isPlayingAudio
+                    ? <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+                    : <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="5,3 19,12 5,21"/></svg>
+                  }
+                </button>
               )}
               {/* Bookmark toggle */}
               <button
