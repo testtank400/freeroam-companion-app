@@ -2088,6 +2088,47 @@ export const appRouter = router({
       return data.voices;
     }),
 
+    /** Clone a new voice from audio samples (IVC - Instant Voice Cloning) */
+    cloneVoice: publicProcedure
+      .input(z.object({
+        name: z.string(),
+        description: z.string().optional(),
+        removeBackgroundNoise: z.boolean().optional().default(false),
+        // Audio file as base64 string with mime type
+        audioBase64: z.string(),
+        audioMimeType: z.string().default('audio/mpeg'),
+        audioFileName: z.string().default('sample.mp3'),
+      }))
+      .mutation(async ({ input }) => {
+        const apiKey = process.env.ELEVEN_LABS_API_KEY;
+        if (!apiKey) throw new Error('ElevenLabs API key not configured');
+
+        // Convert base64 to buffer
+        const audioBuffer = Buffer.from(input.audioBase64, 'base64');
+        const blob = new Blob([audioBuffer], { type: input.audioMimeType });
+
+        // Build multipart form
+        const formData = new FormData();
+        formData.append('name', input.name);
+        if (input.description) formData.append('description', input.description);
+        formData.append('remove_background_noise', String(input.removeBackgroundNoise));
+        formData.append('files', blob, input.audioFileName);
+
+        const res = await fetch('https://api.elevenlabs.io/v1/voices/add', {
+          method: 'POST',
+          headers: { 'xi-api-key': apiKey },
+          body: formData,
+        });
+
+        if (!res.ok) {
+          const errText = await res.text();
+          throw new Error(`ElevenLabs voice cloning failed (${res.status}): ${errText}`);
+        }
+
+        const data = await res.json() as { voice_id: string; requires_verification: boolean };
+        return data;
+      }),
+
     /** Get all character IDs that have voice assignments (for badge display) */
     listVoicedCharacters: publicProcedure.query(async () => {
       const { getDb } = await import('./db');
