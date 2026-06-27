@@ -41,7 +41,7 @@ type CharacterPanelProps = {
   onClose: () => void;
   worldId: string;
   panelId: string;
-  onSaveChanges: (addIds: string[], removeIds: string[]) => Promise<void>;
+  onSaveChanges: (adds: { id: string; name: string }[], removes: { id: string; name: string }[]) => Promise<void>;
   onPlayAs: (newMainId: string, oldMainId: string, newMainName: string) => Promise<void>;
   onEditCharacter: (
     charId: string,
@@ -208,11 +208,14 @@ export default function CharacterPanel({
   };
 
   const handleSave = async () => {
-    const addIds: string[] = [];
-    const removeIds: string[] = [];
+    const adds: { id: string; name: string }[] = [];
+    const removes: { id: string; name: string }[] = [];
+    const allKnownChars = [...storyChars, ...libraryChars];
     pendingChanges.forEach((type, id) => {
-      if (type === 'add') addIds.push(id);
-      else if (type === 'remove') removeIds.push(id);
+      const char = allKnownChars.find(c => c.external_id === id);
+      const name = char ? char.name.replace(/-/g, ' ') : id;
+      if (type === 'add') adds.push({ id, name });
+      else if (type === 'remove') removes.push({ id, name });
     });
     // Handle play-as change
     if (pendingPlayAs) {
@@ -231,13 +234,13 @@ export default function CharacterPanel({
         return;
       }
     }
-    if (addIds.length === 0 && removeIds.length === 0) {
+    if (adds.length === 0 && removes.length === 0) {
       onClose();
       return;
     }
     setIsSaving(true);
     try {
-      await onSaveChanges(addIds, removeIds);
+      await onSaveChanges(adds, removes);
       onClose();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to save changes');

@@ -1570,15 +1570,18 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
         onClose={() => setCharPanelOpen(false)}
         worldId={world.external_id}
         panelId={panel?.panel_id ?? ''}
-        onSaveChanges={async (addIds, removeIds) => {
+        onSaveChanges={async (adds, removes) => {
+          const addNames = adds.map(c => c.name);
+          const removeNames = removes.map(c => c.name);
+          const parts: string[] = [];
+          if (addNames.length > 0) parts.push(`Added characters: ${addNames.join(', ')}`);
+          if (removeNames.length > 0) parts.push(`Removed characters: ${removeNames.join(', ')}`);
           await handleSendAction(
-            addIds.length > 0
-              ? `Add characters: ${addIds.join(', ')}`
-              : `Remove characters: ${removeIds.join(', ')}`,
+            parts.join('. '),
             'choice',
             {
-              add_character_ids: addIds,
-              remove_character_ids: removeIds,
+              add_character_ids: adds.map(c => c.id),
+              remove_character_ids: removes.map(c => c.id),
               new_main_character_id: null,
               old_main_character_id: null,
               batch_character_update: true,
