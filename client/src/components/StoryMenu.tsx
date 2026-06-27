@@ -414,6 +414,10 @@ function JournalPreferences() {
 function VoiceSettings() {
   const { data: voiceEnabledData, refetch: refetchVoiceEnabled } = trpc.voice.getSetting.useQuery({ key: 'voice_enabled' });
   const { data: autoPlayData, refetch: refetchAutoPlay } = trpc.voice.getSetting.useQuery({ key: 'auto_play_enabled' });
+  const { data: autoAdvanceData, refetch: refetchAutoAdvance } = trpc.voice.getSetting.useQuery({ key: 'auto_advance_enabled' });
+  const { data: readingSpeedData, refetch: refetchReadingSpeed } = trpc.voice.getSetting.useQuery({ key: 'auto_advance_reading_speed' });
+  const { data: minDelayData, refetch: refetchMinDelay } = trpc.voice.getSetting.useQuery({ key: 'auto_advance_min_delay' });
+  const { data: staticDelayData, refetch: refetchStaticDelay } = trpc.voice.getSetting.useQuery({ key: 'auto_advance_static_delay' });
   const { data: narratorVoiceData, refetch: refetchNarratorVoice } = trpc.voice.getSetting.useQuery({ key: 'narrator_voice_id' });
   const { data: narratorVoiceNameData, refetch: refetchNarratorVoiceName } = trpc.voice.getSetting.useQuery({ key: 'narrator_voice_name' });
   const { data: voices } = trpc.voice.listVoices.useQuery();
@@ -426,6 +430,10 @@ function VoiceSettings() {
 
   const voiceEnabled = voiceEnabledData !== 'false';
   const autoPlayEnabled = autoPlayData !== 'false';
+  const autoAdvanceEnabled = autoAdvanceData === 'true';
+  const readingSpeed = parseFloat(readingSpeedData ?? '1.0');
+  const minDelay = parseFloat(minDelayData ?? '2');
+  const staticDelay = parseFloat(staticDelayData ?? '3');
   const narratorVoiceId = narratorVoiceData ?? null;
   const narratorVoiceName = narratorVoiceNameData ?? null;
 
@@ -533,6 +541,65 @@ function VoiceSettings() {
                   {v.name} <span style={{ color: 'rgba(255,255,255,0.35)', fontSize: '11px' }}>{v.category}</span>
                 </button>
               ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Auto-Advance section */}
+      <div className="rounded-xl px-4 py-3 space-y-4" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
+        <p style={{ fontFamily: LORA, fontSize: '12px', fontWeight: 700, color: 'rgba(255,255,255,0.55)', textTransform: 'uppercase', letterSpacing: '0.1em' }}>Auto-Advance</p>
+
+        {/* Auto-advance toggle */}
+        <div className="flex items-center justify-between">
+          <div>
+            <p style={{ fontFamily: LORA, fontSize: '14px', color: '#fff', marginBottom: '2px' }}>Auto-Advance Panels</p>
+            <p style={{ fontFamily: LORA, fontSize: '12px', color: 'rgba(255,255,255,0.45)' }}>Automatically go to the next panel after voice or timer</p>
+          </div>
+          <button onClick={() => toggle('auto_advance_enabled', autoAdvanceEnabled, refetchAutoAdvance)} className="flex-shrink-0 rounded-full transition-all" style={{ width: '44px', height: '24px', background: autoAdvanceEnabled ? '#5eead4' : 'rgba(255,255,255,0.15)', position: 'relative', border: 'none', cursor: 'pointer' }}>
+            <span style={{ position: 'absolute', top: '2px', left: autoAdvanceEnabled ? '22px' : '2px', width: '20px', height: '20px', borderRadius: '50%', background: '#fff', transition: 'left 0.2s ease' }} />
+          </button>
+        </div>
+
+        {autoAdvanceEnabled && (
+          <div className="space-y-3" style={{ opacity: 1 }}>
+            {/* Reading speed */}
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <p style={{ fontFamily: LORA, fontSize: '13px', color: 'rgba(255,255,255,0.8)' }}>Reading Speed</p>
+                <p style={{ fontFamily: LORA, fontSize: '12px', color: '#a78bfa' }}>{readingSpeed === 0.5 ? 'Slow' : readingSpeed === 1.0 ? 'Normal' : readingSpeed === 1.5 ? 'Fast' : readingSpeed === 2.0 ? 'Very Fast' : `${readingSpeed}x`}</p>
+              </div>
+              <input type="range" min="0.5" max="2.0" step="0.5" value={readingSpeed}
+                onChange={async (e) => { await setSettingMutation.mutateAsync({ key: 'auto_advance_reading_speed', value: e.target.value }); refetchReadingSpeed(); }}
+                className="w-full" style={{ accentColor: '#a78bfa' }}
+              />
+              <p style={{ fontFamily: LORA, fontSize: '11px', color: 'rgba(255,255,255,0.35)' }}>Used when no voice clip is available</p>
+            </div>
+
+            {/* Minimum delay */}
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <p style={{ fontFamily: LORA, fontSize: '13px', color: 'rgba(255,255,255,0.8)' }}>Minimum Delay</p>
+                <p style={{ fontFamily: LORA, fontSize: '12px', color: '#a78bfa' }}>{minDelay}s</p>
+              </div>
+              <input type="range" min="0" max="10" step="0.5" value={minDelay}
+                onChange={async (e) => { await setSettingMutation.mutateAsync({ key: 'auto_advance_min_delay', value: e.target.value }); refetchMinDelay(); }}
+                className="w-full" style={{ accentColor: '#a78bfa' }}
+              />
+              <p style={{ fontFamily: LORA, fontSize: '11px', color: 'rgba(255,255,255,0.35)' }}>Minimum wait before advancing (even after voice ends)</p>
+            </div>
+
+            {/* Static delay for image-only panels */}
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <p style={{ fontFamily: LORA, fontSize: '13px', color: 'rgba(255,255,255,0.8)' }}>Image-Only Panels</p>
+                <p style={{ fontFamily: LORA, fontSize: '12px', color: '#a78bfa' }}>{staticDelay}s</p>
+              </div>
+              <input type="range" min="1" max="15" step="0.5" value={staticDelay}
+                onChange={async (e) => { await setSettingMutation.mutateAsync({ key: 'auto_advance_static_delay', value: e.target.value }); refetchStaticDelay(); }}
+                className="w-full" style={{ accentColor: '#a78bfa' }}
+              />
+              <p style={{ fontFamily: LORA, fontSize: '11px', color: 'rgba(255,255,255,0.35)' }}>Wait time for panels with no text or voice</p>
             </div>
           </div>
         )}

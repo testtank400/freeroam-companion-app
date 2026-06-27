@@ -145,6 +145,21 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
   // Narrator voice settings
   const { data: narratorVoiceId } = trpc.voice.getSetting.useQuery({ key: 'narrator_voice_id' });
 
+  // Auto-advance settings
+  const [autoAdvanceEnabled, setAutoAdvanceEnabled] = useState(false);
+  const [autoAdvanceReadingSpeed, setAutoAdvanceReadingSpeed] = useState(1.0);
+  const [autoAdvanceMinDelay, setAutoAdvanceMinDelay] = useState(2);
+  const [autoAdvanceStaticDelay, setAutoAdvanceStaticDelay] = useState(3);
+  const autoAdvanceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const { data: autoAdvanceSetting } = trpc.voice.getSetting.useQuery({ key: 'auto_advance_enabled' });
+  const { data: readingSpeedSetting } = trpc.voice.getSetting.useQuery({ key: 'auto_advance_reading_speed' });
+  const { data: minDelaySetting } = trpc.voice.getSetting.useQuery({ key: 'auto_advance_min_delay' });
+  const { data: staticDelaySetting } = trpc.voice.getSetting.useQuery({ key: 'auto_advance_static_delay' });
+  useEffect(() => { if (autoAdvanceSetting !== undefined) setAutoAdvanceEnabled(autoAdvanceSetting === 'true'); }, [autoAdvanceSetting]);
+  useEffect(() => { if (readingSpeedSetting) setAutoAdvanceReadingSpeed(parseFloat(readingSpeedSetting)); }, [readingSpeedSetting]);
+  useEffect(() => { if (minDelaySetting) setAutoAdvanceMinDelay(parseFloat(minDelaySetting)); }, [minDelaySetting]);
+  useEffect(() => { if (staticDelaySetting) setAutoAdvanceStaticDelay(parseFloat(staticDelaySetting)); }, [staticDelaySetting]);
+
   // Swipe-down gesture to open menu
   const touchStartY = useRef<number | null>(null);
   const touchStartX = useRef<number | null>(null);
@@ -386,8 +401,17 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
     })();
   }, [world.external_id]);
 
+  // Cancel any pending auto-advance timer
+  const cancelAutoAdvance = useCallback(() => {
+    if (autoAdvanceTimerRef.current) {
+      clearTimeout(autoAdvanceTimerRef.current);
+      autoAdvanceTimerRef.current = null;
+    }
+  }, []);
+
   const loadPanel = useCallback(async (panelId: string, worldId: string) => {
     stopPolling();
+    cancelAutoAdvance();
     setChoiceIdeasVisible(showChoiceIdeasByDefault);
     // Check panel cache first for instant navigation (only use if panel_content has real data, not [Max Depth] strings)
     const isPanelContentValid = (pc: PanelData['panel_content']) =>
@@ -459,7 +483,15 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
             audioRef.current = audio;
             audio.play().catch(() => {});
             setIsPlayingAudio(true);
-            audio.onended = () => setIsPlayingAudio(false);
+            audio.onended = () => {
+              setIsPlayingAudio(false);
+              // Auto-advance after voice ends (+ minimum delay)
+              if (autoAdvanceEnabled) {
+                autoAdvanceTimerRef.current = setTimeout(() => {
+                  loadPanelRef.current?.(panel.next_panel_id!, world.external_id);
+                }, Math.max(0, autoAdvanceMinDelay * 1000));
+              }
+            };
           }
         }
       } catch { /* Non-fatal */ }
@@ -550,14 +582,22 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
           audioRef.current = audio;
           audio.play().catch(() => {}); // Ignore autoplay policy errors
           setIsPlayingAudio(true);
-          audio.onended = () => setIsPlayingAudio(false);
+          audio.onended = () => {
+            setIsPlayingAudio(false);
+            // Auto-advance after voice ends (+ minimum delay)
+            if (autoAdvanceEnabled) {
+              autoAdvanceTimerRef.current = setTimeout(() => {
+                loadPanelRef.current?.(panel.next_panel_id!, world.external_id);
+              }, Math.max(0, autoAdvanceMinDelay * 1000));
+            }
+          };
         }
       }
     } catch {
       // Non-fatal — TTS failure should not interrupt navigation
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoPlayEnabled, voiceEnabled, narratorVoiceId, world.external_id, worldCharacters]);
+  }, [autoPlayEnabled, voiceEnabled, narratorVoiceId, world.external_id, worldCharacters, autoAdvanceEnabled, autoAdvanceMinDelay]);
 
   // Keep loadPanelRef updated with latest loadPanel
   useEffect(() => { loadPanelRef.current = loadPanel; }, [loadPanel]);
@@ -573,6 +613,52 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
     triggerTTS(currentPanel);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentPanel?.panel_id]);
+
+  // Auto-advance timer: fires when panel changes and auto-advance is enabled
+  // Voice-based advance is handled in triggerTTS audio.onended
+  // This handles panels without voice: text-based timer or static delay
+  useEffect(() => {
+    if (!currentPanel || !autoAdvanceEnabled) return;
+    // Don't auto-advance on choice, action, or polling panels
+    if (currentPanel.requires_action || currentPanel.is_action || isPolling) return;
+    // Don't auto-advance if there's no next panel
+    if (!currentPanel.next_panel_id) return;
+    // If voice is enabled and auto-play is on, the audio.onended handler will trigger advance
+    // Only set a text-based timer if voice is disabled or no voice assigned
+    const speechBubble = currentPanel.panel_content?.speech_bubbles?.[0];
+    const hasText = !!speechBubble?.text;
+    if (hasText && voiceEnabled) {
+      // Voice will handle it — skip text timer
+      // (but set a fallback in case TTS fails or character has no voice)
+      const wordCount = speechBubble!.text.split(/\s+/).length;
+      const wordsPerMinute = 200 * autoAdvanceReadingSpeed;
+      const readingTimeMs = (wordCount / wordsPerMinute) * 60 * 1000;
+      const totalDelay = Math.max(autoAdvanceMinDelay * 1000, readingTimeMs);
+      // Set a generous fallback timer (2x reading time) in case voice doesn't play
+      autoAdvanceTimerRef.current = setTimeout(() => {
+        // Only advance if audio isn't playing (voice handled it already)
+        if (!audioRef.current || audioRef.current.paused || audioRef.current.ended) {
+          loadPanelRef.current?.(currentPanel.next_panel_id!, world.external_id);
+        }
+      }, totalDelay * 2);
+    } else if (hasText) {
+      // No voice — use reading time
+      const wordCount = speechBubble!.text.split(/\s+/).length;
+      const wordsPerMinute = 200 * autoAdvanceReadingSpeed;
+      const readingTimeMs = (wordCount / wordsPerMinute) * 60 * 1000;
+      const totalDelay = Math.max(autoAdvanceMinDelay * 1000, readingTimeMs);
+      autoAdvanceTimerRef.current = setTimeout(() => {
+        loadPanelRef.current?.(currentPanel.next_panel_id!, world.external_id);
+      }, totalDelay);
+    } else {
+      // No text — use static delay
+      autoAdvanceTimerRef.current = setTimeout(() => {
+        loadPanelRef.current?.(currentPanel.next_panel_id!, world.external_id);
+      }, autoAdvanceStaticDelay * 1000);
+    }
+    return () => cancelAutoAdvance();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentPanel?.panel_id, autoAdvanceEnabled]);
 
   // Cleanup: stop polling on unmount
   useEffect(() => () => stopPolling(), [stopPolling]);
