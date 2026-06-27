@@ -388,28 +388,30 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
   const loadPanel = useCallback(async (panelId: string, worldId: string) => {
     stopPolling();
     setChoiceIdeasVisible(showChoiceIdeasByDefault);
-    // Check panel cache first for instant navigation (only use if panel_content is valid)
+    // Check panel cache first for instant navigation (only use if panel_content has real data, not [Max Depth] strings)
+    const isPanelContentValid = (pc: PanelData['panel_content']) =>
+      pc != null && Array.isArray(pc.images);
     const cached = panelCache.current.get(panelId);
-    if (cached && cached.panel_content) {
+    if (cached && isPanelContentValid(cached.panel_content)) {
       setCurrentPanel(cached);
       setPanelMutation.mutate({ worldId, panelId });
       setIsLoading(false);
       return;
-    } else if (cached && !cached.panel_content) {
-      // Remove broken cached entry and fetch fresh
+    } else if (cached) {
+      // Remove broken cached entry (null or [Max Depth] strings) and fetch fresh
       panelCache.current.delete(panelId);
     }
     setIsNavigating(true);
     try {
       const data = await utils.worlds.getPanel.fetch({ worldId, panelId });
       const panel = data as PanelData;
-      // Only cache if panel_content is valid (not truncated by depth limit)
-      if (panel.panel_content) {
+      // Only cache if panel_content has real data (not [Max Depth] strings)
+      if (isPanelContentValid(panel.panel_content)) {
         panelCache.current.set(panelId, panel);
         // Also cache the embedded next_panel if present and valid
         if (panel.next_panel) {
           const next = panel.next_panel as PanelData;
-          if (next.panel_id && next.panel_content) panelCache.current.set(next.panel_id, next);
+          if (next.panel_id && isPanelContentValid(next.panel_content)) panelCache.current.set(next.panel_id, next);
         }
       }
       setCurrentPanel(panel);
