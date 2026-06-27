@@ -512,8 +512,9 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
       try {
         const pollResult = await utils.worlds.nextReady.fetch({ panelId: panelIdToWatch });
         if (pollResult.ready) {
-          stopPolling();
-          await loadPanel(pollResult.panel_id, world.external_id);
+          // Use refs to avoid stale closures
+          stopPollingRef.current?.();
+          await loadPanelRef.current?.(pollResult.panel_id, world.external_id);
         }
       } catch {
         // Non-fatal — keep polling
@@ -602,15 +603,15 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
         try {
           const result = await utils.worlds.nextReady.fetch({ panelId: currentPanel.panel_id });
           if (result.ready) {
-            stopPolling();
-            await loadPanel(result.panel_id, world.external_id);
+            stopPollingRef.current?.();
+            await loadPanelRef.current?.(result.panel_id, world.external_id);
           }
         } catch {
           // Non-fatal — keep polling
         }
       }, 1000);
     }
-    return () => stopPolling();
+    return () => stopPollingRef.current?.();
   }, [currentPanel?.panel_id, currentPanel?.forward_state, currentPanel?.next_panel_id]);
 
   useEffect(() => () => stopPolling(), [stopPolling]);
@@ -634,8 +635,8 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
         try {
           const result = await utils.worlds.nextReady.fetch({ panelId: currentPanel.panel_id });
           if (result.ready) {
-            stopPolling();
-            await loadPanel(result.panel_id, world.external_id);
+            stopPollingRef.current?.();
+            await loadPanelRef.current?.(result.panel_id, world.external_id);
           }
         } catch {
           // Non-fatal — keep polling
@@ -668,8 +669,8 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
           try {
             const result = await utils.worlds.nextReady.fetch({ panelId: embedded.panel_id });
             if (result.ready) {
-              stopPolling();
-              await loadPanel(result.panel_id, world.external_id);
+              stopPollingRef.current?.();
+              await loadPanelRef.current?.(result.panel_id, world.external_id);
             }
           } catch {
             // Non-fatal — keep polling
