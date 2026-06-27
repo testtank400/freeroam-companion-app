@@ -2250,7 +2250,7 @@ export const appRouter = router({
           },
           body: JSON.stringify({
             text: input.text,
-            model_id: 'eleven_multilingual_v2',
+            model_id: 'eleven_v3',
             voice_settings: {
               stability: parseFloat(input.stability),
               similarity_boost: parseFloat(input.similarityBoost),
