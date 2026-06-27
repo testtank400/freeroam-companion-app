@@ -349,24 +349,29 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
   const loadPanel = useCallback(async (panelId: string, worldId: string) => {
     stopPolling();
     setChoiceIdeasVisible(showChoiceIdeasByDefault);
-    // Check panel cache first for instant navigation
+    // Check panel cache first for instant navigation (only use if panel_content is valid)
     const cached = panelCache.current.get(panelId);
-    if (cached) {
+    if (cached && cached.panel_content) {
       setCurrentPanel(cached);
       setPanelMutation.mutate({ worldId, panelId });
       setIsLoading(false);
       return;
+    } else if (cached && !cached.panel_content) {
+      // Remove broken cached entry and fetch fresh
+      panelCache.current.delete(panelId);
     }
     setIsNavigating(true);
     try {
       const data = await utils.worlds.getPanel.fetch({ worldId, panelId });
       const panel = data as PanelData;
-      // Store in cache
-      panelCache.current.set(panelId, panel);
-      // Also cache the embedded next_panel if present
-      if (panel.next_panel) {
-        const next = panel.next_panel as PanelData;
-        if (next.panel_id) panelCache.current.set(next.panel_id, next);
+      // Only cache if panel_content is valid (not truncated by depth limit)
+      if (panel.panel_content) {
+        panelCache.current.set(panelId, panel);
+        // Also cache the embedded next_panel if present and valid
+        if (panel.next_panel) {
+          const next = panel.next_panel as PanelData;
+          if (next.panel_id && next.panel_content) panelCache.current.set(next.panel_id, next);
+        }
       }
       setCurrentPanel(panel);
       setPanelMutation.mutate({ worldId, panelId });
