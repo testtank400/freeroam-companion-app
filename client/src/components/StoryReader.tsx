@@ -317,6 +317,7 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
   const [progressPanel, setProgressPanel] = useState<{ panel_external_id: string; depth: number; image_url: string; updated_at: string; type: 'progress' } | null>(null);
   // World detail for tags and related worlds
   const [worldDetail, setWorldDetail] = useState<{ tags: Array<{ id: number; name: string; is_fandom: boolean; emoji: string | null }>; related_worlds: Array<{ external_id: string; name: string; logline: string; cover_image_url: string | null; owner: { username: string; is_verified: boolean; avatar_url: string | null }; interaction_count: number; tag_name: string; tag_is_fandom: boolean }> } | null>(null);
+  const [worldCharacters, setWorldCharacters] = useState<Array<{ name: string; external_id: string }>>([]);
   // Chapters from journal endpoint
   const [chapters, setChapters] = useState<Array<{ chapter_number: number; panel_external_id: string; image_url: string }>>([]);
   // Full journal data for Journal tab
@@ -469,6 +470,7 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
 
     const charName = speechBubble.character;
     const text = speechBubble.text;
+    console.log('[TTS] Spoken panel detected, character:', charName);
 
     // Look up voice assignment for this character
     let voiceData = voiceCache.current.get(charName);
@@ -476,22 +478,37 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
     if (voiceData === undefined) {
       // Not yet cached — fetch from server
       try {
-        // Find the character's external_id from the panel's visible_characters
-        const visibleChars = panel.panel_content.images?.[0]?.visible_characters ?? {};
-        const matchedEntry = Object.entries(visibleChars).find(([, v]) =>
-          v.name?.toLowerCase().replace(/-/g, ' ') === charName.toLowerCase().replace(/-/g, ' ')
+        // Find the character's external_id from the world's character list (reliable)
+        // Fall back to panel's visible_characters if world list doesn't have it
+        const normalizedCharName = charName.toLowerCase().replace(/-/g, ' ');
+        const worldChar = worldCharacters.find(c =>
+          c.name?.toLowerCase().replace(/-/g, ' ') === normalizedCharName
         );
-        charExternalId = matchedEntry?.[1]?.external_id;
+        if (worldChar) {
+          charExternalId = worldChar.external_id;
+        } else {
+          // Fallback: check panel's visible_characters
+          const visibleChars = panel.panel_content.images?.[0]?.visible_characters ?? {};
+          const matchedEntry = Object.entries(visibleChars).find(([, v]) =>
+            v.name?.toLowerCase().replace(/-/g, ' ') === normalizedCharName
+          );
+          charExternalId = matchedEntry?.[1]?.external_id;
+        }
+        console.log('[TTS] charExternalId:', charExternalId, 'from:', worldChar ? 'worldCharacters' : 'visible_characters');
         if (charExternalId) {
           const assignment = await utils.voice.getVoiceAssignment.fetch({ characterId: charExternalId });
           voiceData = assignment ?? null;
+          console.log('[TTS] voice assignment:', JSON.stringify(voiceData));
           // Only cache if we got a definitive result (found external_id and queried DB)
           voiceCache.current.set(charName, voiceData);
         }
         // If no external_id found, don't cache null — retry on next panel
-      } catch {
+      } catch (e) {
+        console.log('[TTS] error during voice lookup:', e);
         // Don't cache on error — retry next time
       }
+    } else {
+      console.log('[TTS] cached voiceData:', JSON.stringify(voiceData));
     }
 
     if (!voiceData) return; // No voice assigned for this character
@@ -524,7 +541,7 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
       // Non-fatal — TTS failure should not interrupt navigation
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoPlayEnabled, voiceEnabled, narratorVoiceId, world.external_id]);
+  }, [autoPlayEnabled, voiceEnabled, narratorVoiceId, world.external_id, worldCharacters]);
 
   // Keep loadPanelRef updated with latest loadPanel
   useEffect(() => { loadPanelRef.current = loadPanel; }, [loadPanel]);
@@ -580,10 +597,11 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
         setProgressPanel(data.progress_panel);
       });
     // Fetch world detail for tags + related worlds + like state
-    trpcGet<{ tags: Array<{ id: number; name: string; is_fandom: boolean; emoji: string | null }>; related_worlds: Array<{ external_id: string; name: string; logline: string; cover_image_url: string | null; owner: { username: string; is_verified: boolean; avatar_url: string | null }; interaction_count: number; tag_name: string; tag_is_fandom: boolean }>; is_liked: boolean; like_count: number }>('worlds.get', { worldId: world.external_id })
+    trpcGet<{ tags: Array<{ id: number; name: string; is_fandom: boolean; emoji: string | null }>; related_worlds: Array<{ external_id: string; name: string; logline: string; cover_image_url: string | null; owner: { username: string; is_verified: boolean; avatar_url: string | null }; interaction_count: number; tag_name: string; tag_is_fandom: boolean }>; characters: Array<{ name: string; external_id: string }>; is_liked: boolean; like_count: number }>('worlds.get', { worldId: world.external_id })
       .then((data) => {
         if (!data) return;
         setWorldDetail({ tags: data.tags, related_worlds: data.related_worlds });
+        if (data.characters) setWorldCharacters(data.characters);
         setIsLiked(!!data.is_liked);
         setLikeCount(data.like_count ?? 0);
       });
