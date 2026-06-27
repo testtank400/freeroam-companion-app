@@ -2088,6 +2088,16 @@ export const appRouter = router({
       return data.voices;
     }),
 
+    /** Get all character IDs that have voice assignments (for badge display) */
+    listVoicedCharacters: publicProcedure.query(async () => {
+      const { getDb } = await import('./db');
+      const { characterVoices } = await import('../drizzle/schema');
+      const db = await getDb();
+      if (!db) return [];
+      const rows = await db.select({ characterId: characterVoices.characterId }).from(characterVoices);
+      return rows.map(r => r.characterId);
+    }),
+
     /** Get the voice assignment for a character */
     getVoiceAssignment: publicProcedure
       .input(z.object({ characterId: z.string() }))
@@ -2229,6 +2239,24 @@ export const appRouter = router({
         });
 
         return { audioUrl, fromCache: false };
+      }),
+
+    /** Clear all TTS cache entries (optionally filtered by characterId) */
+    clearVoiceCache: publicProcedure
+      .input(z.object({ characterId: z.string().optional() }))
+      .mutation(async ({ input }) => {
+        const { getDb } = await import('./db');
+        const { ttsCache } = await import('../drizzle/schema');
+        const { eq } = await import('drizzle-orm');
+        const db = await getDb();
+        if (!db) throw new Error('Database not available');
+        if (input.characterId) {
+          await db.delete(ttsCache).where(eq(ttsCache.characterId, input.characterId));
+        } else {
+          // Clear all cache entries
+          await db.delete(ttsCache);
+        }
+        return { ok: true };
       }),
 
     /** Get an app setting by key */

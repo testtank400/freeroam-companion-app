@@ -4,7 +4,7 @@
 // Uses ApiCharacter shape from getfreeroam API
 
 import { ApiCharacter } from '@/pages/Home';
-import { Globe, Link, Lock, Pencil, Trash2 } from 'lucide-react';
+import { Globe, Link, Lock, Mic, Pencil, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 
 type PrivacyStatus = 'private' | 'public' | 'unlisted';
@@ -17,6 +17,8 @@ interface CharacterCardProps {
   /** Active search query — matching portion of the name is highlighted in amber */
   searchQuery?: string;
   isSelected?: boolean;
+  /** Whether this character has a voice assigned */
+  hasVoice?: boolean;
 }
 
 /** Splits text into segments and wraps the matching part in an amber span */
@@ -71,7 +73,7 @@ function PrivacyBadge({ status }: { status: PrivacyStatus }) {
 // Fallback placeholder image for characters without a headshot
 const FALLBACK_IMAGE = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjUwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iNDAwIiBoZWlnaHQ9IjUwMCIgZmlsbD0iIzFhMWEyNCIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBmb250LWZhbWlseT0ibW9ub3NwYWNlIiBmb250LXNpemU9IjE0IiBmaWxsPSIjMzMzMzQ0IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkeT0iLjNlbSI+Tk8gSU1BR0U8L3RleHQ+PC9zdmc+';
 
-export default function CharacterCard({ character, onClick, onEdit, onDelete, searchQuery = '', isSelected = false }: CharacterCardProps) {
+export default function CharacterCard({ character, onClick, onEdit, onDelete, searchQuery = '', isSelected = false, hasVoice = false }: CharacterCardProps) {
   const handleEdit = (e: React.MouseEvent) => {
     e.stopPropagation();
     onEdit(character);
@@ -130,9 +132,19 @@ export default function CharacterCard({ character, onClick, onEdit, onDelete, se
           </div>
         )}
 
-        {/* Top-left: Privacy badge */}
-        <div className="absolute top-3 left-3 z-10">
+        {/* Top-left: Privacy badge + voice badge */}
+        <div className="absolute top-3 left-3 z-10 flex flex-col gap-1">
           <PrivacyBadge status={character.privacy_status} />
+          {hasVoice && (
+            <span
+              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-sm text-[10px] font-medium tracking-wider uppercase"
+              style={{ fontFamily: 'Rajdhani, sans-serif', background: 'oklch(0.55 0.15 280 / 0.25)', border: '1px solid oklch(0.55 0.15 280 / 0.5)', color: 'oklch(0.75 0.15 280)', backdropFilter: 'blur(4px)' }}
+              title="Voice assigned"
+            >
+              <Mic size={9} strokeWidth={2.5} />
+              Voice
+            </span>
+          )}
         </div>
 
         {/* Top-right: Action buttons */}

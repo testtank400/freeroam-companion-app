@@ -414,50 +414,144 @@ function JournalPreferences() {
 function VoiceSettings() {
   const { data: voiceEnabledData, refetch: refetchVoiceEnabled } = trpc.voice.getSetting.useQuery({ key: 'voice_enabled' });
   const { data: autoPlayData, refetch: refetchAutoPlay } = trpc.voice.getSetting.useQuery({ key: 'auto_play_enabled' });
+  const { data: narratorVoiceData, refetch: refetchNarratorVoice } = trpc.voice.getSetting.useQuery({ key: 'narrator_voice_id' });
+  const { data: narratorVoiceNameData, refetch: refetchNarratorVoiceName } = trpc.voice.getSetting.useQuery({ key: 'narrator_voice_name' });
+  const { data: voices } = trpc.voice.listVoices.useQuery();
   const setSettingMutation = trpc.voice.setSetting.useMutation();
+  const clearCacheMutation = trpc.voice.clearVoiceCache.useMutation();
+  const [showNarratorPicker, setShowNarratorPicker] = useState(false);
+  const [narratorSearch, setNarratorSearch] = useState('');
+  const [isClearing, setIsClearing] = useState(false);
+  const [confirmClear, setConfirmClear] = useState(false);
 
-  const voiceEnabled = voiceEnabledData !== 'false'; // default true
-  const autoPlayEnabled = autoPlayData !== 'false'; // default true
+  const voiceEnabled = voiceEnabledData !== 'false';
+  const autoPlayEnabled = autoPlayData !== 'false';
+  const narratorVoiceId = narratorVoiceData ?? null;
+  const narratorVoiceName = narratorVoiceNameData ?? null;
 
   const toggle = async (key: string, currentValue: boolean, refetch: () => void) => {
     await setSettingMutation.mutateAsync({ key, value: (!currentValue).toString() });
     refetch();
   };
 
-  return (
-    <div>
-      <p style={{ fontFamily: LORA, fontSize: '12px', fontWeight: 700, color: 'rgba(255,255,255,0.55)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '12px' }}>Voice Settings</p>
-      <div className="space-y-3">
-        {/* Voice enabled toggle */}
-        <div className="flex items-center justify-between rounded-xl px-4 py-3" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
-          <div>
-            <p style={{ fontFamily: LORA, fontSize: '14px', color: '#fff', marginBottom: '2px' }}>Voice Generation</p>
-            <p style={{ fontFamily: LORA, fontSize: '12px', color: 'rgba(255,255,255,0.45)' }}>Generate and play character voices in the reader</p>
-          </div>
-          <button
-            onClick={() => toggle('voice_enabled', voiceEnabled, refetchVoiceEnabled)}
-            className="flex-shrink-0 rounded-full transition-all"
-            style={{ width: '44px', height: '24px', background: voiceEnabled ? '#5eead4' : 'rgba(255,255,255,0.15)', position: 'relative', border: 'none', cursor: 'pointer' }}
-          >
-            <span style={{ position: 'absolute', top: '2px', left: voiceEnabled ? '22px' : '2px', width: '20px', height: '20px', borderRadius: '50%', background: '#fff', transition: 'left 0.2s ease' }} />
-          </button>
-        </div>
+  const filteredVoices = (voices ?? []).filter(v =>
+    v.name.toLowerCase().includes(narratorSearch.toLowerCase())
+  );
 
-        {/* Auto-play toggle */}
-        <div className="flex items-center justify-between rounded-xl px-4 py-3" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
+  const handleClearCache = async () => {
+    if (!confirmClear) { setConfirmClear(true); return; }
+    setIsClearing(true);
+    try {
+      await clearCacheMutation.mutateAsync({});
+      toast.success('Voice cache cleared.');
+    } catch {
+      toast.error('Failed to clear cache.');
+    } finally {
+      setIsClearing(false);
+      setConfirmClear(false);
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      <p style={{ fontFamily: LORA, fontSize: '12px', fontWeight: 700, color: 'rgba(255,255,255,0.55)', textTransform: 'uppercase', letterSpacing: '0.1em' }}>Voice Settings</p>
+
+      {/* Voice enabled toggle */}
+      <div className="flex items-center justify-between rounded-xl px-4 py-3" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
+        <div>
+          <p style={{ fontFamily: LORA, fontSize: '14px', color: '#fff', marginBottom: '2px' }}>Voice Generation</p>
+          <p style={{ fontFamily: LORA, fontSize: '12px', color: 'rgba(255,255,255,0.45)' }}>Generate and play character voices in the reader</p>
+        </div>
+        <button onClick={() => toggle('voice_enabled', voiceEnabled, refetchVoiceEnabled)} className="flex-shrink-0 rounded-full transition-all" style={{ width: '44px', height: '24px', background: voiceEnabled ? '#5eead4' : 'rgba(255,255,255,0.15)', position: 'relative', border: 'none', cursor: 'pointer' }}>
+          <span style={{ position: 'absolute', top: '2px', left: voiceEnabled ? '22px' : '2px', width: '20px', height: '20px', borderRadius: '50%', background: '#fff', transition: 'left 0.2s ease' }} />
+        </button>
+      </div>
+
+      {/* Auto-play toggle */}
+      <div className="flex items-center justify-between rounded-xl px-4 py-3" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
+        <div>
+          <p style={{ fontFamily: LORA, fontSize: '14px', color: '#fff', marginBottom: '2px' }}>Auto-play Voice</p>
+          <p style={{ fontFamily: LORA, fontSize: '12px', color: 'rgba(255,255,255,0.45)' }}>Automatically play voice when a panel loads</p>
+        </div>
+        <button onClick={() => toggle('auto_play_enabled', autoPlayEnabled, refetchAutoPlay)} className="flex-shrink-0 rounded-full transition-all" style={{ width: '44px', height: '24px', background: autoPlayEnabled ? '#5eead4' : 'rgba(255,255,255,0.15)', position: 'relative', border: 'none', cursor: 'pointer', opacity: voiceEnabled ? 1 : 0.4 }} disabled={!voiceEnabled}>
+          <span style={{ position: 'absolute', top: '2px', left: autoPlayEnabled ? '22px' : '2px', width: '20px', height: '20px', borderRadius: '50%', background: '#fff', transition: 'left 0.2s ease' }} />
+        </button>
+      </div>
+
+      {/* Narrator voice */}
+      <div className="rounded-xl px-4 py-3" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
+        <div className="flex items-center justify-between mb-2">
           <div>
-            <p style={{ fontFamily: LORA, fontSize: '14px', color: '#fff', marginBottom: '2px' }}>Auto-play Voice</p>
-            <p style={{ fontFamily: LORA, fontSize: '12px', color: 'rgba(255,255,255,0.45)' }}>Automatically play voice when a panel loads</p>
+            <p style={{ fontFamily: LORA, fontSize: '14px', color: '#fff', marginBottom: '2px' }}>Narrator Voice</p>
+            <p style={{ fontFamily: LORA, fontSize: '12px', color: 'rgba(255,255,255,0.45)' }}>Voice used for narration panels</p>
           </div>
           <button
-            onClick={() => toggle('auto_play_enabled', autoPlayEnabled, refetchAutoPlay)}
-            className="flex-shrink-0 rounded-full transition-all"
-            style={{ width: '44px', height: '24px', background: autoPlayEnabled ? '#5eead4' : 'rgba(255,255,255,0.15)', position: 'relative', border: 'none', cursor: 'pointer', opacity: voiceEnabled ? 1 : 0.4 }}
-            disabled={!voiceEnabled}
+            onClick={() => setShowNarratorPicker(v => !v)}
+            className="flex items-center gap-1.5 rounded-full px-3 py-1.5 transition-all hover:brightness-125"
+            style={{ fontFamily: LORA, fontSize: '12px', color: narratorVoiceId ? '#a78bfa' : 'rgba(255,255,255,0.5)', background: narratorVoiceId ? 'rgba(167,139,250,0.15)' : 'rgba(255,255,255,0.08)', border: `1px solid ${narratorVoiceId ? 'rgba(167,139,250,0.3)' : 'rgba(255,255,255,0.12)'}`, cursor: 'pointer' }}
           >
-            <span style={{ position: 'absolute', top: '2px', left: autoPlayEnabled ? '22px' : '2px', width: '20px', height: '20px', borderRadius: '50%', background: '#fff', transition: 'left 0.2s ease' }} />
+            {narratorVoiceName ?? 'Not set'}
           </button>
         </div>
+        {showNarratorPicker && (
+          <div>
+            <input
+              type="text"
+              value={narratorSearch}
+              onChange={e => setNarratorSearch(e.target.value)}
+              placeholder="Search voices..."
+              className="w-full outline-none rounded-lg px-3 py-2 mb-2"
+              style={{ fontFamily: LORA, fontSize: '13px', color: '#fff', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}
+            />
+            <div style={{ maxHeight: '180px', overflowY: 'auto' }}>
+              {narratorVoiceId && (
+                <button
+                  onClick={async () => {
+                    await setSettingMutation.mutateAsync({ key: 'narrator_voice_id', value: null });
+                    await setSettingMutation.mutateAsync({ key: 'narrator_voice_name', value: null });
+                    refetchNarratorVoice(); refetchNarratorVoiceName();
+                    setShowNarratorPicker(false);
+                  }}
+                  className="w-full text-left rounded-lg px-3 py-2 mb-1 transition-all hover:brightness-125"
+                  style={{ fontFamily: LORA, fontSize: '13px', color: '#f87171', background: 'rgba(248,113,113,0.08)', border: '1px solid rgba(248,113,113,0.15)', cursor: 'pointer' }}
+                >
+                  Remove narrator voice
+                </button>
+              )}
+              {filteredVoices.slice(0, 30).map(v => (
+                <button
+                  key={v.voice_id}
+                  onClick={async () => {
+                    await setSettingMutation.mutateAsync({ key: 'narrator_voice_id', value: v.voice_id });
+                    await setSettingMutation.mutateAsync({ key: 'narrator_voice_name', value: v.name });
+                    refetchNarratorVoice(); refetchNarratorVoiceName();
+                    setShowNarratorPicker(false);
+                  }}
+                  className="w-full text-left rounded-lg px-3 py-2 mb-1 transition-all hover:brightness-125"
+                  style={{ fontFamily: LORA, fontSize: '13px', color: v.voice_id === narratorVoiceId ? '#a78bfa' : 'rgba(255,255,255,0.8)', background: v.voice_id === narratorVoiceId ? 'rgba(167,139,250,0.15)' : 'rgba(255,255,255,0.04)', border: `1px solid ${v.voice_id === narratorVoiceId ? 'rgba(167,139,250,0.3)' : 'rgba(255,255,255,0.06)'}`, cursor: 'pointer' }}
+                >
+                  {v.name} <span style={{ color: 'rgba(255,255,255,0.35)', fontSize: '11px' }}>{v.category}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Clear voice cache */}
+      <div className="flex items-center justify-between rounded-xl px-4 py-3" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
+        <div>
+          <p style={{ fontFamily: LORA, fontSize: '14px', color: '#fff', marginBottom: '2px' }}>Clear Voice Cache</p>
+          <p style={{ fontFamily: LORA, fontSize: '12px', color: 'rgba(255,255,255,0.45)' }}>Delete all cached audio — useful after changing voices</p>
+        </div>
+        <button
+          onClick={handleClearCache}
+          disabled={isClearing}
+          className="flex-shrink-0 rounded-full px-3 py-1.5 transition-all hover:brightness-125 disabled:opacity-50"
+          style={{ fontFamily: LORA, fontSize: '12px', fontWeight: 600, color: confirmClear ? '#fff' : '#f87171', background: confirmClear ? '#ef4444' : 'rgba(248,113,113,0.1)', border: `1px solid ${confirmClear ? '#ef4444' : 'rgba(248,113,113,0.2)'}`, cursor: 'pointer' }}
+        >
+          {isClearing ? 'Clearing...' : confirmClear ? 'Confirm Clear' : 'Clear Cache'}
+        </button>
       </div>
     </div>
   );

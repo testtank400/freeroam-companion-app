@@ -229,6 +229,9 @@ export default function Home() {
   // true = hide NSFW-tagged characters
   const [sfwOnly, setSfwOnly] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  // Set of character external_ids that have a voice assigned (for badge display)
+  const { data: voicedCharacterList } = trpc.voice.listVoicedCharacters.useQuery();
+  const voicedCharacterIds = new Set(voicedCharacterList ?? []);
   const sortDropdownRef = useRef<HTMLDivElement>(null);
 
   // Close sort dropdown on outside click
@@ -1951,6 +1954,7 @@ export default function Home() {
                 onDelete={setDeleteCharacter}
                 searchQuery={searchQuery}
                 isSelected={selectedIds.has(character.external_id)}
+                hasVoice={voicedCharacterIds.has(character.external_id)}
               />
             ))}
 

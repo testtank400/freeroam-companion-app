@@ -145,6 +145,9 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
     }
   }, [autoPlaySetting]);
 
+  // Narrator voice settings
+  const { data: narratorVoiceId } = trpc.voice.getSetting.useQuery({ key: 'narrator_voice_id' });
+
   // Swipe-down gesture to open menu
   const touchStartY = useRef<number | null>(null);
   const touchStartX = useRef<number | null>(null);
@@ -385,7 +388,39 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
     if (!panel.panel_content) return;
     if (!voiceEnabled) return; // Master voice toggle
     const speechBubble = panel.panel_content.speech_bubbles?.[0];
-    if (!speechBubble || speechBubble.style !== 'spoken' || !speechBubble.text || !speechBubble.character) return;
+    if (!speechBubble || !speechBubble.text) return;
+
+    // Handle narration panels via narrator voice
+    if (speechBubble.style === 'narration' || !speechBubble.character) {
+      if (!narratorVoiceId) return; // No narrator voice assigned
+      try {
+        const result = await generateSpeechMutation.mutateAsync({
+          panelId: panel.panel_id,
+          worldId: world.external_id,
+          characterName: 'narrator',
+          characterId: '__narrator__',
+          text: speechBubble.text,
+          voiceId: narratorVoiceId,
+          stability: '0.5',
+          similarityBoost: '0.75',
+          style: '0',
+        });
+        if (result.audioUrl) {
+          setCurrentAudioUrl(result.audioUrl);
+          if (autoPlayEnabled) {
+            audioRef.current?.pause();
+            const audio = new Audio(result.audioUrl);
+            audioRef.current = audio;
+            audio.play().catch(() => {});
+            setIsPlayingAudio(true);
+            audio.onended = () => setIsPlayingAudio(false);
+          }
+        }
+      } catch { /* Non-fatal */ }
+      return;
+    }
+
+    if (speechBubble.style !== 'spoken') return;
 
     const charName = speechBubble.character;
     const text = speechBubble.text;
@@ -444,7 +479,7 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
       // Non-fatal — TTS failure should not interrupt navigation
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoPlayEnabled, world.external_id]);
+  }, [autoPlayEnabled, voiceEnabled, narratorVoiceId, world.external_id]);
 
   // Keep refs updated with latest versions
   useEffect(() => { stopPollingRef.current = stopPolling; }, [stopPolling]);
