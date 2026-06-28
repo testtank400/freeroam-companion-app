@@ -296,11 +296,11 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
       // Determine if this is an image action (check action text prefix)
       const isImageAction = text.toLowerCase().startsWith('change the image to');
       // Handle next panel navigation based on forward_state
-      if (result.forward_state === 'awaiting_choice' && result.next_panel_id) {
-        // Choice panel is already generated — navigate to it immediately
+      if (result.next_panel_id && (result.forward_state === 'awaiting_choice' || result.forward_state === 'generating' || result.forward_state === 'ready')) {
+        // Next panel is already known — navigate directly without polling
         await (loadPanelRef.current ?? loadPanel)(result.next_panel_id, world.external_id);
       } else if (result.forward_state === 'generating' || result.forward_state === 'ready') {
-        // Start polling directly using the new AbortController-based pattern
+        // Next panel not yet ready — poll until it is
         startPolling(result.action_panel_id, isImageAction);
       }
     } catch (err) {
