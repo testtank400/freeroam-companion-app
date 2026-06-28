@@ -682,11 +682,19 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
     // If voice is enabled and auto-play is on, the audio.onended handler will trigger advance
     // Only set a text-based timer if voice is disabled or no voice assigned
     const speechBubble = currentPanel.panel_content?.speech_bubbles?.[0];
-    const hasText = !!speechBubble?.text;
-    if (hasText && voiceEnabled) {
-      // Voice will handle it — skip text timer
-      // (but set a fallback in case TTS fails or character has no voice)
-      const wordCount = speechBubble!.text.split(/\s+/).length;
+    const narration = currentPanel.panel_content?.narration;
+    // A panel has speakable text if it has a spoken or narration speech bubble, or a narration field
+    const isSpokenBubble = speechBubble?.style === 'spoken' && !!speechBubble?.text;
+    const isNarrationBubble = (speechBubble?.style === 'narration' || !speechBubble?.character) && !!speechBubble?.text;
+    const hasNarrationField = !!narration;
+    const hasSpeakableText = isSpokenBubble || isNarrationBubble || hasNarrationField;
+    // Non-speakable text (action bubbles etc.) — treat as no-voice text
+    const hasAnyText = !!speechBubble?.text || !!narration;
+    if (hasSpeakableText && voiceEnabled) {
+      // Voice MIGHT handle it (if a voice is assigned) — set a fallback timer
+      // The fallback fires only if audio hasn't started playing by then
+      const textForTiming = speechBubble?.text ?? narration ?? '';
+      const wordCount = textForTiming.split(/\s+/).length;
       const wordsPerMinute = 200 * autoAdvanceReadingSpeed;
       const readingTimeMs = (wordCount / wordsPerMinute) * 60 * 1000;
       const totalDelay = Math.max(autoAdvanceMinDelay * 1000, readingTimeMs);
@@ -697,9 +705,10 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
           loadPanelRef.current?.(currentPanel.next_panel_id!, world.external_id);
         }
       }, totalDelay * 2);
-    } else if (hasText) {
+    } else if (hasAnyText) {
       // No voice — use reading time
-      const wordCount = speechBubble!.text.split(/\s+/).length;
+      const textForTiming2 = speechBubble?.text ?? narration ?? '';
+      const wordCount = textForTiming2.split(/\s+/).length;
       const wordsPerMinute = 200 * autoAdvanceReadingSpeed;
       const readingTimeMs = (wordCount / wordsPerMinute) * 60 * 1000;
       const totalDelay = Math.max(autoAdvanceMinDelay * 1000, readingTimeMs);
@@ -819,6 +828,12 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
     if (direction === 'next' && currentPanel.next_panel) {
       const embedded = currentPanel.next_panel as PanelData;
       stopPolling();
+      cancelAutoAdvance();
+      // Stop any playing audio so it doesn't bleed into the next panel
+      audioRef.current?.pause();
+      audioRef.current = null;
+      setIsPlayingAudio(false);
+      setCurrentAudioUrl(null);
       setIsNavigating(true);
       setChoiceIdeasVisible(showChoiceIdeasByDefault);
       const embeddedPanel = { ...embedded, next_panel: embedded.next_panel ?? null } as PanelData;
