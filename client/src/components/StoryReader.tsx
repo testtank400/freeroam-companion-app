@@ -142,6 +142,9 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
   // Set to true by triggerTTS when it successfully starts playing audio for a panel.
   // The auto-advance fallback timer checks this to avoid firing while voice is playing or pending.
   const ttsWillPlayRef = useRef(false);
+  // Set to true by triggerTTS when it confirms no voice will play (no voice assigned, no narrator).
+  // Lets the fallback timer fire at reading speed instead of 2x.
+  const ttsConfirmedNoVoiceRef = useRef(false);
   // Voice assignments cache: character_name -> voice data (null = no voice assigned, undefined = not yet fetched)
   const voiceCache = useRef<Map<string, { voiceId: string; voiceName: string; stability: string | null; similarityBoost: string | null; style: string | null } | null>>(new Map());
 
@@ -162,6 +165,7 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
   const [autoAdvanceMinDelay, setAutoAdvanceMinDelay] = useState(2);
   const [autoAdvanceStaticDelay, setAutoAdvanceStaticDelay] = useState(3);
   const autoAdvanceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const noVoiceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const currentPanelIdRef = useRef<string | null>(null);
   // Refs for values used inside async closures (audio.onended) to avoid stale captures
   const autoAdvanceEnabledRef = useRef(false);
@@ -196,10 +200,14 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
   const pauseAutoAdvance = useCallback(() => {
     autoAdvancePausedRef.current = true;
     setAutoAdvancePaused(true);
-    // Cancel any timer that is already running
+    // Cancel any timers that are running
     if (autoAdvanceTimerRef.current) {
       clearTimeout(autoAdvanceTimerRef.current);
       autoAdvanceTimerRef.current = null;
+    }
+    if (noVoiceTimerRef.current) {
+      clearTimeout(noVoiceTimerRef.current);
+      noVoiceTimerRef.current = null;
     }
   }, []);
 
@@ -440,11 +448,15 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
     })();
   }, [world.external_id]);
 
-  // Cancel any pending auto-advance timer
+  // Cancel any pending auto-advance timer (both the 2x fallback and the no-voice check)
   const cancelAutoAdvance = useCallback(() => {
     if (autoAdvanceTimerRef.current) {
       clearTimeout(autoAdvanceTimerRef.current);
       autoAdvanceTimerRef.current = null;
+    }
+    if (noVoiceTimerRef.current) {
+      clearTimeout(noVoiceTimerRef.current);
+      noVoiceTimerRef.current = null;
     }
   }, []);
 
@@ -505,9 +517,8 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
     // Handle narration panels via narrator voice
     if (speechBubble.style === 'narration' || !speechBubble.character) {
       if (!narratorVoiceId) {
-        // No narrator voice — signal to the auto-advance effect that TTS won't play
-        // so the fallback timer fires at reading speed, not 2x
-        // (ttsWillPlayRef stays false, fallback timer will fire normally)
+        // No narrator voice — signal the fallback timer to fire at reading speed
+        ttsConfirmedNoVoiceRef.current = true;
         return;
       }
       try {
@@ -614,7 +625,11 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
     } else {
     }
 
-    if (!voiceData) return; // No voice assigned for this character
+    if (!voiceData) {
+      // Confirmed no voice — signal the fallback timer to fire at reading speed
+      ttsConfirmedNoVoiceRef.current = true;
+      return;
+    }
 
     try {
       const result = await generateSpeechMutation.mutateAsync({
@@ -663,8 +678,9 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
   // Trigger TTS when panel changes and has spoken dialogue
   useEffect(() => {
     if (!currentPanel) return;
-    // Reset TTS play flag — triggerTTS will set it to true if audio starts
+    // Reset TTS flags — triggerTTS will update them based on outcome
     ttsWillPlayRef.current = false;
+    ttsConfirmedNoVoiceRef.current = false;
     // Stop any currently playing audio
     audioRef.current?.pause();
     audioRef.current = null;
@@ -732,14 +748,30 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
           loadPanelRef.current?.(currentPanel.next_panel_id!, world.external_id);
         }, totalDelay);
       } else {
-        // Voice might play — set a generous fallback timer
-        // ttsWillPlayRef is set to true once audio.play() is called; if it's still false
-        // when the timer fires, TTS never started (no voice, lookup pending, or TTS failed)
+        // Voice might play — set a generous fallback timer.
+        // The timer checks ttsWillPlayRef (set when audio.play() is called) and
+        // ttsConfirmedNoVoiceRef (set when triggerTTS determines no voice is assigned).
+        // If either confirms no voice, advance immediately at reading speed.
+        // 2x fallback: fires if voice never started
         autoAdvanceTimerRef.current = setTimeout(() => {
           if (!ttsWillPlayRef.current) {
             loadPanelRef.current?.(currentPanel.next_panel_id!, world.external_id);
           }
         }, totalDelay * 2);
+        // Reading-speed check: fires sooner if triggerTTS confirms no voice
+        // This handles the case where voice lookup completes quickly with null result
+        const noVoiceTimer = setTimeout(() => {
+          if (ttsConfirmedNoVoiceRef.current && !ttsWillPlayRef.current) {
+            // Cancel the 2x timer and advance now
+            if (autoAdvanceTimerRef.current) { clearTimeout(autoAdvanceTimerRef.current); autoAdvanceTimerRef.current = null; }
+            loadPanelRef.current?.(currentPanel.next_panel_id!, world.external_id);
+          }
+        }, totalDelay);
+        // Patch cancelAutoAdvance to also clear noVoiceTimer
+        const origCancel = autoAdvanceTimerRef.current;
+        void origCancel; // suppress lint
+        // Store noVoiceTimer in a separate ref so cleanup can reach it
+        noVoiceTimerRef.current = noVoiceTimer;
       }
     } else if (hasAnyText) {
       // No voice — use reading time
