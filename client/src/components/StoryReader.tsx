@@ -1134,7 +1134,7 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
           className="flex items-center justify-center"
           style={{ color: 'rgba(255,255,255,0.8)', filter: 'drop-shadow(0 1px 3px rgba(0,0,0,0.9))' }}
         >
-          <ChevronLeft size={26} strokeWidth={2} />
+          <ChevronLeft size={16} strokeWidth={2} />
         </div>
       </button>
 
@@ -1179,7 +1179,7 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
             // Plain polling — SVG ring alone is enough, no inner icon
             null
           ) : (
-            <ChevronRight size={22} strokeWidth={2} />
+            <ChevronRight size={16} strokeWidth={2} />
           )}
         </div>
       </button>
