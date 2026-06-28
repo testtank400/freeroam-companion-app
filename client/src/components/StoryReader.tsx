@@ -1735,7 +1735,7 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
           {/* Pill buttons row */}
           <div
             className="flex items-center gap-1.5 px-2 py-2"
-            style={{ background: 'rgba(10,10,16,0.88)', backdropFilter: 'blur(12px)', borderTop: '1px solid rgba(255,255,255,0.07)' }}
+            style={{ background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)', borderTop: '1px solid rgba(255,255,255,0.08)' }}
           >
             {/* Home button */}
             <a
@@ -1798,7 +1798,7 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
           {activeInputMode && (
             <div
               className="flex items-start gap-2 px-3 py-2"
-              style={{ background: 'rgba(10,10,16,0.92)', borderTop: '1px solid rgba(255,255,255,0.06)' }}
+              style={{ background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)', borderTop: '1px solid rgba(255,255,255,0.08)' }}
             >
               <textarea
                 autoFocus
