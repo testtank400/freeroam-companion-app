@@ -174,6 +174,9 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
   // Character panel state
   const [charPanelOpen, setCharPanelOpen] = useState(false);
 
+  // Auto-advance pause: true while the user has an action input open or Characters panel open
+  const [autoAdvancePaused, setAutoAdvancePaused] = useState(false);
+
   // Action bar state
   const [actionBarVisible, setActionBarVisible] = useState(true);
   const [activeInputMode, setActiveInputMode] = useState<'act' | 'direct' | 'image' | null>(null);
@@ -184,10 +187,14 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
   const handleActionBarButton = (mode: 'act' | 'direct' | 'image') => {
     if (activeInputMode === mode) {
       setActiveInputMode(null);
+      // Resume auto-advance when input is dismissed (unless char panel is still open)
+      if (!charPanelOpen) setAutoAdvancePaused(false);
     } else {
       setActiveInputMode(mode);
       // Auto-fill prefix for Image mode
       setActionInput(mode === 'image' ? 'Change the image to ' : '');
+      // Pause auto-advance while user is composing an action
+      setAutoAdvancePaused(true);
     }
   };
 
@@ -594,7 +601,7 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
           audio.onended = () => {
             setIsPlayingAudio(false);
             // Auto-advance after voice ends (+ minimum delay)
-            if (autoAdvanceEnabled) {
+            if (autoAdvanceEnabled && !autoAdvancePaused) {
               autoAdvanceTimerRef.current = setTimeout(() => {
                 loadPanelRef.current?.(panel.next_panel_id!, world.external_id);
               }, Math.max(0, autoAdvanceMinDelay * 1000));
@@ -627,7 +634,7 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
   // Voice-based advance is handled in triggerTTS audio.onended
   // This handles panels without voice: text-based timer or static delay
   useEffect(() => {
-    if (!currentPanel || !autoAdvanceEnabled) return;
+    if (!currentPanel || !autoAdvanceEnabled || autoAdvancePaused) return;
     // Don't auto-advance on choice, action, or polling panels
     if (currentPanel.requires_action || currentPanel.is_action || isPolling) return;
     // Don't auto-advance if there's no next panel
@@ -667,7 +674,7 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
     }
     return () => cancelAutoAdvance();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentPanel?.panel_id, autoAdvanceEnabled]);
+  }, [currentPanel?.panel_id, autoAdvanceEnabled, autoAdvancePaused]);
 
   // Cleanup: stop polling on unmount
   useEffect(() => () => stopPolling(), [stopPolling]);
@@ -1557,7 +1564,7 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
                 value={actionInput}
                 onChange={(e) => setActionInput(e.target.value)}
                 onKeyDown={(e) => {
-                  if (e.key === 'Escape') { setActiveInputMode(null); setActionInput(''); }
+                  if (e.key === 'Escape') { setActiveInputMode(null); setActionInput(''); if (!charPanelOpen) setAutoAdvancePaused(false); }
                   if (e.key === 'Enter' && actionInput.trim()) {
                     const type = activeInputMode === 'act' ? 'take-action' : activeInputMode === 'direct' ? 'steer-story' : 'image';
                     handleSendAction(actionInput, type as 'take-action' | 'steer-story' | 'image');
@@ -1608,19 +1615,19 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
 
             {/* Toggle down button */}
             <button
-              onClick={() => { setActionBarVisible(false); setActiveInputMode(null); setActionInput(''); }}
+              onClick={() => { setActionBarVisible(false); setActiveInputMode(null); setActionInput(''); if (!charPanelOpen) setAutoAdvancePaused(false); }}
               className="flex items-center justify-center rounded-full flex-shrink-0 transition-all hover:bg-white/10"
               style={{ width: '34px', height: '34px', color: 'rgba(255,255,255,0.6)' }}
             >
               <ChevronDown size={15} strokeWidth={2} />
             </button>
 
-            {/* Pill action buttons */}
-            <div className="flex items-center gap-1.5 overflow-x-auto flex-1" style={{ scrollbarWidth: 'none' }}>
-              {[
-                { icon: <Zap size={13} strokeWidth={2} />, label: 'Act', mode: 'act' as const, action: null },
-                { icon: <Clapperboard size={13} strokeWidth={2} />, label: 'Direct', mode: 'direct' as const, action: null },
-                { icon: <Users size={13} strokeWidth={2} />, label: 'Characters', mode: null, action: () => setCharPanelOpen(true) },
+          {/* Pill action buttons */}
+          <div className="flex items-center gap-1.5 overflow-x-auto flex-1" style={{ scrollbarWidth: 'none' }}>
+            {[
+              { icon: <Zap size={13} strokeWidth={2} />, label: 'Act', mode: 'act' as const, action: null },
+              { icon: <Clapperboard size={13} strokeWidth={2} />, label: 'Direct', mode: 'direct' as const, action: null },
+              { icon: <Users size={13} strokeWidth={2} />, label: 'Characters', mode: null, action: () => { setCharPanelOpen(true); setAutoAdvancePaused(true); } },
                 { icon: <ImageLucide size={13} strokeWidth={2} />, label: 'Image', mode: 'image' as const, action: null },
                 { icon: <Share2 size={13} strokeWidth={2} />, label: 'Share', mode: null, action: null },
               ].map(({ icon, label, mode, action }) => (
@@ -1680,7 +1687,7 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
       {/* Character Panel */}
       <CharacterPanel
         isOpen={charPanelOpen}
-        onClose={() => setCharPanelOpen(false)}
+        onClose={() => { setCharPanelOpen(false); if (!activeInputMode) setAutoAdvancePaused(false); }}
         worldId={world.external_id}
         panelId={panel?.panel_id ?? ''}
         onSaveChanges={async (adds, removes) => {
@@ -1703,6 +1710,7 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
         }}
         onPlayAs={async (newMainId, oldMainId, newMainName) => {
           setCharPanelOpen(false);
+          setAutoAdvancePaused(false);
           await handleSendAction(
             `Changed main character to ${newMainName} - the story will now be written from their perspective`,
             'choice',
