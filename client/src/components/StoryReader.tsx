@@ -702,6 +702,7 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
     // Reset TTS flags — triggerTTS will update them based on outcome
     ttsWillPlayRef.current = false;
     ttsConfirmedNoVoiceRef.current = false;
+    setIsGeneratingTts(false); // Clear stuck GEN badge on panel change
     // Stop any currently playing audio
     audioRef.current?.pause();
     audioRef.current = null;
@@ -1195,11 +1196,10 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
             background: '#080808',
           }}
         >
-          {/* Menu trigger — pill indicator + large tap zone covering the top portion */}
+          {/* Menu trigger — only the pill handle is tappable; swipe-down works anywhere on the top strip */}
           <div
             className="absolute top-0 left-0 right-0 z-30 flex flex-col items-center"
-            style={{ height: '56px', cursor: 'pointer' }}
-            onClick={() => { setMenuOpen(true); pauseAutoAdvance(); }}
+            style={{ height: '56px', pointerEvents: 'none' }}
             onTouchStart={(e) => {
               touchStartY.current = e.touches[0].clientY;
               touchStartX.current = e.touches[0].clientX;
@@ -1208,7 +1208,6 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
               if (touchStartY.current === null || touchStartX.current === null) return;
               const dy = e.changedTouches[0].clientY - touchStartY.current;
               const dx = Math.abs(e.changedTouches[0].clientX - touchStartX.current);
-              // Swipe down ≥ 40px, more vertical than horizontal
               if (dy > 40 && dx < 60) {
                 setMenuOpen(true);
                 pauseAutoAdvance();
@@ -1216,15 +1215,19 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
               touchStartY.current = null;
               touchStartX.current = null;
             }}
-            aria-label="Open story menu"
           >
+            {/* Only the pill itself is clickable */}
             <div
+              onClick={() => { setMenuOpen(true); pauseAutoAdvance(); }}
+              aria-label="Open story menu"
               style={{
                 width: '36px',
                 height: '4px',
                 borderRadius: '2px',
                 background: 'rgba(255,255,255,0.5)',
                 marginTop: '8px',
+                cursor: 'pointer',
+                pointerEvents: 'auto',
               }}
             />
           </div>
@@ -1351,9 +1354,14 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
             className="absolute top-0 left-0 right-0 z-40 flex items-center justify-between px-4 pt-3 pb-2 pointer-events-none"
             style={{ background: 'linear-gradient(to bottom, rgba(0,0,0,0.5) 0%, transparent 100%)' }}
           >
-            <span style={{ fontFamily: 'Lora, Georgia, serif', fontSize: '16px', fontWeight: 700, color: 'rgba(255,255,255,0.9)', letterSpacing: '0.02em' }}>
+            <a
+              href="https://getfreeroam.com"
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ fontFamily: 'Lora, Georgia, serif', fontSize: '16px', fontWeight: 700, color: 'rgba(255,255,255,0.9)', letterSpacing: '0.02em', textDecoration: 'none', pointerEvents: 'auto' }}
+            >
               freeroam
-            </span>
+            </a>
             <div className="flex items-center gap-2 pointer-events-auto">
               {/* Debug: flashes amber while ElevenLabs is generating (cache miss) */}
               {isGeneratingTts && (
