@@ -1576,51 +1576,6 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
             </>
           )}
 
-          {/* Centered action text + spinner overlay — shown while generating next panel */}
-          {(isSendingAction || (panel?.is_action && isPolling)) && pendingActionText && (
-            <div
-              className="absolute inset-0 z-25 flex flex-col items-center justify-center"
-              style={{ pointerEvents: 'none' }}
-            >
-              {/* Pulsing circular spinner behind text — matches Freeroam */}
-              <div
-                className="absolute"
-                style={{
-                  width: '120px',
-                  height: '120px',
-                  borderRadius: '50%',
-                  border: '2px solid rgba(255,255,255,0.15)',
-                  animation: 'pulse 2s ease-in-out infinite',
-                }}
-              />
-              <div
-                className="absolute"
-                style={{
-                  width: '80px',
-                  height: '80px',
-                  borderRadius: '50%',
-                  border: '1.5px solid rgba(255,255,255,0.1)',
-                  animation: 'pulse 2s ease-in-out infinite 0.5s',
-                }}
-              />
-              <p
-                style={{
-                  fontFamily: 'Outfit-SemiBold, Outfit, sans-serif',
-                  fontSize: 'clamp(1.1rem, 4.5vw, 1.4rem)',
-                  fontWeight: 600,
-                  color: '#fff',
-                  textAlign: 'center',
-                  lineHeight: 1.3,
-                  padding: '0 32px',
-                  textShadow: '0 1px 4px rgba(0,0,0,0.8)',
-                  maxWidth: '320px',
-                }}
-              >
-                {pendingActionText}
-              </p>
-            </div>
-          )}
-
           {/* storyVnRail — right-side feedback buttons (placeholder, endpoints TBD) */}
           {panel && !isLoading && !panel.is_action && (
             <div
