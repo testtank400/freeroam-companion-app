@@ -1185,8 +1185,7 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
           className="relative"
           style={{
             height: '100dvh',
-            // On mobile (narrow screens), fill full width; on wider screens constrain to 9:16
-            width: 'min(100vw, calc(100dvh * 9 / 16))',
+            width: '100vw',
             overflow: 'hidden',
             background: '#080808',
           }}
