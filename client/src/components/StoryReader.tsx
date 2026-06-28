@@ -1284,7 +1284,7 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
             className="absolute top-0 left-0 right-0 z-40 flex items-center justify-between px-4 pt-3 pb-2 pointer-events-none"
             style={{ background: 'linear-gradient(to bottom, rgba(0,0,0,0.5) 0%, transparent 100%)' }}
           >
-            <span style={{ fontFamily: 'Outfit-SemiBold, Outfit, sans-serif', fontSize: '16px', fontWeight: 700, color: 'rgba(255,255,255,0.9)', letterSpacing: '0.02em' }}>
+            <span style={{ fontFamily: 'Lora, Georgia, serif', fontSize: '16px', fontWeight: 700, color: 'rgba(255,255,255,0.9)', letterSpacing: '0.02em' }}>
               freeroam
             </span>
             <div className="flex items-center gap-2 pointer-events-auto">
@@ -1659,7 +1659,6 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
                 style={{
                   fontFamily: 'Outfit-Regular, Outfit, sans-serif',
                   fontSize: '14px',
-                  fontStyle: 'italic',
                   color: 'rgba(255,255,255,0.85)',
                   background: 'transparent',
                   border: 'none',
