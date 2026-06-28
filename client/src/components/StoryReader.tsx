@@ -223,6 +223,8 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
   const [activeInputMode, setActiveInputMode] = useState<'act' | 'direct' | 'image' | null>(null);
   const [actionInput, setActionInput] = useState('');
   const [isSendingAction, setIsSendingAction] = useState(false);
+  // Text the user submitted — shown centered on screen while the next panel generates
+  const [pendingActionText, setPendingActionText] = useState<string | null>(null);
   const sendActionMutation = trpc.worlds.sendAction.useMutation();
 
   const handleActionBarButton = (mode: 'act' | 'direct' | 'image') => {
@@ -255,6 +257,7 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
     setIsSendingAction(true);
     setActiveInputMode(null);
     setActionInput('');
+    setPendingActionText(text.trim());
     try {
       const result = await sendActionMutation.mutateAsync({
         worldId: world.external_id,
@@ -306,6 +309,7 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
       }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to send action');
+      setPendingActionText(null);
     } finally {
       setIsSendingAction(false);
     }
@@ -473,6 +477,7 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
   const loadPanel = useCallback(async (panelId: string, worldId: string) => {
     stopPolling();
     cancelAutoAdvance();
+    setPendingActionText(null); // Clear pending action text when navigating to next panel
     setChoiceIdeasVisible(showChoiceIdeasByDefault);
     // Check panel cache first for instant navigation (only use if panel_content has real data, not [Max Depth] strings)
     const isPanelContentValid = (pc: PanelData['panel_content']) =>
@@ -1571,6 +1576,51 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
             </>
           )}
 
+          {/* Centered action text + spinner overlay — shown while generating next panel */}
+          {(isSendingAction || (panel?.is_action && isPolling)) && pendingActionText && (
+            <div
+              className="absolute inset-0 z-25 flex flex-col items-center justify-center"
+              style={{ pointerEvents: 'none' }}
+            >
+              {/* Pulsing circular spinner behind text — matches Freeroam */}
+              <div
+                className="absolute"
+                style={{
+                  width: '120px',
+                  height: '120px',
+                  borderRadius: '50%',
+                  border: '2px solid rgba(255,255,255,0.15)',
+                  animation: 'pulse 2s ease-in-out infinite',
+                }}
+              />
+              <div
+                className="absolute"
+                style={{
+                  width: '80px',
+                  height: '80px',
+                  borderRadius: '50%',
+                  border: '1.5px solid rgba(255,255,255,0.1)',
+                  animation: 'pulse 2s ease-in-out infinite 0.5s',
+                }}
+              />
+              <p
+                style={{
+                  fontFamily: 'Outfit-SemiBold, Outfit, sans-serif',
+                  fontSize: 'clamp(1.1rem, 4.5vw, 1.4rem)',
+                  fontWeight: 600,
+                  color: '#fff',
+                  textAlign: 'center',
+                  lineHeight: 1.3,
+                  padding: '0 32px',
+                  textShadow: '0 1px 4px rgba(0,0,0,0.8)',
+                  maxWidth: '320px',
+                }}
+              >
+                {pendingActionText}
+              </p>
+            </div>
+          )}
+
           {/* storyVnRail — right-side feedback buttons (placeholder, endpoints TBD) */}
           {panel && !isLoading && !panel.is_action && (
             <div
@@ -1707,50 +1757,6 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
           className="absolute left-0 right-0 z-30 transition-all duration-300"
           style={{ bottom: (actionBarVisible && !panel?.requires_action && !panel?.is_action) ? '0' : '-110px' }}
         >
-          {/* Input field row (shown when Act/Direct/Image active) */}
-          {activeInputMode && (
-            <div
-              className="flex items-center gap-2 px-3 py-2"
-              style={{ background: 'rgba(10,10,16,0.92)', borderTop: '1px solid rgba(255,255,255,0.06)' }}
-            >
-              <input
-                autoFocus
-                type="text"
-                value={actionInput}
-                onChange={(e) => setActionInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Escape') { setActiveInputMode(null); setActionInput(''); if (!charPanelOpen) resumeAutoAdvance(); }
-                  if (e.key === 'Enter' && actionInput.trim()) {
-                    const type = activeInputMode === 'act' ? 'take-action' : activeInputMode === 'direct' ? 'steer-story' : 'image';
-                    handleSendAction(actionInput, type as 'take-action' | 'steer-story' | 'image');
-                  }
-                }}
-                placeholder={activeInputMode === 'act' ? 'What do you do?' : activeInputMode === 'direct' ? 'Direct the scene...' : 'Describe the image...'}
-                className="flex-1 outline-none"
-                style={{
-                  fontFamily: 'Outfit-Regular, Outfit, sans-serif',
-                  fontSize: '14px',
-                  color: 'rgba(255,255,255,0.85)',
-                  background: 'transparent',
-                  border: 'none',
-                  minWidth: 0,
-                }}
-              />
-              <button
-                onClick={() => {
-                  if (!actionInput.trim()) return;
-                  const type = activeInputMode === 'act' ? 'take-action' : activeInputMode === 'direct' ? 'steer-story' : 'image';
-                  handleSendAction(actionInput, type as 'take-action' | 'steer-story' | 'image');
-                }}
-                disabled={!actionInput.trim() || isSendingAction}
-                className="flex items-center justify-center rounded-full flex-shrink-0 transition-all hover:brightness-125 disabled:opacity-40"
-                style={{ width: '36px', height: '36px', background: 'rgba(255,255,255,0.15)', color: '#fff' }}
-              >
-                {isSendingAction ? <Loader2 size={16} className="animate-spin" /> : <ChevronRight size={18} strokeWidth={2.5} />}
-              </button>
-            </div>
-          )}
-
           {/* Pill buttons row */}
           <div
             className="flex items-center gap-1.5 px-2 py-2"
@@ -1812,6 +1818,50 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
               ))}
             </div>
           </div>
+
+          {/* Input field row (shown when Act/Direct/Image active) — below pills, closer to keyboard */}
+          {activeInputMode && (
+            <div
+              className="flex items-center gap-2 px-3 py-2"
+              style={{ background: 'rgba(10,10,16,0.92)', borderTop: '1px solid rgba(255,255,255,0.06)' }}
+            >
+              <input
+                autoFocus
+                type="text"
+                value={actionInput}
+                onChange={(e) => setActionInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape') { setActiveInputMode(null); setActionInput(''); if (!charPanelOpen) resumeAutoAdvance(); }
+                  if (e.key === 'Enter' && actionInput.trim()) {
+                    const type = activeInputMode === 'act' ? 'take-action' : activeInputMode === 'direct' ? 'steer-story' : 'image';
+                    handleSendAction(actionInput, type as 'take-action' | 'steer-story' | 'image');
+                  }
+                }}
+                placeholder={activeInputMode === 'act' ? 'What do you do?' : activeInputMode === 'direct' ? 'Direct the scene...' : 'Describe the image...'}
+                className="flex-1 outline-none"
+                style={{
+                  fontFamily: 'Outfit-Regular, Outfit, sans-serif',
+                  fontSize: '14px',
+                  color: 'rgba(255,255,255,0.85)',
+                  background: 'transparent',
+                  border: 'none',
+                  minWidth: 0,
+                }}
+              />
+              <button
+                onClick={() => {
+                  if (!actionInput.trim()) return;
+                  const type = activeInputMode === 'act' ? 'take-action' : activeInputMode === 'direct' ? 'steer-story' : 'image';
+                  handleSendAction(actionInput, type as 'take-action' | 'steer-story' | 'image');
+                }}
+                disabled={!actionInput.trim() || isSendingAction}
+                className="flex items-center justify-center rounded-full flex-shrink-0 transition-all hover:brightness-125 disabled:opacity-40"
+                style={{ width: '36px', height: '36px', background: 'rgba(255,255,255,0.15)', color: '#fff' }}
+              >
+                {isSendingAction ? <Loader2 size={16} className="animate-spin" /> : <ChevronRight size={18} strokeWidth={2.5} />}
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Action bar collapsed — show up arrow to restore */}
