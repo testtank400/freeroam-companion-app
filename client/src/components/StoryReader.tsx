@@ -515,7 +515,8 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
             audio.onended = () => {
               setIsPlayingAudio(false);
               // Auto-advance after voice ends (+ minimum delay)
-              if (autoAdvanceEnabled) {
+              // Use ref to avoid stale closure — state value captured at TTS start time
+              if (autoAdvanceEnabled && !autoAdvancePausedRef.current) {
                 autoAdvanceTimerRef.current = setTimeout(() => {
                   loadPanelRef.current?.(panel.next_panel_id!, world.external_id);
                 }, Math.max(0, autoAdvanceMinDelay * 1000));
@@ -547,7 +548,9 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
         if (worldChar) {
           charExternalId = worldChar.external_id;
         } else {
-          // Cache miss — call getPanelCharacters to find characters added mid-story
+          // worldCharacters may be empty on initial reader open (worlds.get not yet resolved).
+          // Always call getPanelCharacters as fallback — it returns the current character list
+          // directly from Freeroam and is the reliable source for charExternalId.
           try {
             const panelChars = await utils.worlds.getPanelCharacters.fetch({
               worldId: world.external_id,
@@ -618,7 +621,8 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
           audio.onended = () => {
             setIsPlayingAudio(false);
             // Auto-advance after voice ends (+ minimum delay)
-            if (autoAdvanceEnabled && !autoAdvancePaused) {
+            // Use ref to avoid stale closure — state value captured at TTS start time
+            if (autoAdvanceEnabled && !autoAdvancePausedRef.current) {
               autoAdvanceTimerRef.current = setTimeout(() => {
                 loadPanelRef.current?.(panel.next_panel_id!, world.external_id);
               }, Math.max(0, autoAdvanceMinDelay * 1000));
@@ -646,6 +650,25 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
     triggerTTS(currentPanel);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentPanel?.panel_id]);
+
+  // Re-fire TTS when worldCharacters first arrives (async after initial load).
+  // On reader open, triggerTTS runs before worlds.get resolves, so charExternalId is
+  // undefined and the server cache lookup misses. This effect retries once characters
+  // are available, but only if audio isn't already playing (avoid duplicate generation).
+  const worldCharactersLoadedRef = useRef(false);
+  useEffect(() => {
+    if (worldCharacters.length === 0) return;
+    if (worldCharactersLoadedRef.current) return; // Only retry on the FIRST population
+    worldCharactersLoadedRef.current = true;
+    if (!currentPanel) return;
+    // Skip if audio is already playing (TTS succeeded on first attempt)
+    if (audioRef.current && !audioRef.current.paused && !audioRef.current.ended) return;
+    // Skip if audio URL already resolved (cache hit on first attempt)
+    if (currentAudioUrl) return;
+    // Retry TTS now that character IDs are available
+    triggerTTS(currentPanel);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [worldCharacters]);
 
   // Auto-advance timer: fires when panel changes and auto-advance is enabled
   // Voice-based advance is handled in triggerTTS audio.onended

@@ -66,3 +66,7 @@
 - [x] Upload finished ZIP to S3, return presigned download URL
 - [x] Update SettingsModal: start job, poll status, show download button, persist jobId in localStorage
 - [x] Add 24-hour expiry and stale job detection (15 min timeout)
+
+## StoryReader Bugs (Jun 2026)
+- [x] Fix auto-advance: opening action input or Characters panel must immediately cancel any running setTimeout, not just set a flag
+- [x] Fix initial spoken TTS cache miss: on reader open, triggerTTS fires before worldCharacters is populated, so charExternalId is undefined and the server cache lookup uses the wrong key
