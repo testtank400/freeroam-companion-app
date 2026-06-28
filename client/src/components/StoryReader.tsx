@@ -90,7 +90,15 @@ function getAccentColor(name: string): string {
   return `hsl(${hue}, 53%, 67%)`;
 }
 
-export default function StoryReader({ world, initialPanelId, onClose }: StoryReaderProps) {
+export default function StoryReader({ world, initialPanelId, onClose: onCloseProp }: StoryReaderProps) {
+  const onClose = () => {
+    // Stop any playing audio before closing
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current = null;
+    }
+    onCloseProp();
+  };
   const utils = trpc.useUtils();
   const [currentPanel, setCurrentPanel] = useState<PanelData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -1276,12 +1284,12 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
             className="absolute top-0 left-0 right-0 z-40 flex items-center justify-between px-4 pt-3 pb-2 pointer-events-none"
             style={{ background: 'linear-gradient(to bottom, rgba(0,0,0,0.5) 0%, transparent 100%)' }}
           >
-            <span style={{ fontFamily: 'Lora, Georgia, serif', fontSize: '16px', fontWeight: 700, color: 'rgba(255,255,255,0.9)', letterSpacing: '0.02em' }}>
+            <span style={{ fontFamily: 'Outfit-SemiBold, Outfit, sans-serif', fontSize: '16px', fontWeight: 700, color: 'rgba(255,255,255,0.9)', letterSpacing: '0.02em' }}>
               freeroam
             </span>
             <div className="flex items-center gap-2 pointer-events-auto">
               {panel && (
-                <span style={{ fontFamily: 'Lora, Georgia, serif', fontSize: '13px', color: 'rgba(255,255,255,0.6)', fontStyle: 'italic' }}>
+                <span style={{ fontFamily: 'Outfit-Medium, Outfit, sans-serif', fontSize: '13px', color: 'rgba(255,255,255,0.6)' }}>
                   Page {panel.depth}
                 </span>
               )}
@@ -1403,11 +1411,11 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
                   </div>
                 )}
 
-                {/* Dialogue text — Outfit SemiBold, matches Freeroam spoken style exactly */}
+                {/* Dialogue text — Outfit-SemiBold, matches Freeroam spoken style exactly */}
                 {dialogueText && (
                   <p
                     style={{
-                      fontFamily: 'Outfit, sans-serif',
+                      fontFamily: 'Outfit-SemiBold, Outfit, sans-serif',
                       fontSize: 'clamp(1.22rem, 5.3vw, 1.56rem)',
                       fontWeight: 600,
                       color: '#fff',
@@ -1426,11 +1434,11 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
                   </p>
                 )}
 
-                {/* Narration text — Outfit Medium italic, matches Freeroam narration style */}
+                {/* Narration text — Outfit-Medium italic, matches Freeroam narration style */}
                 {narrationText && (
                   <p
                     style={{
-                      fontFamily: 'Outfit, sans-serif',
+                      fontFamily: 'Outfit-Medium, Outfit, sans-serif',
                       fontSize: 'clamp(1.08rem, 4.4vw, 1.3rem)',
                       fontWeight: 500,
                       fontStyle: 'italic',
@@ -1649,7 +1657,7 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
                 placeholder={activeInputMode === 'act' ? 'What do you do?' : activeInputMode === 'direct' ? 'Direct the scene...' : 'Describe the image...'}
                 className="flex-1 outline-none"
                 style={{
-                  fontFamily: 'Lora, Georgia, serif',
+                  fontFamily: 'Outfit-Regular, Outfit, sans-serif',
                   fontSize: '14px',
                   fontStyle: 'italic',
                   color: 'rgba(255,255,255,0.85)',
