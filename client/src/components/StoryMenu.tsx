@@ -797,7 +797,7 @@ export default function StoryMenu({
       <div
         className="fixed top-0 left-0 right-0 z-[210] overflow-y-auto"
         style={{
-          maxHeight: isOpen ? '90dvh' : '0',
+          maxHeight: isOpen ? '100dvh' : '0',
           overflow: isOpen ? 'auto' : 'hidden',
           transition: 'max-height 0.35s cubic-bezier(0.4, 0, 0.2, 1)',
           background: 'rgba(10, 10, 16, 0.97)',
