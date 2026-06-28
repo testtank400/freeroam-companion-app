@@ -296,11 +296,12 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
       // Determine if this is an image action (check action text prefix)
       const isImageAction = text.toLowerCase().startsWith('change the image to');
       // Handle next panel navigation based on forward_state
-      if (result.next_panel_id && (result.forward_state === 'awaiting_choice' || result.forward_state === 'generating' || result.forward_state === 'ready')) {
-        // Next panel is already known — navigate directly without polling
+      if (result.forward_state === 'awaiting_choice' && result.next_panel_id) {
+        // Choice panel is already generated — navigate to it immediately
         await (loadPanelRef.current ?? loadPanel)(result.next_panel_id, world.external_id);
       } else if (result.forward_state === 'generating' || result.forward_state === 'ready') {
-        // Next panel not yet ready — poll until it is
+        // Poll for the next panel — Freeroam may return next_panel_id before the panel exists
+        // startPolling handles both cases: polls nextReady until ready, then loads the panel
         startPolling(result.action_panel_id, isImageAction);
       }
     } catch (err) {
@@ -409,6 +410,8 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
   }, []);
 
   // Start polling for next panel using Freeroam's sequential for-loop pattern (500ms, max 240 iterations)
+  // Polls nextReady every 500ms. When ready, loads the panel.
+  // Also retries loading known next_panel_ids that return 404 (Freeroam returns the ID before the panel exists).
   const startPolling = useCallback((panelId: string, isImage = false) => {
     // Abort any existing poll
     if (pollAbortRef.current) pollAbortRef.current.abort();
@@ -417,11 +420,16 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
     setIsPolling(true);
     if (isImage) setIsImagePolling(true);
     (async () => {
+      const cookie = localStorage.getItem('freeroam_cookie') ?? '';
+      const accountId = localStorage.getItem('freeroam_account_id') ?? '';
+      const extraHeaders: Record<string, string> = {};
+      if (cookie) extraHeaders['x-freeroam-cookie'] = cookie;
+      if (accountId) extraHeaders['x-freeroam-account-id'] = accountId;
       for (let i = 0; i < 240 && !controller.signal.aborted; i++) {
         try {
           const res = await fetch(
             `/api/trpc/worlds.nextReady?batch=1&input=${encodeURIComponent(JSON.stringify({ '0': { json: { panelId } } }))}`,
-            { credentials: 'include', signal: controller.signal }
+            { credentials: 'include', signal: controller.signal, headers: extraHeaders }
           );
           if (res.ok) {
             const data = await res.json();
