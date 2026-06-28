@@ -70,3 +70,4 @@
 ## StoryReader Bugs (Jun 2026)
 - [x] Fix auto-advance: opening action input or Characters panel must immediately cancel any running setTimeout, not just set a flag
 - [x] Fix initial spoken TTS cache miss: on reader open, triggerTTS fires before worldCharacters is populated, so charExternalId is undefined and the server cache lookup uses the wrong key
+- [x] Fix StoryReader autoplay regression where auto-advancing from an unvoiced spoken/text panel to a voiced spoken panel prevents the next voice from playing and can leave later text-panel auto-advance unreliable.

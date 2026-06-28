@@ -131,6 +131,9 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
   const [isPlayingAudio, setIsPlayingAudio] = useState(false);
   const [currentAudioUrl, setCurrentAudioUrl] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  // Set to true by triggerTTS when it successfully starts playing audio for a panel.
+  // The auto-advance fallback timer checks this to avoid firing while voice is playing or pending.
+  const ttsWillPlayRef = useRef(false);
   // Voice assignments cache: character_name -> voice data (null = no voice assigned, undefined = not yet fetched)
   const voiceCache = useRef<Map<string, { voiceId: string; voiceName: string; stability: string | null; similarityBoost: string | null; style: string | null } | null>>(new Map());
 
@@ -510,10 +513,12 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
             audioRef.current?.pause();
             const audio = new Audio(result.audioUrl);
             audioRef.current = audio;
-            audio.play().catch(() => {});
+            ttsWillPlayRef.current = true;
+            audio.play().catch(() => { ttsWillPlayRef.current = false; });
             setIsPlayingAudio(true);
             audio.onended = () => {
               setIsPlayingAudio(false);
+              ttsWillPlayRef.current = false;
               // Auto-advance after voice ends (+ minimum delay)
               // Use ref to avoid stale closure — state value captured at TTS start time
               if (autoAdvanceEnabled && !autoAdvancePausedRef.current) {
@@ -616,10 +621,12 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
           audioRef.current?.pause();
           const audio = new Audio(result.audioUrl);
           audioRef.current = audio;
-          audio.play().catch(() => {}); // Ignore autoplay policy errors
+          ttsWillPlayRef.current = true;
+          audio.play().catch(() => { ttsWillPlayRef.current = false; }); // Ignore autoplay policy errors
           setIsPlayingAudio(true);
           audio.onended = () => {
             setIsPlayingAudio(false);
+            ttsWillPlayRef.current = false;
             // Auto-advance after voice ends (+ minimum delay)
             // Use ref to avoid stale closure — state value captured at TTS start time
             if (autoAdvanceEnabled && !autoAdvancePausedRef.current) {
@@ -642,8 +649,11 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
   // Trigger TTS when panel changes and has spoken dialogue
   useEffect(() => {
     if (!currentPanel) return;
+    // Reset TTS play flag — triggerTTS will set it to true if audio starts
+    ttsWillPlayRef.current = false;
     // Stop any currently playing audio
     audioRef.current?.pause();
+    audioRef.current = null;
     setIsPlayingAudio(false);
     setCurrentAudioUrl(null);
     // Fire TTS in background (non-blocking)
@@ -691,20 +701,30 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
     // Non-speakable text (action bubbles etc.) — treat as no-voice text
     const hasAnyText = !!speechBubble?.text || !!narration;
     if (hasSpeakableText && voiceEnabled) {
-      // Voice MIGHT handle it (if a voice is assigned) — set a fallback timer
-      // The fallback fires only if audio hasn't started playing by then
       const textForTiming = speechBubble?.text ?? narration ?? '';
       const wordCount = textForTiming.split(/\s+/).length;
       const wordsPerMinute = 200 * autoAdvanceReadingSpeed;
       const readingTimeMs = (wordCount / wordsPerMinute) * 60 * 1000;
       const totalDelay = Math.max(autoAdvanceMinDelay * 1000, readingTimeMs);
-      // Set a generous fallback timer (2x reading time) in case voice doesn't play
-      autoAdvanceTimerRef.current = setTimeout(() => {
-        // Only advance if audio isn't playing (voice handled it already)
-        if (!audioRef.current || audioRef.current.paused || audioRef.current.ended) {
+      // Check if we already know this character has no voice (cached as null)
+      const charName = speechBubble?.character;
+      const cachedVoice = charName ? voiceCache.current.get(charName) : undefined;
+      const knownNoVoice = cachedVoice === null; // null = fetched and confirmed no voice
+      if (knownNoVoice) {
+        // No voice assigned — use reading-time timer directly (no 2x wait)
+        autoAdvanceTimerRef.current = setTimeout(() => {
           loadPanelRef.current?.(currentPanel.next_panel_id!, world.external_id);
-        }
-      }, totalDelay * 2);
+        }, totalDelay);
+      } else {
+        // Voice might play — set a generous fallback timer
+        // ttsWillPlayRef is set to true once audio.play() is called; if it's still false
+        // when the timer fires, TTS never started (no voice, lookup pending, or TTS failed)
+        autoAdvanceTimerRef.current = setTimeout(() => {
+          if (!ttsWillPlayRef.current) {
+            loadPanelRef.current?.(currentPanel.next_panel_id!, world.external_id);
+          }
+        }, totalDelay * 2);
+      }
     } else if (hasAnyText) {
       // No voice — use reading time
       const textForTiming2 = speechBubble?.text ?? narration ?? '';
