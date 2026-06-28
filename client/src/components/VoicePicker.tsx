@@ -34,7 +34,9 @@ export default function VoicePicker({ characterId, characterName, onClose }: Voi
   const [style, setStyle] = useState('0');
   const [isSaving, setIsSaving] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(true);
-  const [testPhrase, setTestPhrase] = useState(DEFAULT_TEST_PHRASES[0]);
+  const [testPhrasePreset, setTestPhrasePreset] = useState<string>(DEFAULT_TEST_PHRASES[0]);
+  const [customPhrase, setCustomPhrase] = useState('');
+  const testPhrase = testPhrasePreset === '__custom__' ? customPhrase : testPhrasePreset;
   const [isTesting, setIsTesting] = useState(false);
   const [testPlayingVoiceId, setTestPlayingVoiceId] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -363,30 +365,44 @@ export default function VoicePicker({ characterId, characterName, onClose }: Voi
                     </div>
 
                     {/* Test phrase row */}
-                    <div className="flex items-center gap-2">
-                      <select
-                        value={testPhrase}
-                        onChange={e => setTestPhrase(e.target.value)}
-                        className="flex-1 rounded-lg px-2 py-1.5 outline-none"
-                        style={{ fontSize: '12px', color: '#fff', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', cursor: 'pointer' }}
-                      >
-                        {DEFAULT_TEST_PHRASES.map(p => (
-                          <option key={p} value={p} style={{ background: '#1a1a24' }}>{p}</option>
-                        ))}
-                      </select>
-                      <button
-                        onClick={handleTestVoice}
-                        disabled={isTesting}
-                        className="flex-shrink-0 flex items-center gap-1.5 rounded-lg px-3 py-1.5 transition-all hover:brightness-125 disabled:opacity-50"
-                        style={{ fontSize: '12px', fontWeight: 500, color: '#fff', background: testPlayingVoiceId === selectedVoiceId ? '#8b5cf6' : 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.15)', cursor: 'pointer', whiteSpace: 'nowrap' }}
-                      >
-                        {isTesting
-                          ? <><Loader2 size={12} className="animate-spin" /> Testing…</>
-                          : testPlayingVoiceId === selectedVoiceId
-                            ? <><Pause size={12} /> Stop</>
-                            : <><Play size={12} /> Test</>
-                        }
-                      </button>
+                    <div className="flex flex-col gap-1.5">
+                      <div className="flex items-center gap-2">
+                        <select
+                          value={testPhrasePreset}
+                          onChange={e => setTestPhrasePreset(e.target.value)}
+                          className="flex-1 rounded-lg px-2 py-1.5 outline-none"
+                          style={{ fontSize: '12px', color: '#fff', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', cursor: 'pointer' }}
+                        >
+                          {DEFAULT_TEST_PHRASES.map(p => (
+                            <option key={p} value={p} style={{ background: '#1a1a24' }}>{p}</option>
+                          ))}
+                          <option value="__custom__" style={{ background: '#1a1a24' }}>Custom…</option>
+                        </select>
+                        <button
+                          onClick={handleTestVoice}
+                          disabled={isTesting || !testPhrase.trim()}
+                          className="flex-shrink-0 flex items-center gap-1.5 rounded-lg px-3 py-1.5 transition-all hover:brightness-125 disabled:opacity-50"
+                          style={{ fontSize: '12px', fontWeight: 500, color: '#fff', background: testPlayingVoiceId === selectedVoiceId ? '#8b5cf6' : 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.15)', cursor: 'pointer', whiteSpace: 'nowrap' }}
+                        >
+                          {isTesting
+                            ? <><Loader2 size={12} className="animate-spin" /> Testing…</>
+                            : testPlayingVoiceId === selectedVoiceId
+                              ? <><Pause size={12} /> Stop</>
+                              : <><Play size={12} /> Test</>
+                          }
+                        </button>
+                      </div>
+                      {testPhrasePreset === '__custom__' && (
+                        <input
+                          type="text"
+                          value={customPhrase}
+                          onChange={e => setCustomPhrase(e.target.value)}
+                          placeholder="Type your own test phrase…"
+                          className="w-full outline-none rounded-lg px-2 py-1.5"
+                          style={{ fontSize: '12px', color: '#fff', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}
+                          autoFocus
+                        />
+                      )}
                     </div>
                   </div>
                 )}
