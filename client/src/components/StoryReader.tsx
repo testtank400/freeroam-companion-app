@@ -1089,7 +1089,7 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
           <div
             className="absolute top-0 left-0 right-0 z-30 flex flex-col items-center"
             style={{ height: '56px', cursor: 'pointer' }}
-            onClick={() => setMenuOpen(true)}
+            onClick={() => { setMenuOpen(true); pauseAutoAdvance(); }}
             onTouchStart={(e) => {
               touchStartY.current = e.touches[0].clientY;
               touchStartX.current = e.touches[0].clientX;
@@ -1101,6 +1101,7 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
               // Swipe down ≥ 40px, more vertical than horizontal
               if (dy > 40 && dx < 60) {
                 setMenuOpen(true);
+                pauseAutoAdvance();
               }
               touchStartY.current = null;
               touchStartX.current = null;
@@ -1121,7 +1122,7 @@ export default function StoryReader({ world, initialPanelId, onClose }: StoryRea
           {/* Story menu overlay */}
           <StoryMenu
             isOpen={menuOpen}
-            onClose={() => setMenuOpen(false)}
+            onClose={() => { setMenuOpen(false); if (!activeInputMode && !charPanelOpen) resumeAutoAdvance(); }}
             world={world}
             currentDepth={panel?.depth ?? 0}
             progressPanel={progressPanel}
