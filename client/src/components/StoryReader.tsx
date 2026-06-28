@@ -1131,10 +1131,10 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
         aria-label="Previous panel"
       >
         <div
-          className="flex items-center justify-center rounded-full transition-all hover:bg-white/20"
-          style={{ width: '40px', height: '40px', background: 'rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.8)' }}
+          className="flex items-center justify-center"
+          style={{ color: 'rgba(255,255,255,0.8)', filter: 'drop-shadow(0 1px 3px rgba(0,0,0,0.9))' }}
         >
-          <ChevronLeft size={22} strokeWidth={2} />
+          <ChevronLeft size={26} strokeWidth={2} />
         </div>
       </button>
 
@@ -1147,8 +1147,8 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
         aria-label="Next panel"
       >
         <div
-          className="relative flex items-center justify-center rounded-full transition-all hover:bg-white/20"
-          style={{ width: '40px', height: '40px', background: 'rgba(255,255,255,0.1)', color: regenerateTimedOut ? '#ef4444' : 'rgba(255,255,255,0.8)' }}
+          className="relative flex items-center justify-center"
+          style={{ width: '40px', height: '40px', color: regenerateTimedOut ? '#ef4444' : 'rgba(255,255,255,0.8)', filter: 'drop-shadow(0 1px 3px rgba(0,0,0,0.9))' }}
         >
           {/* Spinning ring for polling states */}
           {(isPolling || isRegeneratePolling || regenerateTimedOut) && (
