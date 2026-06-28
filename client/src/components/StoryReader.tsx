@@ -163,13 +163,16 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
   const [autoAdvanceStaticDelay, setAutoAdvanceStaticDelay] = useState(3);
   const autoAdvanceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const currentPanelIdRef = useRef<string | null>(null);
+  // Refs for values used inside async closures (audio.onended) to avoid stale captures
+  const autoAdvanceEnabledRef = useRef(false);
+  const autoAdvanceMinDelayRef = useRef(2);
   const { data: autoAdvanceSetting } = trpc.voice.getSetting.useQuery({ key: 'auto_advance_enabled' });
   const { data: readingSpeedSetting } = trpc.voice.getSetting.useQuery({ key: 'auto_advance_reading_speed' });
   const { data: minDelaySetting } = trpc.voice.getSetting.useQuery({ key: 'auto_advance_min_delay' });
   const { data: staticDelaySetting } = trpc.voice.getSetting.useQuery({ key: 'auto_advance_static_delay' });
-  useEffect(() => { if (autoAdvanceSetting !== undefined) setAutoAdvanceEnabled(autoAdvanceSetting === 'true'); }, [autoAdvanceSetting]);
+  useEffect(() => { if (autoAdvanceSetting !== undefined) { const v = autoAdvanceSetting === 'true'; setAutoAdvanceEnabled(v); autoAdvanceEnabledRef.current = v; } }, [autoAdvanceSetting]);
   useEffect(() => { if (readingSpeedSetting) setAutoAdvanceReadingSpeed(parseFloat(readingSpeedSetting)); }, [readingSpeedSetting]);
-  useEffect(() => { if (minDelaySetting) setAutoAdvanceMinDelay(parseFloat(minDelaySetting)); }, [minDelaySetting]);
+  useEffect(() => { if (minDelaySetting) { const v = parseFloat(minDelaySetting); setAutoAdvanceMinDelay(v); autoAdvanceMinDelayRef.current = v; } }, [minDelaySetting]);
   useEffect(() => { if (staticDelaySetting) setAutoAdvanceStaticDelay(parseFloat(staticDelaySetting)); }, [staticDelaySetting]);
 
   // Swipe-down gesture to open menu
@@ -501,7 +504,12 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
 
     // Handle narration panels via narrator voice
     if (speechBubble.style === 'narration' || !speechBubble.character) {
-      if (!narratorVoiceId) return; // No narrator voice assigned
+      if (!narratorVoiceId) {
+        // No narrator voice — signal to the auto-advance effect that TTS won't play
+        // so the fallback timer fires at reading speed, not 2x
+        // (ttsWillPlayRef stays false, fallback timer will fire normally)
+        return;
+      }
       try {
         const result = await generateSpeechMutation.mutateAsync({
           panelId: panel.panel_id,
@@ -527,12 +535,11 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
             audio.onended = () => {
               setIsPlayingAudio(false);
               ttsWillPlayRef.current = false;
-              // Auto-advance after voice ends (+ minimum delay)
-              // Use ref to avoid stale closure — state value captured at TTS start time
-              if (autoAdvanceEnabled && !autoAdvancePausedRef.current) {
+              // Use refs — state values are stale in async closures
+              if (autoAdvanceEnabledRef.current && !autoAdvancePausedRef.current) {
                 autoAdvanceTimerRef.current = setTimeout(() => {
                   loadPanelRef.current?.(panel.next_panel_id!, world.external_id);
-                }, Math.max(0, autoAdvanceMinDelay * 1000));
+                }, Math.max(0, autoAdvanceMinDelayRef.current * 1000));
               }
             };
           }
@@ -635,12 +642,11 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
           audio.onended = () => {
             setIsPlayingAudio(false);
             ttsWillPlayRef.current = false;
-            // Auto-advance after voice ends (+ minimum delay)
-            // Use ref to avoid stale closure — state value captured at TTS start time
-            if (autoAdvanceEnabled && !autoAdvancePausedRef.current) {
+            // Use refs — state values are stale in async closures
+            if (autoAdvanceEnabledRef.current && !autoAdvancePausedRef.current) {
               autoAdvanceTimerRef.current = setTimeout(() => {
                 loadPanelRef.current?.(panel.next_panel_id!, world.external_id);
-              }, Math.max(0, autoAdvanceMinDelay * 1000));
+              }, Math.max(0, autoAdvanceMinDelayRef.current * 1000));
             }
           };
         }
@@ -714,12 +720,14 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
       const wordsPerMinute = 200 * autoAdvanceReadingSpeed;
       const readingTimeMs = (wordCount / wordsPerMinute) * 60 * 1000;
       const totalDelay = Math.max(autoAdvanceMinDelay * 1000, readingTimeMs);
-      // Check if we already know this character has no voice (cached as null)
+      // Determine if we know for certain that no voice will play on this panel
       const charName = speechBubble?.character;
       const cachedVoice = charName ? voiceCache.current.get(charName) : undefined;
-      const knownNoVoice = cachedVoice === null; // null = fetched and confirmed no voice
-      if (knownNoVoice) {
-        // No voice assigned — use reading-time timer directly (no 2x wait)
+      const knownNoVoice = cachedVoice === null; // null = fetched, confirmed no voice
+      // Narration panels with no narrator voice set will never play TTS
+      const isNarrationNoVoice = (isNarrationBubble || hasNarrationField) && !narratorVoiceId;
+      if (knownNoVoice || isNarrationNoVoice) {
+        // Definitely no voice — use reading-time timer directly
         autoAdvanceTimerRef.current = setTimeout(() => {
           loadPanelRef.current?.(currentPanel.next_panel_id!, world.external_id);
         }, totalDelay);
