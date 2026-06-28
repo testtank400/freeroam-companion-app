@@ -1355,11 +1355,6 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
               freeroam
             </span>
             <div className="flex items-center gap-2 pointer-events-auto">
-              {panel && (
-                <span style={{ fontFamily: 'Outfit-Medium, Outfit, sans-serif', fontSize: '13px', color: 'rgba(255,255,255,0.6)' }}>
-                  Page {panel.depth}
-                </span>
-              )}
               {/* Debug: flashes amber while ElevenLabs is generating (cache miss) */}
               {isGeneratingTts && (
                 <span
@@ -1391,28 +1386,35 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
                   }
                 </button>
               )}
-              {/* Bookmark toggle */}
+              {/* X button — no circle */}
+              <button
+                onClick={onClose}
+                className="flex items-center justify-center transition-all"
+                style={{ color: 'rgba(255,255,255,0.75)', filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.8))' }}
+                title="Close"
+              >
+                <X size={16} strokeWidth={2} />
+              </button>
+              {/* Bookmark toggle — no circle, after X */}
               <button
                 onClick={handleToggleBookmark}
                 disabled={isTogglingBookmark || !panel}
-                className="flex items-center justify-center rounded-full transition-all hover:bg-white/20 disabled:opacity-40"
-                style={{ width: '28px', height: '28px', background: 'rgba(255,255,255,0.12)', color: isBookmarked ? '#f5c440' : 'rgba(255,255,255,0.75)' }}
+                className="flex items-center justify-center transition-all disabled:opacity-40"
+                style={{ color: isBookmarked ? '#f5c440' : 'rgba(255,255,255,0.75)', filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.8))' }}
                 title={isBookmarked ? 'Remove bookmark' : 'Add bookmark'}
               >
                 <Bookmark
-                  size={14}
+                  size={16}
                   strokeWidth={2}
                   fill={isBookmarked ? '#f5c440' : 'none'}
                 />
               </button>
-              <button
-                onClick={onClose}
-                className="flex items-center justify-center rounded-full transition-all hover:bg-white/20"
-                style={{ width: '28px', height: '28px', background: 'rgba(255,255,255,0.12)', color: 'rgba(255,255,255,0.75)' }}
-                title="Close"
-              >
-                <X size={14} strokeWidth={2} />
-              </button>
+              {/* Page number — after bookmark */}
+              {panel && (
+                <span style={{ fontFamily: 'Outfit-Medium, Outfit, sans-serif', fontSize: '13px', color: 'rgba(255,255,255,0.6)' }}>
+                  Page {panel.depth}
+                </span>
+              )}
             </div>
           </div>
 
