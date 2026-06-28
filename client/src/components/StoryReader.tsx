@@ -875,13 +875,20 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
   // Poll when forward_state is "ready" but next_panel_id is null (AI generating)
   useEffect(() => {
     if (!currentPanel) return;
-    const { forward_state, next_panel_id } = currentPanel;
-    if (forward_state === 'ready' && !next_panel_id) {
+    const { forward_state, next_panel_id, is_action } = currentPanel;
+    // Auto-poll when the AI is still generating the next panel.
+    // This is independent of auto-advance — Freeroam always polls on action panels.
+    // Conditions: (1) any panel with forward_state=ready but no next_panel_id yet,
+    //             (2) action panels with forward_state=generating (AI working)
+    const shouldPoll =
+      (forward_state === 'ready' && !next_panel_id) ||
+      (is_action && forward_state === 'generating' && !next_panel_id);
+    if (shouldPoll) {
       startPolling(currentPanel.panel_id);
     }
     return () => stopPolling();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentPanel?.panel_id, currentPanel?.forward_state, currentPanel?.next_panel_id]);
+  }, [currentPanel?.panel_id, currentPanel?.forward_state, currentPanel?.next_panel_id, currentPanel?.is_action]);
 
   const handleNavigate = useCallback(async (direction: 'prev' | 'next') => {
     // Allow backward navigation even while polling; only block forward when actively polling
