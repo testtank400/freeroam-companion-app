@@ -139,6 +139,8 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
   const [isPlayingAudio, setIsPlayingAudio] = useState(false);
   const [currentAudioUrl, setCurrentAudioUrl] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  // Debug: flashes true briefly when ElevenLabs is actually called (cache miss)
+  const [isGeneratingTts, setIsGeneratingTts] = useState(false);
   // Set to true by triggerTTS when it successfully starts playing audio for a panel.
   // The auto-advance fallback timer checks this to avoid firing while voice is playing or pending.
   const ttsWillPlayRef = useRef(false);
@@ -522,6 +524,7 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
         return;
       }
       try {
+        setIsGeneratingTts(true);
         const result = await generateSpeechMutation.mutateAsync({
           panelId: panel.panel_id,
           worldId: world.external_id,
@@ -533,6 +536,7 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
           similarityBoost: '0.75',
           style: '0',
         });
+        if (result.fromCache) setIsGeneratingTts(false); // cache hit — clear immediately
         if (!checkStillCurrent()) return; // Panel changed while awaiting — abort
         if (result.audioUrl) {
           setCurrentAudioUrl(result.audioUrl);
@@ -541,6 +545,7 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
             const audio = new Audio(result.audioUrl);
             audioRef.current = audio;
             ttsWillPlayRef.current = true;
+            setIsGeneratingTts(false); // generation done, audio starting
             audio.play().catch(() => { ttsWillPlayRef.current = false; });
             setIsPlayingAudio(true);
             audio.onended = () => {
@@ -555,7 +560,7 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
             };
           }
         }
-      } catch { /* Non-fatal */ }
+      } catch { setIsGeneratingTts(false); /* Non-fatal */ }
       return;
     }
 
@@ -632,6 +637,7 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
     }
 
     try {
+      setIsGeneratingTts(true);
       const result = await generateSpeechMutation.mutateAsync({
         panelId: panel.panel_id,
         worldId: world.external_id,
@@ -643,6 +649,7 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
         similarityBoost: voiceData.similarityBoost ?? '0.75',
         style: voiceData.style ?? '0',
       });
+      if (result.fromCache) setIsGeneratingTts(false); // cache hit — clear immediately
       if (!checkStillCurrent()) return; // Panel changed while awaiting — abort
 
       if (result.audioUrl) {
@@ -652,6 +659,7 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
           const audio = new Audio(result.audioUrl);
           audioRef.current = audio;
           ttsWillPlayRef.current = true;
+          setIsGeneratingTts(false); // generation done, audio starting
           audio.play().catch(() => { ttsWillPlayRef.current = false; }); // Ignore autoplay policy errors
           setIsPlayingAudio(true);
           audio.onended = () => {
@@ -1331,6 +1339,15 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
               {panel && (
                 <span style={{ fontFamily: 'Outfit-Medium, Outfit, sans-serif', fontSize: '13px', color: 'rgba(255,255,255,0.6)' }}>
                   Page {panel.depth}
+                </span>
+              )}
+              {/* Debug: flashes amber while ElevenLabs is generating (cache miss) */}
+              {isGeneratingTts && (
+                <span
+                  className="animate-pulse"
+                  style={{ fontSize: '10px', fontFamily: 'Outfit-Medium, Outfit, sans-serif', fontWeight: 600, color: '#f59e0b', background: 'rgba(245,158,11,0.15)', border: '1px solid rgba(245,158,11,0.4)', borderRadius: '6px', padding: '2px 6px', letterSpacing: '0.05em' }}
+                >
+                  GEN
                 </span>
               )}
               {/* Audio controls — shown when audio is available */}
