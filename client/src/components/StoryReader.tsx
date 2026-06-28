@@ -1689,20 +1689,29 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
                   <div style={{ flex: 1, height: '1px', background: 'rgba(255,255,255,0.15)' }} />
                 </div>
               )}
-              <div className="flex items-center gap-2 px-4 py-2 rounded-2xl" style={{ background: 'rgba(30,30,40,0.85)', border: '1px solid rgba(255,255,255,0.15)', backdropFilter: 'blur(10px)' }}>
-                <input
-                  type="text"
+              <div className="flex items-start gap-2 px-4 py-2 rounded-2xl" style={{ background: 'rgba(30,30,40,0.85)', border: '1px solid rgba(255,255,255,0.15)', backdropFilter: 'blur(10px)' }}>
+                <textarea
+                  rows={1}
                   value={actionInput}
-                  onChange={(e) => setActionInput(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === 'Enter' && actionInput.trim()) handleSendAction(actionInput, 'choice'); }}
+                  onChange={(e) => {
+                    setActionInput(e.target.value);
+                    e.target.style.height = 'auto';
+                    e.target.style.height = e.target.scrollHeight + 'px';
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      if (actionInput.trim()) handleSendAction(actionInput, 'choice');
+                    }
+                  }}
                   placeholder="Or type your own"
-                  className="flex-1 outline-none"
-                  style={{ fontFamily: 'Outfit, sans-serif', fontSize: '14px', color: 'rgba(255,255,255,0.75)', background: 'transparent', border: 'none', minWidth: 0 }}
+                  className="flex-1 outline-none resize-none"
+                  style={{ fontFamily: 'Outfit, sans-serif', fontSize: '14px', color: 'rgba(255,255,255,0.75)', background: 'transparent', border: 'none', minWidth: 0, lineHeight: 1.5, overflow: 'hidden', maxHeight: '120px', overflowY: 'auto' }}
                 />
                 <button
                   onClick={() => { if (actionInput.trim()) handleSendAction(actionInput, 'choice'); }}
                   disabled={!actionInput.trim() || isSendingAction}
-                  className="flex items-center justify-center rounded-full flex-shrink-0 transition-all hover:brightness-125 disabled:opacity-40"
+                  className="flex items-center justify-center rounded-full flex-shrink-0 transition-all hover:brightness-125 disabled:opacity-40 mt-0.5"
                   style={{ width: '32px', height: '32px', background: 'rgba(255,255,255,0.15)', color: '#fff' }}
                 >
                   {isSendingAction ? <Loader2 size={14} className="animate-spin" /> : <ChevronRight size={16} strokeWidth={2.5} />}
