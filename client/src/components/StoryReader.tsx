@@ -1780,23 +1780,32 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
           {/* Input field row (shown when Act/Direct/Image active) — below pills, closer to keyboard */}
           {activeInputMode && (
             <div
-              className="flex items-center gap-2 px-3 py-2"
+              className="flex items-start gap-2 px-3 py-2"
               style={{ background: 'rgba(10,10,16,0.92)', borderTop: '1px solid rgba(255,255,255,0.06)' }}
             >
-              <input
+              <textarea
                 autoFocus
-                type="text"
+                rows={1}
                 value={actionInput}
-                onChange={(e) => setActionInput(e.target.value)}
+                onChange={(e) => {
+                  setActionInput(e.target.value);
+                  // Auto-grow: reset height then set to scrollHeight
+                  e.target.style.height = 'auto';
+                  e.target.style.height = e.target.scrollHeight + 'px';
+                }}
                 onKeyDown={(e) => {
                   if (e.key === 'Escape') { setActiveInputMode(null); setActionInput(''); if (!charPanelOpen) resumeAutoAdvance(); }
-                  if (e.key === 'Enter' && actionInput.trim()) {
-                    const type = activeInputMode === 'act' ? 'take-action' : activeInputMode === 'direct' ? 'steer-story' : 'image';
-                    handleSendAction(actionInput, type as 'take-action' | 'steer-story' | 'image');
+                  // Enter without shift submits; shift+Enter adds newline
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    if (actionInput.trim()) {
+                      const type = activeInputMode === 'act' ? 'take-action' : activeInputMode === 'direct' ? 'steer-story' : 'image';
+                      handleSendAction(actionInput, type as 'take-action' | 'steer-story' | 'image');
+                    }
                   }
                 }}
                 placeholder={activeInputMode === 'act' ? 'What do you do?' : activeInputMode === 'direct' ? 'Direct the scene...' : 'Describe the image...'}
-                className="flex-1 outline-none"
+                className="flex-1 outline-none resize-none"
                 style={{
                   fontFamily: 'Outfit-Regular, Outfit, sans-serif',
                   fontSize: '14px',
@@ -1804,6 +1813,10 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
                   background: 'transparent',
                   border: 'none',
                   minWidth: 0,
+                  lineHeight: 1.5,
+                  overflow: 'hidden',
+                  maxHeight: '120px',
+                  overflowY: 'auto',
                 }}
               />
               <button
@@ -1813,7 +1826,7 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
                   handleSendAction(actionInput, type as 'take-action' | 'steer-story' | 'image');
                 }}
                 disabled={!actionInput.trim() || isSendingAction}
-                className="flex items-center justify-center rounded-full flex-shrink-0 transition-all hover:brightness-125 disabled:opacity-40"
+                className="flex items-center justify-center rounded-full flex-shrink-0 transition-all hover:brightness-125 disabled:opacity-40 mt-0.5"
                 style={{ width: '36px', height: '36px', background: 'rgba(255,255,255,0.15)', color: '#fff' }}
               >
                 {isSendingAction ? <Loader2 size={16} className="animate-spin" /> : <ChevronRight size={18} strokeWidth={2.5} />}
