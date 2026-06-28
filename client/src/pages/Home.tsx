@@ -920,8 +920,8 @@ export default function Home() {
             ═══════════════════════════════════════════════════════════════════════════ */}
         {viewMode === 'worlds' && (
           <>
-            {/* World Collections strip — shown when not inside a collection */}
-            {!activeWorldCollectionId && (
+            {/* World Collections strip — shown when not inside a collection and not searching */}
+            {!activeWorldCollectionId && !worldsSearchQuery.trim() && (
               <div className="mb-8">
                 <div className="flex items-center justify-between mb-3">
                   <span
@@ -1491,8 +1491,8 @@ export default function Home() {
 
 
 
-        {/* Sub-collections grid — shown when viewing a parent collection that has sub-collections */}
-        {activeCollectionId && activeParentCollectionId && (() => {
+        {/* Sub-collections grid — shown when viewing a parent collection that has sub-collections and not searching */}
+        {activeCollectionId && activeParentCollectionId && !searchQuery.trim() && (() => {
           const subCols = [...collections.filter(c => c.parentId === activeParentCollectionId)].sort((a, b) => a.name.localeCompare(b.name));
           if (subCols.length === 0) return null;
           return (
