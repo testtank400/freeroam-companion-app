@@ -1,5 +1,5 @@
 import { trpc } from '@/lib/trpc';
-import { Search, Play, Pause, Mic, X, Check, Upload, Loader2 } from 'lucide-react';
+import { Search, Play, Pause, Mic, X, Check, Upload, Loader2, ChevronDown, ChevronUp } from 'lucide-react';
 import { useRef, useState } from 'react';
 import { toast } from 'sonner';
 
@@ -17,6 +17,12 @@ interface VoicePickerProps {
   onClose: () => void;
 }
 
+const DEFAULT_TEST_PHRASES = [
+  "The battlefield falls silent. Only the wind remains.",
+  "I've been waiting for you. Longer than you know.",
+  "This world was never meant for people like us.",
+];
+
 export default function VoicePicker({ characterId, characterName, onClose }: VoicePickerProps) {
   const [activeTab, setActiveTab] = useState<'select' | 'clone'>('select');
   const [search, setSearch] = useState('');
@@ -27,6 +33,10 @@ export default function VoicePicker({ characterId, characterName, onClose }: Voi
   const [similarityBoost, setSimilarityBoost] = useState('0.75');
   const [style, setStyle] = useState('0');
   const [isSaving, setIsSaving] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(true);
+  const [testPhrase, setTestPhrase] = useState(DEFAULT_TEST_PHRASES[0]);
+  const [isTesting, setIsTesting] = useState(false);
+  const [testPlayingVoiceId, setTestPlayingVoiceId] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   // Clone voice state
@@ -42,6 +52,7 @@ export default function VoicePicker({ characterId, characterName, onClose }: Voi
   const assignVoiceMutation = trpc.voice.assignVoice.useMutation();
   const removeVoiceMutation = trpc.voice.removeVoice.useMutation();
   const cloneVoiceMutation = trpc.voice.cloneVoice.useMutation();
+  const testVoiceMutation = trpc.voice.testVoice.useMutation();
   const utils = trpc.useUtils();
 
   // Seed from existing assignment
@@ -65,6 +76,7 @@ export default function VoicePicker({ characterId, characterName, onClose }: Voi
     audioRef.current?.pause();
     audioRef.current = null;
     setPlayingVoiceId(null);
+    setTestPlayingVoiceId(null);
   };
 
   const handleClose = () => {
@@ -72,23 +84,55 @@ export default function VoicePicker({ characterId, characterName, onClose }: Voi
     onClose();
   };
 
+  const playAudio = (url: string, onEnd?: () => void) => {
+    stopAudio();
+    const audio = new Audio(url);
+    audioRef.current = audio;
+    audio.play();
+    audio.onended = () => {
+      setPlayingVoiceId(null);
+      setTestPlayingVoiceId(null);
+      onEnd?.();
+    };
+  };
+
   const handlePreview = (voice: Voice) => {
     if (!voice.preview_url) return;
     if (playingVoiceId === voice.voice_id) {
-      audioRef.current?.pause();
-      setPlayingVoiceId(null);
+      stopAudio();
       return;
     }
-    audioRef.current?.pause();
-    const audio = new Audio(voice.preview_url);
-    audioRef.current = audio;
-    audio.play();
+    playAudio(voice.preview_url);
     setPlayingVoiceId(voice.voice_id);
-    audio.onended = () => setPlayingVoiceId(null);
+  };
+
+  const handleTestVoice = async () => {
+    if (!selectedVoiceId || !testPhrase.trim()) return;
+    if (testPlayingVoiceId === selectedVoiceId) {
+      stopAudio();
+      return;
+    }
+    setIsTesting(true);
+    try {
+      const { audioUrl } = await testVoiceMutation.mutateAsync({
+        voiceId: selectedVoiceId,
+        text: testPhrase.trim(),
+        stability,
+        similarityBoost,
+        style,
+      });
+      playAudio(audioUrl);
+      setTestPlayingVoiceId(selectedVoiceId);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Test failed');
+    } finally {
+      setIsTesting(false);
+    }
   };
 
   const handleSave = async () => {
     if (!selectedVoiceId || !selectedVoiceName) return;
+    stopAudio();
     setIsSaving(true);
     try {
       await assignVoiceMutation.mutateAsync({
@@ -111,6 +155,7 @@ export default function VoicePicker({ characterId, characterName, onClose }: Voi
   };
 
   const handleRemove = async () => {
+    stopAudio();
     setIsSaving(true);
     try {
       await removeVoiceMutation.mutateAsync({ characterId });
@@ -129,7 +174,6 @@ export default function VoicePicker({ characterId, characterName, onClose }: Voi
     if (!cloneFile || !cloneName.trim()) return;
     setIsCloning(true);
     try {
-      // Convert file to base64
       const base64 = await new Promise<string>((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = () => {
@@ -151,7 +195,6 @@ export default function VoicePicker({ characterId, characterName, onClose }: Voi
 
       toast.success(`Voice "${cloneName}" cloned successfully!`);
       await refetchVoices();
-      // Auto-select the newly cloned voice
       setSelectedVoiceId(result.voice_id);
       setSelectedVoiceName(cloneName.trim());
       setActiveTab('select');
@@ -171,14 +214,14 @@ export default function VoicePicker({ characterId, characterName, onClose }: Voi
         className="flex flex-col rounded-2xl"
         style={{
           width: 'min(520px, 95vw)',
-          height: 'min(600px, 90vh)',
+          maxHeight: '92vh',
           background: '#1a1a24',
           border: '1px solid rgba(255,255,255,0.1)',
           overflow: 'hidden',
         }}
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+        <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: '1px solid rgba(255,255,255,0.08)', flexShrink: 0 }}>
           <div>
             <h2 style={{ fontSize: '16px', fontWeight: 700, color: '#fff', margin: 0 }}>Voice for {characterName}</h2>
             {currentAssignment && (
@@ -193,7 +236,7 @@ export default function VoicePicker({ characterId, characterName, onClose }: Voi
         </div>
 
         {/* Tabs */}
-        <div className="flex" style={{ borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+        <div className="flex" style={{ borderBottom: '1px solid rgba(255,255,255,0.08)', flexShrink: 0 }}>
           {(['select', 'clone'] as const).map(tab => (
             <button
               key={tab}
@@ -216,7 +259,7 @@ export default function VoicePicker({ characterId, characterName, onClose }: Voi
         {activeTab === 'select' ? (
           <>
             {/* Search */}
-            <div className="px-4 py-3" style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+            <div className="px-4 py-3" style={{ borderBottom: '1px solid rgba(255,255,255,0.06)', flexShrink: 0 }}>
               <div className="flex items-center gap-2 rounded-xl px-3 py-2" style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}>
                 <Search size={14} style={{ color: 'rgba(255,255,255,0.4)' }} />
                 <input
@@ -232,7 +275,7 @@ export default function VoicePicker({ characterId, characterName, onClose }: Voi
             </div>
 
             {/* Voice list */}
-            <div className="flex-1 overflow-y-auto px-3 py-2" style={{ minHeight: 0 }}>
+            <div className="overflow-y-auto px-3 py-2" style={{ minHeight: 0, flex: '1 1 0' }}>
               {voicesLoading ? (
                 <div className="flex items-center justify-center py-12">
                   <Loader2 size={24} className="animate-spin" style={{ color: 'rgba(255,255,255,0.4)' }} />
@@ -282,30 +325,76 @@ export default function VoicePicker({ characterId, characterName, onClose }: Voi
               )}
             </div>
 
-            {/* Voice settings */}
+            {/* Voice settings — collapsible */}
             {selectedVoiceId && (
-              <div className="px-4 py-3" style={{ borderTop: '1px solid rgba(255,255,255,0.06)', background: 'rgba(255,255,255,0.02)' }}>
-                <p style={{ fontSize: '11px', fontWeight: 600, color: 'rgba(255,255,255,0.5)', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: '10px' }}>Voice Settings</p>
-                <div className="grid gap-3" style={{ gridTemplateColumns: '1fr 1fr 1fr' }}>
-                  {[
-                    { label: 'Stability', value: stability, setter: setStability },
-                    { label: 'Similarity', value: similarityBoost, setter: setSimilarityBoost },
-                    { label: 'Style', value: style, setter: setStyle },
-                  ].map(({ label, value, setter }) => (
-                    <div key={label}>
-                      <div className="flex items-center justify-between mb-1">
-                        <span style={{ fontSize: '11px', color: 'rgba(255,255,255,0.5)' }}>{label}</span>
-                        <span style={{ fontSize: '11px', color: 'rgba(255,255,255,0.7)', fontVariantNumeric: 'tabular-nums' }}>{parseFloat(value).toFixed(2)}</span>
-                      </div>
-                      <input type="range" min="0" max="1" step="0.01" value={value} onChange={e => setter(e.target.value)} className="w-full" style={{ accentColor: '#8b5cf6', height: '4px' }} />
+              <div style={{ borderTop: '1px solid rgba(255,255,255,0.06)', background: 'rgba(255,255,255,0.02)', flexShrink: 0 }}>
+                {/* Settings header — click to toggle */}
+                <button
+                  onClick={() => setSettingsOpen(v => !v)}
+                  className="w-full flex items-center justify-between px-4 py-2.5 transition-all hover:brightness-125"
+                  style={{ background: 'none', border: 'none', cursor: 'pointer' }}
+                >
+                  <span style={{ fontSize: '11px', fontWeight: 600, color: 'rgba(255,255,255,0.5)', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+                    Voice Settings
+                  </span>
+                  {settingsOpen
+                    ? <ChevronUp size={14} style={{ color: 'rgba(255,255,255,0.4)' }} />
+                    : <ChevronDown size={14} style={{ color: 'rgba(255,255,255,0.4)' }} />
+                  }
+                </button>
+
+                {settingsOpen && (
+                  <div className="px-4 pb-3">
+                    {/* Sliders */}
+                    <div className="grid gap-3 mb-3" style={{ gridTemplateColumns: '1fr 1fr 1fr' }}>
+                      {[
+                        { label: 'Stability', value: stability, setter: setStability },
+                        { label: 'Similarity', value: similarityBoost, setter: setSimilarityBoost },
+                        { label: 'Style', value: style, setter: setStyle },
+                      ].map(({ label, value, setter }) => (
+                        <div key={label}>
+                          <div className="flex items-center justify-between mb-1">
+                            <span style={{ fontSize: '11px', color: 'rgba(255,255,255,0.5)' }}>{label}</span>
+                            <span style={{ fontSize: '11px', color: 'rgba(255,255,255,0.7)', fontVariantNumeric: 'tabular-nums' }}>{parseFloat(value).toFixed(2)}</span>
+                          </div>
+                          <input type="range" min="0" max="1" step="0.01" value={value} onChange={e => setter(e.target.value)} className="w-full" style={{ accentColor: '#8b5cf6', height: '4px' }} />
+                        </div>
+                      ))}
                     </div>
-                  ))}
-                </div>
+
+                    {/* Test phrase row */}
+                    <div className="flex items-center gap-2">
+                      <select
+                        value={testPhrase}
+                        onChange={e => setTestPhrase(e.target.value)}
+                        className="flex-1 rounded-lg px-2 py-1.5 outline-none"
+                        style={{ fontSize: '12px', color: '#fff', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', cursor: 'pointer' }}
+                      >
+                        {DEFAULT_TEST_PHRASES.map(p => (
+                          <option key={p} value={p} style={{ background: '#1a1a24' }}>{p}</option>
+                        ))}
+                      </select>
+                      <button
+                        onClick={handleTestVoice}
+                        disabled={isTesting}
+                        className="flex-shrink-0 flex items-center gap-1.5 rounded-lg px-3 py-1.5 transition-all hover:brightness-125 disabled:opacity-50"
+                        style={{ fontSize: '12px', fontWeight: 500, color: '#fff', background: testPlayingVoiceId === selectedVoiceId ? '#8b5cf6' : 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.15)', cursor: 'pointer', whiteSpace: 'nowrap' }}
+                      >
+                        {isTesting
+                          ? <><Loader2 size={12} className="animate-spin" /> Testing…</>
+                          : testPlayingVoiceId === selectedVoiceId
+                            ? <><Pause size={12} /> Stop</>
+                            : <><Play size={12} /> Test</>
+                        }
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
             {/* Footer */}
-            <div className="flex items-center gap-2 px-4 py-3" style={{ borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+            <div className="flex items-center gap-2 px-4 py-3" style={{ borderTop: '1px solid rgba(255,255,255,0.08)', flexShrink: 0 }}>
               {currentAssignment && (
                 <button onClick={handleRemove} disabled={isSaving} className="flex items-center gap-1.5 rounded-xl px-3 py-2 transition-all hover:brightness-125 disabled:opacity-50" style={{ fontSize: '13px', fontWeight: 500, color: '#f87171', background: 'rgba(248,113,113,0.1)', border: '1px solid rgba(248,113,113,0.2)', cursor: 'pointer' }}>
                   Remove

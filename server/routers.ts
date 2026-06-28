@@ -2372,6 +2372,41 @@ export const appRouter = router({
         return { ok: true };
       }),
 
+    /** Test a voice with given settings — generates TTS for a short phrase, no caching */
+    testVoice: publicProcedure
+      .input(z.object({
+        voiceId: z.string(),
+        text: z.string().max(300),
+        stability: z.string().optional().default('0.5'),
+        similarityBoost: z.string().optional().default('0.75'),
+        style: z.string().optional().default('0'),
+      }))
+      .mutation(async ({ input }) => {
+        const apiKey = process.env.ELEVEN_LABS_API_KEY;
+        if (!apiKey) throw new Error('ElevenLabs API key not configured');
+        const ttsRes = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${input.voiceId}?output_format=mp3_44100_128`, {
+          method: 'POST',
+          headers: { 'xi-api-key': apiKey, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            text: input.text,
+            model_id: 'eleven_v3',
+            voice_settings: {
+              stability: parseFloat(input.stability),
+              similarity_boost: parseFloat(input.similarityBoost),
+              style: parseFloat(input.style),
+            },
+          }),
+        });
+        if (!ttsRes.ok) {
+          const errText = await ttsRes.text();
+          throw new Error(`ElevenLabs TTS failed (${ttsRes.status}): ${errText}`);
+        }
+        const audioBuffer = Buffer.from(await ttsRes.arrayBuffer());
+        const fileKey = `tts-test/${input.voiceId}-${Date.now()}.mp3`;
+        const { url: audioUrl } = await storagePut(fileKey, audioBuffer, 'audio/mpeg');
+        return { audioUrl };
+      }),
+
     /** Get an app setting by key */
     getSetting: publicProcedure
       .input(z.object({ key: z.string() }))
