@@ -1545,7 +1545,8 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
                       textShadow: '0 0 1px rgba(0,0,0,0.55), 0 1px 2px rgba(0,0,0,0.75)',
                       margin: 0,
                       textAlign: 'center',
-                      paddingLeft: '26px',
+                      paddingLeft: 0,
+                      paddingRight: 0,
                       animation: 'storyVnLineIn .34s cubic-bezier(.22, .61, .36, 1) both',
                     }}
                   >
