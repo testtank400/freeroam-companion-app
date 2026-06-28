@@ -61,6 +61,17 @@ export default function VoicePicker({ characterId, characterName, onClose }: Voi
     Object.values(v.labels).some(l => l.toLowerCase().includes(search.toLowerCase()))
   );
 
+  const stopAudio = () => {
+    audioRef.current?.pause();
+    audioRef.current = null;
+    setPlayingVoiceId(null);
+  };
+
+  const handleClose = () => {
+    stopAudio();
+    onClose();
+  };
+
   const handlePreview = (voice: Voice) => {
     if (!voice.preview_url) return;
     if (playingVoiceId === voice.voice_id) {
@@ -176,7 +187,7 @@ export default function VoicePicker({ characterId, characterName, onClose }: Voi
               </p>
             )}
           </div>
-          <button onClick={onClose} style={{ color: 'rgba(255,255,255,0.5)', background: 'none', border: 'none', cursor: 'pointer' }}>
+          <button onClick={handleClose} style={{ color: 'rgba(255,255,255,0.5)', background: 'none', border: 'none', cursor: 'pointer' }}>
             <X size={18} />
           </button>
         </div>
@@ -301,7 +312,7 @@ export default function VoicePicker({ characterId, characterName, onClose }: Voi
                 </button>
               )}
               <div className="flex-1" />
-              <button onClick={onClose} className="rounded-xl px-4 py-2 transition-all hover:brightness-125" style={{ fontSize: '13px', fontWeight: 500, color: 'rgba(255,255,255,0.6)', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', cursor: 'pointer' }}>
+              <button onClick={handleClose} className="rounded-xl px-4 py-2 transition-all hover:brightness-125" style={{ fontSize: '13px', fontWeight: 500, color: 'rgba(255,255,255,0.6)', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', cursor: 'pointer' }}>
                 Cancel
               </button>
               <button onClick={handleSave} disabled={!selectedVoiceId || isSaving} className="flex items-center gap-1.5 rounded-xl px-4 py-2 transition-all hover:brightness-125 disabled:opacity-50" style={{ fontSize: '13px', fontWeight: 600, color: '#fff', background: '#8b5cf6', border: 'none', cursor: 'pointer' }}>
@@ -389,7 +400,7 @@ export default function VoicePicker({ characterId, characterName, onClose }: Voi
 
             <div className="flex items-center gap-2 pt-2">
               <div className="flex-1" />
-              <button onClick={onClose} className="rounded-xl px-4 py-2 transition-all hover:brightness-125" style={{ fontSize: '13px', fontWeight: 500, color: 'rgba(255,255,255,0.6)', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', cursor: 'pointer' }}>
+              <button onClick={handleClose} className="rounded-xl px-4 py-2 transition-all hover:brightness-125" style={{ fontSize: '13px', fontWeight: 500, color: 'rgba(255,255,255,0.6)', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', cursor: 'pointer' }}>
                 Cancel
               </button>
               <button
