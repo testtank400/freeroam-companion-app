@@ -1200,11 +1200,9 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
       {/* Center panel */}
       <div className="absolute inset-0 flex items-start justify-center">
         <div
-          className="relative"
+          className="relative story-reader-panel"
           style={{
             height: '100dvh',
-            // Full width on mobile, 9:16 portrait on desktop
-            width: 'min(100vw, calc(100dvh * 9 / 16))',
             overflow: 'hidden',
             background: '#080808',
           }}

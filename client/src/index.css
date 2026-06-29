@@ -67,6 +67,16 @@
   --ring: oklch(0.769 0.188 70.08 / 0.5);
 }
 
+/* StoryReader panel — full width on mobile, 9:16 portrait on desktop */
+.story-reader-panel {
+  width: 100vw;
+}
+@media (min-width: 600px) {
+  .story-reader-panel {
+    width: min(100vw, calc(100dvh * 9 / 16));
+  }
+}
+
 @keyframes storyVnLineIn {
   0% { opacity: 0; transform: translateY(8px); }
   to { opacity: 1; transform: translateY(0); }
