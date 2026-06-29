@@ -1029,6 +1029,9 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
   // Keyboard navigation
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
+      // Don't intercept keys when the user is typing in an input or textarea
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA') return;
       if (e.key === 'ArrowLeft') handleNavigate('prev');
       if (e.key === 'ArrowRight') handleNavigate('next');
       if (e.key === 'Escape') onClose();
