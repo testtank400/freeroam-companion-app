@@ -2329,7 +2329,7 @@ export const appRouter = router({
           },
         };
         if (input.languageCode) ttsBody.language_code = input.languageCode;
-        if (input.previousText) ttsBody.previous_text = input.previousText;
+        // NOTE: previous_text is not supported by eleven_v3 — omitted
 
         const ttsRes = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${input.voiceId}?output_format=mp3_44100_128`, {
           method: 'POST',
