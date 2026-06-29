@@ -2233,6 +2233,7 @@ export const appRouter = router({
         stability: z.string().optional().default('0.5'),
         similarityBoost: z.string().optional().default('0.75'),
         style: z.string().optional().default('0'),
+        languageCode: z.string().nullable().optional(),
       }))
       .mutation(async ({ input }) => {
         const { getDb } = await import('./db');
@@ -2249,6 +2250,7 @@ export const appRouter = router({
             stability: input.stability,
             similarityBoost: input.similarityBoost,
             style: input.style,
+            languageCode: input.languageCode ?? null,
           }).where(eq(characterVoices.characterId, input.characterId));
         } else {
           await db.insert(characterVoices).values({
@@ -2258,6 +2260,7 @@ export const appRouter = router({
             stability: input.stability,
             similarityBoost: input.similarityBoost,
             style: input.style,
+            languageCode: input.languageCode ?? null,
           });
         }
         return { ok: true };
@@ -2288,6 +2291,8 @@ export const appRouter = router({
         stability: z.string().optional().default('0.5'),
         similarityBoost: z.string().optional().default('0.75'),
         style: z.string().optional().default('0'),
+        languageCode: z.string().nullable().optional(), // ISO 639-1 code to anchor accent
+        previousText: z.string().nullable().optional(), // Previous panel dialogue for continuity
       }))
       .mutation(async ({ input }) => {
         const { getDb } = await import('./db');
@@ -2314,21 +2319,25 @@ export const appRouter = router({
         const apiKey = process.env.ELEVEN_LABS_API_KEY;
         if (!apiKey) throw new Error('ElevenLabs API key not configured');
 
+        const ttsBody: Record<string, unknown> = {
+          text: input.text,
+          model_id: 'eleven_v3',
+          voice_settings: {
+            stability: parseFloat(input.stability),
+            similarity_boost: parseFloat(input.similarityBoost),
+            style: parseFloat(input.style),
+          },
+        };
+        if (input.languageCode) ttsBody.language_code = input.languageCode;
+        if (input.previousText) ttsBody.previous_text = input.previousText;
+
         const ttsRes = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${input.voiceId}?output_format=mp3_44100_128`, {
           method: 'POST',
           headers: {
             'xi-api-key': apiKey,
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({
-            text: input.text,
-            model_id: 'eleven_v3',
-            voice_settings: {
-              stability: parseFloat(input.stability),
-              similarity_boost: parseFloat(input.similarityBoost),
-              style: parseFloat(input.style),
-            },
-          }),
+          body: JSON.stringify(ttsBody),
         });
 
         if (!ttsRes.ok) {
@@ -2380,22 +2389,25 @@ export const appRouter = router({
         stability: z.string().optional().default('0.5'),
         similarityBoost: z.string().optional().default('0.75'),
         style: z.string().optional().default('0'),
+        languageCode: z.string().nullable().optional(),
       }))
       .mutation(async ({ input }) => {
         const apiKey = process.env.ELEVEN_LABS_API_KEY;
         if (!apiKey) throw new Error('ElevenLabs API key not configured');
+        const testBody: Record<string, unknown> = {
+          text: input.text,
+          model_id: 'eleven_v3',
+          voice_settings: {
+            stability: parseFloat(input.stability),
+            similarity_boost: parseFloat(input.similarityBoost),
+            style: parseFloat(input.style),
+          },
+        };
+        if (input.languageCode) testBody.language_code = input.languageCode;
         const ttsRes = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${input.voiceId}?output_format=mp3_44100_128`, {
           method: 'POST',
           headers: { 'xi-api-key': apiKey, 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            text: input.text,
-            model_id: 'eleven_v3',
-            voice_settings: {
-              stability: parseFloat(input.stability),
-              similarity_boost: parseFloat(input.similarityBoost),
-              style: parseFloat(input.style),
-            },
-          }),
+          body: JSON.stringify(testBody),
         });
         if (!ttsRes.ok) {
           const errText = await ttsRes.text();

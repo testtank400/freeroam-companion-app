@@ -166,6 +166,8 @@ export const characterVoices = mysqlTable("character_voices", {
   similarityBoost: text("similarityBoost").default("0.75"),
   /** Voice style setting (0.0 - 1.0, optional) */
   style: text("style").default("0"),
+  /** ISO 639-1 language code to anchor accent (e.g. 'it', 'en', 'fr'). Passed to ElevenLabs as language_code. */
+  languageCode: varchar("languageCode", { length: 16 }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });

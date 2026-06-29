@@ -148,7 +148,7 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
   // Lets the fallback timer fire at reading speed instead of 2x.
   const ttsConfirmedNoVoiceRef = useRef(false);
   // Voice assignments cache: character_name -> voice data (null = no voice assigned, undefined = not yet fetched)
-  const voiceCache = useRef<Map<string, { voiceId: string; voiceName: string; stability: string | null; similarityBoost: string | null; style: string | null } | null>>(new Map());
+  const voiceCache = useRef<Map<string, { voiceId: string; voiceName: string; stability: string | null; similarityBoost: string | null; style: string | null; languageCode: string | null } | null>>(new Map());
 
   // Load auto-play setting on mount
   const { data: autoPlaySetting } = trpc.voice.getSetting.useQuery({ key: 'auto_play_enabled' });
@@ -538,6 +538,9 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
       }
       try {
         setIsGeneratingTts(true);
+        // Get previous panel's text for continuity context
+        const prevPanel = panel.prev_panel_id ? panelCache.current.get(panel.prev_panel_id) : null;
+        const prevText = prevPanel?.panel_content?.speech_bubbles?.[0]?.text ?? prevPanel?.panel_content?.narration ?? undefined;
         const result = await generateSpeechMutation.mutateAsync({
           panelId: panel.panel_id,
           worldId: world.external_id,
@@ -548,6 +551,7 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
           stability: '0.5',
           similarityBoost: '0.75',
           style: '0',
+          previousText: prevText,
         });
         if (result.fromCache) setIsGeneratingTts(false); // cache hit — clear immediately
         if (!checkStillCurrent()) return; // Panel changed while awaiting — abort
@@ -651,6 +655,9 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
 
     try {
       setIsGeneratingTts(true);
+      // Get previous panel's text for continuity context
+      const prevPanelForChar = panel.prev_panel_id ? panelCache.current.get(panel.prev_panel_id) : null;
+      const prevTextForChar = prevPanelForChar?.panel_content?.speech_bubbles?.[0]?.text ?? prevPanelForChar?.panel_content?.narration ?? undefined;
       const result = await generateSpeechMutation.mutateAsync({
         panelId: panel.panel_id,
         worldId: world.external_id,
@@ -661,6 +668,8 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
         stability: voiceData.stability ?? '0.5',
         similarityBoost: voiceData.similarityBoost ?? '0.75',
         style: voiceData.style ?? '0',
+        languageCode: voiceData.languageCode ?? undefined,
+        previousText: prevTextForChar,
       });
       if (result.fromCache) setIsGeneratingTts(false); // cache hit — clear immediately
       if (!checkStillCurrent()) return; // Panel changed while awaiting — abort

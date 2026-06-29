@@ -32,6 +32,7 @@ export default function VoicePicker({ characterId, characterName, onClose }: Voi
   const [stability, setStability] = useState('0.5');
   const [similarityBoost, setSimilarityBoost] = useState('0.75');
   const [style, setStyle] = useState('0');
+  const [languageCode, setLanguageCode] = useState<string>('');  // '' = no override
   const [isSaving, setIsSaving] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(true);
   const [testPhrasePreset, setTestPhrasePreset] = useState<string>(DEFAULT_TEST_PHRASES[0]);
@@ -65,6 +66,7 @@ export default function VoicePicker({ characterId, characterName, onClose }: Voi
     setStability(currentAssignment.stability ?? '0.5');
     setSimilarityBoost(currentAssignment.similarityBoost ?? '0.75');
     setStyle(currentAssignment.style ?? '0');
+    setLanguageCode(currentAssignment.languageCode ?? '');
     setSeeded(true);
   }
 
@@ -122,6 +124,7 @@ export default function VoicePicker({ characterId, characterName, onClose }: Voi
         stability,
         similarityBoost,
         style,
+        languageCode: languageCode || null,
       });
       playAudio(audioUrl);
       setTestPlayingVoiceId(selectedVoiceId);
@@ -144,6 +147,7 @@ export default function VoicePicker({ characterId, characterName, onClose }: Voi
         stability,
         similarityBoost,
         style,
+        languageCode: languageCode || null,
       });
       utils.voice.getVoiceAssignment.invalidate({ characterId });
       utils.voice.listVoicedCharacters.invalidate();
@@ -362,6 +366,43 @@ export default function VoicePicker({ characterId, characterName, onClose }: Voi
                           <input type="range" min="0" max="1" step="0.01" value={value} onChange={e => setter(e.target.value)} className="w-full" style={{ accentColor: '#8b5cf6', height: '4px' }} />
                         </div>
                       ))}
+                    </div>
+
+                    {/* Language code dropdown */}
+                    <div className="mb-3">
+                      <div className="flex items-center justify-between mb-1">
+                        <span style={{ fontSize: '11px', color: 'rgba(255,255,255,0.5)' }}>Accent / Language</span>
+                        {languageCode && (
+                          <button onClick={() => setLanguageCode('')} style={{ fontSize: '10px', color: 'rgba(255,255,255,0.4)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>Clear</button>
+                        )}
+                      </div>
+                      <select
+                        value={languageCode}
+                        onChange={e => setLanguageCode(e.target.value)}
+                        className="w-full rounded-lg px-2 py-1.5 outline-none"
+                        style={{ fontSize: '12px', color: '#fff', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', cursor: 'pointer' }}
+                      >
+                        <option value="" style={{ background: '#1a1a24' }}>No override (auto-detect)</option>
+                        <option value="en" style={{ background: '#1a1a24' }}>English</option>
+                        <option value="en-US" style={{ background: '#1a1a24' }}>English (US)</option>
+                        <option value="en-GB" style={{ background: '#1a1a24' }}>English (UK)</option>
+                        <option value="en-AU" style={{ background: '#1a1a24' }}>English (Australian)</option>
+                        <option value="it" style={{ background: '#1a1a24' }}>Italian</option>
+                        <option value="fr" style={{ background: '#1a1a24' }}>French</option>
+                        <option value="de" style={{ background: '#1a1a24' }}>German</option>
+                        <option value="es" style={{ background: '#1a1a24' }}>Spanish</option>
+                        <option value="pt" style={{ background: '#1a1a24' }}>Portuguese</option>
+                        <option value="ja" style={{ background: '#1a1a24' }}>Japanese</option>
+                        <option value="ko" style={{ background: '#1a1a24' }}>Korean</option>
+                        <option value="zh" style={{ background: '#1a1a24' }}>Chinese</option>
+                        <option value="ru" style={{ background: '#1a1a24' }}>Russian</option>
+                        <option value="ar" style={{ background: '#1a1a24' }}>Arabic</option>
+                        <option value="hi" style={{ background: '#1a1a24' }}>Hindi</option>
+                        <option value="pl" style={{ background: '#1a1a24' }}>Polish</option>
+                        <option value="nl" style={{ background: '#1a1a24' }}>Dutch</option>
+                        <option value="sv" style={{ background: '#1a1a24' }}>Swedish</option>
+                        <option value="tr" style={{ background: '#1a1a24' }}>Turkish</option>
+                      </select>
                     </div>
 
                     {/* Test phrase row */}
