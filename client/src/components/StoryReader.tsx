@@ -1191,7 +1191,8 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
           className="relative"
           style={{
             height: '100dvh',
-            width: '100vw',
+            // Full width on mobile, 9:16 portrait on desktop
+            width: 'min(100vw, calc(100dvh * 9 / 16))',
             overflow: 'hidden',
             background: '#080808',
           }}
