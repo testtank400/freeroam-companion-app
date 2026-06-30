@@ -815,6 +815,9 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
   // Keep loadPanelRef updated with latest loadPanel
   useEffect(() => { loadPanelRef.current = loadPanel; }, [loadPanel]);
 
+  // Track whether the reader has advanced past the first panel load
+  const hasNavigatedRef = useRef(false);
+
   // Trigger TTS when panel changes and has spoken dialogue
   useEffect(() => {
     if (!currentPanel) return;
@@ -827,6 +830,12 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
     audioRef.current = null;
     setIsPlayingAudio(false);
     setCurrentAudioUrl(null);
+    // Skip auto-play on the very first panel load — TTS cache may not be ready yet.
+    // The worldCharacters retry effect below will re-fire TTS once characters are loaded.
+    if (!hasNavigatedRef.current) {
+      hasNavigatedRef.current = true;
+      return;
+    }
     // Fire TTS in background (non-blocking)
     triggerTTS(currentPanel);
   // eslint-disable-next-line react-hooks/exhaustive-deps
