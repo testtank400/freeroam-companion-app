@@ -2382,17 +2382,12 @@ export const appRouter = router({
               // Find the message output item and extract its text content
               const msgItem = grokData?.output?.find(o => o.type === 'message');
               const msgContent = msgItem?.content?.find(c => c.type === 'output_text')?.text;
-              console.log('[TTS Grok] tagged result:', JSON.stringify(msgContent?.slice(0, 200)));
               if (typeof msgContent === 'string') {
                 const lines = msgContent.trim().split('\n').map((l: string) => l.trim()).filter(Boolean);
-                console.log('[TTS Grok] lines count:', lines.length, 'turns count:', turns.length);
                 if (lines.length === turns.length) {
                   lines.forEach((line: string, i: number) => { taggedTexts[i] = line; });
                 }
               }
-            } else {
-              const errText = await grokRes.text();
-              console.error('[TTS Grok] API error:', grokRes.status, errText.slice(0, 200));
             }
           }
         } catch {
