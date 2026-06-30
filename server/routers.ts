@@ -2447,6 +2447,31 @@ export const appRouter = router({
         return { audioUrl, fromCache: false, generating: false };
       }),
 
+    /** Poll whether a TTS clip has finished generating — returns audioUrl when ready, null when still generating */
+    checkTtsReady: publicProcedure
+      .input(z.object({
+        panelId: z.string(),
+        worldId: z.string(),
+        characterId: z.string(),
+      }))
+      .query(async ({ input }) => {
+        const { getDb } = await import('./db');
+        const { ttsCache } = await import('../drizzle/schema');
+        const { eq, and } = await import('drizzle-orm');
+        const db = await getDb();
+        if (!db) return { audioUrl: null, ready: false };
+        const rows = await db.select().from(ttsCache).where(
+          and(
+            eq(ttsCache.panelId, input.panelId),
+            eq(ttsCache.worldId, input.worldId),
+            eq(ttsCache.characterId, input.characterId),
+          )
+        ).limit(1);
+        if (rows.length === 0) return { audioUrl: null, ready: false };
+        if (rows[0].status === 'generating') return { audioUrl: null, ready: false };
+        return { audioUrl: rows[0].audioUrl, ready: true };
+      }),
+
     /** Clear all TTS cache entries (optionally filtered by characterId) */
     clearVoiceCache: publicProcedure
       .input(z.object({ characterId: z.string().optional() }))

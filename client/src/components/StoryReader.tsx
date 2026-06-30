@@ -564,11 +564,48 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
         });
         if (result.fromCache) setIsGeneratingTts(false); // cache hit — clear immediately
         if (!checkStillCurrent()) return; // Panel changed while awaiting — abort
-        // If another request is already generating this panel's audio, retry after a delay
+        // If another request is already generating this panel's audio, poll until ready
         if ((result as { generating?: boolean }).generating && !result.audioUrl) {
-          setIsGeneratingTts(false);
-          await new Promise(resolve => setTimeout(resolve, 3000));
-          if (checkStillCurrent()) triggerTTS(panel);
+          // Poll checkTtsReady every 2s until status=ready, then play inline
+          const pollCharId = '__narrator__';
+          let pollUrl: string | null = null;
+          for (let attempt = 0; attempt < 15; attempt++) {
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            if (!checkStillCurrent()) return;
+            try {
+              const poll = await utils.voice.checkTtsReady.fetch({
+                panelId: panel.panel_id,
+                worldId: world.external_id,
+                characterId: pollCharId,
+              });
+              if (poll.ready && poll.audioUrl) { pollUrl = poll.audioUrl; break; }
+            } catch { /* non-fatal */ }
+          }
+          if (!checkStillCurrent()) return;
+          if (pollUrl) {
+            setCurrentAudioUrl(pollUrl);
+            if (autoPlayEnabled) {
+              audioRef.current?.pause();
+              const audio = new Audio(pollUrl);
+              audioRef.current = audio;
+              ttsWillPlayRef.current = true;
+              setIsGeneratingTts(false);
+              audio.play().catch(() => { ttsWillPlayRef.current = false; });
+              setIsPlayingAudio(true);
+              audio.onended = () => {
+                setIsPlayingAudio(false);
+                ttsWillPlayRef.current = false;
+                if (autoAdvanceEnabledRef.current && !autoAdvancePausedRef.current) {
+                  autoAdvanceTimerRef.current = setTimeout(() => {
+                    loadPanelRef.current?.(panel.next_panel_id!, world.external_id);
+                  }, Math.max(0, autoAdvanceMinDelayRef.current * 1000));
+                }
+              };
+            }
+          } else {
+            setIsGeneratingTts(false);
+            ttsConfirmedNoVoiceRef.current = true; // treat as no-voice for auto-advance
+          }
           return;
         }
         if (result.audioUrl) {
@@ -703,11 +740,47 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
       if (result.fromCache) setIsGeneratingTts(false); // cache hit — clear immediately
       if (!checkStillCurrent()) return; // Panel changed while awaiting — abort
 
-      // If another request is already generating this panel's audio, retry after a delay
+      // If another request is already generating this panel's audio, poll until ready
       if ((result as { generating?: boolean }).generating && !result.audioUrl) {
-        setIsGeneratingTts(false);
-        await new Promise(resolve => setTimeout(resolve, 3000));
-        if (checkStillCurrent()) triggerTTS(panel);
+        const pollCharId = charExternalId ?? '__narrator__';
+        let pollUrl: string | null = null;
+        for (let attempt = 0; attempt < 15; attempt++) {
+          await new Promise(resolve => setTimeout(resolve, 2000));
+          if (!checkStillCurrent()) return;
+          try {
+            const poll = await utils.voice.checkTtsReady.fetch({
+              panelId: panel.panel_id,
+              worldId: world.external_id,
+              characterId: pollCharId,
+            });
+            if (poll.ready && poll.audioUrl) { pollUrl = poll.audioUrl; break; }
+          } catch { /* non-fatal */ }
+        }
+        if (!checkStillCurrent()) return;
+        if (pollUrl) {
+          setCurrentAudioUrl(pollUrl);
+          if (autoPlayEnabled) {
+            audioRef.current?.pause();
+            const audio = new Audio(pollUrl);
+            audioRef.current = audio;
+            ttsWillPlayRef.current = true;
+            setIsGeneratingTts(false);
+            audio.play().catch(() => { ttsWillPlayRef.current = false; });
+            setIsPlayingAudio(true);
+            audio.onended = () => {
+              setIsPlayingAudio(false);
+              ttsWillPlayRef.current = false;
+              if (autoAdvanceEnabledRef.current && !autoAdvancePausedRef.current) {
+                autoAdvanceTimerRef.current = setTimeout(() => {
+                  loadPanelRef.current?.(panel.next_panel_id!, world.external_id);
+                }, Math.max(0, autoAdvanceMinDelayRef.current * 1000));
+              }
+            };
+          }
+        } else {
+          setIsGeneratingTts(false);
+          ttsConfirmedNoVoiceRef.current = true; // treat as no-voice for auto-advance
+        }
         return;
       }
 
