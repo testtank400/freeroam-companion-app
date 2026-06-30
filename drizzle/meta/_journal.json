@@ -43,6 +43,13 @@
       "when": 1782721752933,
       "tag": "0005_secret_iron_monger",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "5",
+      "when": 1782788995693,
+      "tag": "0006_magical_apocalypse",
+      "breakpoints": true
     }
   ]
 }

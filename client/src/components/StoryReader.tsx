@@ -564,6 +564,13 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
         });
         if (result.fromCache) setIsGeneratingTts(false); // cache hit — clear immediately
         if (!checkStillCurrent()) return; // Panel changed while awaiting — abort
+        // If another request is already generating this panel's audio, retry after a delay
+        if ((result as { generating?: boolean }).generating && !result.audioUrl) {
+          setIsGeneratingTts(false);
+          await new Promise(resolve => setTimeout(resolve, 3000));
+          if (checkStillCurrent()) triggerTTS(panel);
+          return;
+        }
         if (result.audioUrl) {
           setCurrentAudioUrl(result.audioUrl);
           if (autoPlayEnabled) {
@@ -695,6 +702,14 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
       });
       if (result.fromCache) setIsGeneratingTts(false); // cache hit — clear immediately
       if (!checkStillCurrent()) return; // Panel changed while awaiting — abort
+
+      // If another request is already generating this panel's audio, retry after a delay
+      if ((result as { generating?: boolean }).generating && !result.audioUrl) {
+        setIsGeneratingTts(false);
+        await new Promise(resolve => setTimeout(resolve, 3000));
+        if (checkStillCurrent()) triggerTTS(panel);
+        return;
+      }
 
       if (result.audioUrl) {
         setCurrentAudioUrl(result.audioUrl);

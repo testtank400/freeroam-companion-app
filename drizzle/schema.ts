@@ -190,8 +190,10 @@ export const ttsCache = mysqlTable("tts_cache", {
   characterId: varchar("characterId", { length: 128 }).notNull().default('__narrator__'),
   /** ElevenLabs voice ID used to generate this clip */
   voiceId: varchar("voiceId", { length: 128 }).notNull(),
-  /** S3 URL of the generated audio clip */
-  audioUrl: text("audioUrl").notNull(),
+  /** Generation status: 'generating' = in progress, 'ready' = audio available */
+  status: varchar("status", { length: 16 }).notNull().default('ready'),
+  /** S3 URL of the generated audio clip (empty string while generating) */
+  audioUrl: text("audioUrl").notNull().default(''),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 

@@ -2315,7 +2315,27 @@ export const appRouter = router({
           )
         ).limit(1);
         if (cached.length > 0) {
-          return { audioUrl: cached[0].audioUrl, fromCache: true };
+          if (cached[0].status === 'generating') {
+            // Already in progress — tell the client to retry later
+            return { audioUrl: null, fromCache: false, generating: true };
+          }
+          return { audioUrl: cached[0].audioUrl, fromCache: true, generating: false };
+        }
+
+        // Insert a placeholder row to prevent concurrent duplicate generation
+        try {
+          await db.insert(ttsCache).values({
+            panelId: input.panelId,
+            worldId: input.worldId,
+            characterName: input.characterName,
+            characterId: lookupCharId,
+            voiceId: input.voiceId,
+            audioUrl: '',
+            status: 'generating',
+          });
+        } catch {
+          // Race condition: another request inserted first — skip this generation
+          return { audioUrl: null, fromCache: false, generating: true };
         }
 
         // Generate via ElevenLabs
@@ -2396,6 +2416,15 @@ export const appRouter = router({
 
         if (!ttsRes.ok) {
           const errText = await ttsRes.text();
+          // Clean up the placeholder row so future requests can retry
+          const { eq: eqClean, and: andClean } = await import('drizzle-orm');
+          await db.delete(ttsCache).where(
+            andClean(
+              eqClean(ttsCache.panelId, input.panelId),
+              eqClean(ttsCache.worldId, input.worldId),
+              eqClean(ttsCache.characterId, lookupCharId),
+            )
+          ).catch(() => {}); // non-fatal cleanup
           throw new Error(`ElevenLabs TTS failed (${ttsRes.status}): ${errText}`);
         }
 
@@ -2405,17 +2434,17 @@ export const appRouter = router({
         const fileKey = `tts/${input.worldId}/${input.panelId}/${input.characterName.replace(/[^a-z0-9]/gi, '_')}.mp3`;
         const { url: audioUrl } = await storagePut(fileKey, audioBuffer, 'audio/mpeg');
 
-        // Store in cache — use characterId as the stable key
-        await db.insert(ttsCache).values({
-          panelId: input.panelId,
-          worldId: input.worldId,
-          characterName: input.characterName,
-          characterId: lookupCharId,
-          voiceId: input.voiceId,
-          audioUrl,
-        });
+        // Update placeholder row to ready with the real audio URL
+        const { eq: eqUpdate, and: andUpdate } = await import('drizzle-orm');
+        await db.update(ttsCache).set({ audioUrl, status: 'ready' }).where(
+          andUpdate(
+            eqUpdate(ttsCache.panelId, input.panelId),
+            eqUpdate(ttsCache.worldId, input.worldId),
+            eqUpdate(ttsCache.characterId, lookupCharId),
+          )
+        );
 
-        return { audioUrl, fromCache: false };
+        return { audioUrl, fromCache: false, generating: false };
       }),
 
     /** Clear all TTS cache entries (optionally filtered by characterId) */
