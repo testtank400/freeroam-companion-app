@@ -771,9 +771,11 @@ export default function StoryMenu({
   };
 
   const handleTrackTouchStart = (e: React.TouchEvent) => {
+    e.preventDefault(); // Prevent text/image selection in the background while dragging
     isDraggingRef.current = true;
     setSliderInput(getDepthFromEvent(e.touches[0].clientX));
     const onMove = (te: TouchEvent) => {
+      te.preventDefault(); // Prevent scroll/selection during drag
       if (isDraggingRef.current) setSliderInput(getDepthFromEvent(te.touches[0].clientX));
     };
     const onEnd = () => {
@@ -781,7 +783,7 @@ export default function StoryMenu({
       window.removeEventListener('touchmove', onMove);
       window.removeEventListener('touchend', onEnd);
     };
-    window.addEventListener('touchmove', onMove, { passive: true });
+    window.addEventListener('touchmove', onMove, { passive: false }); // passive:false so preventDefault works
     window.addEventListener('touchend', onEnd);
   };
 
@@ -876,7 +878,7 @@ export default function StoryMenu({
               </div>
 
               {/* Page slider */}
-              <div className="rounded-2xl px-5 py-4 mb-5" style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.08)' }}>
+              <div className="rounded-2xl px-5 py-4 mb-5" style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.08)', userSelect: 'none', WebkitUserSelect: 'none' }}>
                 {/* Number input row */}
                 <div className="flex items-center gap-2 mb-3">
                   <span style={{ fontFamily: LORA, fontSize: '13px', color: 'rgba(255,255,255,0.5)', fontStyle: 'italic', flexShrink: 0 }}>Page</span>
