@@ -2319,8 +2319,40 @@ export const appRouter = router({
         const apiKey = process.env.ELEVEN_LABS_API_KEY;
         if (!apiKey) throw new Error('ElevenLabs API key not configured');
 
+        // Infer ElevenLabs v3 delivery tag via LLM (only on cache miss)
+        let deliveryTag = '';
+        try {
+          const { invokeLLM } = await import('./_core/llm');
+          const contextLines = [];
+          if (input.previousText) contextLines.push(`Previous line: "${input.previousText}"`);
+          contextLines.push(`${input.characterName} says: "${input.text}"`);
+          const tagResponse = await invokeLLM({
+            messages: [
+              {
+                role: 'system',
+                content: 'You are an audio director for an AI story reader. Given dialogue context, output a single ElevenLabs v3 audio delivery tag in square brackets that best captures the emotional delivery. Examples: [laughing], [whispering], [shouting], [crying], [nervous], [angry], [excited], [sad], [sarcastic], [tense], [seductive], [terrified]. Output ONLY the tag (e.g. "[nervous]") or nothing at all if the delivery should be neutral. Do not explain.'
+              },
+              {
+                role: 'user',
+                content: contextLines.join('\n')
+              }
+            ]
+          });
+          const msgContent = tagResponse?.choices?.[0]?.message?.content;
+          const raw = (typeof msgContent === 'string' ? msgContent : '').trim();
+          // Only use it if it looks like a valid tag: [word] or [two words]
+          if (/^\[[a-z ]{1,30}\]$/i.test(raw)) deliveryTag = raw;
+        } catch {
+          // Non-fatal — proceed without tag if LLM fails
+        }
+
+        // Prepend delivery tag (and optional accent tag) to the text
+        const accentTag = input.languageCode ? `[${input.languageCode === 'it' ? 'Italian' : input.languageCode === 'fr' ? 'French' : input.languageCode === 'de' ? 'German' : input.languageCode === 'es' ? 'Spanish' : input.languageCode === 'ja' ? 'Japanese' : input.languageCode === 'ko' ? 'Korean' : input.languageCode === 'en-GB' ? 'British' : input.languageCode === 'en-AU' ? 'Australian' : ''} accent]`.replace('[ accent]', '') : '';
+        const tagPrefix = [accentTag, deliveryTag].filter(Boolean).join('');
+        const textWithTags = tagPrefix ? `${tagPrefix} ${input.text}` : input.text;
+
         const ttsBody: Record<string, unknown> = {
-          text: input.text,
+          text: textWithTags,
           model_id: 'eleven_v3',
           voice_settings: {
             stability: parseFloat(input.stability),
@@ -2329,7 +2361,6 @@ export const appRouter = router({
           },
         };
         if (input.languageCode) ttsBody.language_code = input.languageCode;
-        // NOTE: previous_text is not supported by eleven_v3 — omitted
 
         const ttsRes = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${input.voiceId}?output_format=mp3_44100_128`, {
           method: 'POST',
