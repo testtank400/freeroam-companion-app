@@ -538,9 +538,15 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
       }
       try {
         setIsGeneratingTts(true);
-        // Get previous panel's text for continuity context
+        // Get previous panel's text and voice for context
         const prevPanel = panel.prev_panel_id ? panelCache.current.get(panel.prev_panel_id) : null;
         const prevText = prevPanel?.panel_content?.speech_bubbles?.[0]?.text ?? prevPanel?.panel_content?.narration ?? undefined;
+        const prevVoiceId = narratorVoiceId; // narrator voice is same across panels
+        // Get next panel's text and voice for context
+        const nextPanel = panel.next_panel as PanelData | null;
+        const nextSpeechBubble = nextPanel?.panel_content?.speech_bubbles?.[0];
+        const nextText = nextSpeechBubble?.text ?? nextPanel?.panel_content?.narration ?? undefined;
+        const nextVoiceId = nextText ? narratorVoiceId : undefined; // assume narrator for narration panels
         const result = await generateSpeechMutation.mutateAsync({
           panelId: panel.panel_id,
           worldId: world.external_id,
@@ -552,6 +558,9 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
           similarityBoost: '0.75',
           style: '0',
           previousText: prevText,
+          previousVoiceId: prevText ? prevVoiceId : undefined,
+          nextText,
+          nextVoiceId,
         });
         if (result.fromCache) setIsGeneratingTts(false); // cache hit — clear immediately
         if (!checkStillCurrent()) return; // Panel changed while awaiting — abort
@@ -655,9 +664,19 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
 
     try {
       setIsGeneratingTts(true);
-      // Get previous panel's text for continuity context
+      // Get previous panel's text and voice for context
       const prevPanelForChar = panel.prev_panel_id ? panelCache.current.get(panel.prev_panel_id) : null;
       const prevTextForChar = prevPanelForChar?.panel_content?.speech_bubbles?.[0]?.text ?? prevPanelForChar?.panel_content?.narration ?? undefined;
+      const prevCharName = prevPanelForChar?.panel_content?.speech_bubbles?.[0]?.character;
+      const prevVoiceDataForChar = prevCharName ? voiceCache.current.get(prevCharName) : undefined;
+      const prevVoiceIdForChar = prevVoiceDataForChar?.voiceId ?? undefined;
+      // Get next panel's text and voice for context
+      const nextPanelForChar = panel.next_panel as PanelData | null;
+      const nextSpeechBubbleForChar = nextPanelForChar?.panel_content?.speech_bubbles?.[0];
+      const nextTextForChar = nextSpeechBubbleForChar?.text ?? nextPanelForChar?.panel_content?.narration ?? undefined;
+      const nextCharName = nextSpeechBubbleForChar?.character;
+      const nextVoiceDataForChar = nextCharName ? voiceCache.current.get(nextCharName) : undefined;
+      const nextVoiceIdForChar = nextVoiceDataForChar?.voiceId ?? undefined;
       const result = await generateSpeechMutation.mutateAsync({
         panelId: panel.panel_id,
         worldId: world.external_id,
@@ -670,6 +689,9 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
         style: voiceData.style ?? '0',
         languageCode: voiceData.languageCode ?? undefined,
         previousText: prevTextForChar,
+        previousVoiceId: prevTextForChar ? prevVoiceIdForChar : undefined,
+        nextText: nextTextForChar,
+        nextVoiceId: nextTextForChar ? nextVoiceIdForChar : undefined,
       });
       if (result.fromCache) setIsGeneratingTts(false); // cache hit — clear immediately
       if (!checkStillCurrent()) return; // Panel changed while awaiting — abort

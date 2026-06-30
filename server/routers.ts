@@ -2292,7 +2292,10 @@ export const appRouter = router({
         similarityBoost: z.string().optional().default('0.75'),
         style: z.string().optional().default('0'),
         languageCode: z.string().nullable().optional(), // ISO 639-1 code to anchor accent
-        previousText: z.string().nullable().optional(), // Previous panel dialogue for continuity
+        previousText: z.string().nullable().optional(), // Previous panel dialogue for context
+        previousVoiceId: z.string().nullable().optional(), // Previous panel voice ID
+        nextText: z.string().nullable().optional(), // Next panel dialogue for context
+        nextVoiceId: z.string().nullable().optional(), // Next panel voice ID
       }))
       .mutation(async ({ input }) => {
         const { getDb } = await import('./db');
@@ -2319,65 +2322,89 @@ export const appRouter = router({
         const apiKey = process.env.ELEVEN_LABS_API_KEY;
         if (!apiKey) throw new Error('ElevenLabs API key not configured');
 
-        // Infer ElevenLabs v3 delivery tag via LLM (only on cache miss)
-        let deliveryTag = '';
+        // Build context turns for LLM tagging
+        type TurnInput = { text: string; voiceId: string; isCurrent: boolean };
+        const turns: TurnInput[] = [];
+        if (input.previousText && input.previousVoiceId) {
+          turns.push({ text: input.previousText, voiceId: input.previousVoiceId, isCurrent: false });
+        }
+        turns.push({ text: input.text, voiceId: input.voiceId, isCurrent: true });
+        if (input.nextText && input.nextVoiceId) {
+          turns.push({ text: input.nextText, voiceId: input.nextVoiceId, isCurrent: false });
+        }
+        const currentTurnIndex = turns.findIndex(t => t.isCurrent);
+
+        // LLM: add delivery tags to all turns using full context
+        const taggedTexts = turns.map(t => t.text); // default: no tags
         try {
           const { invokeLLM } = await import('./_core/llm');
-          const contextLines = [];
-          if (input.previousText) contextLines.push(`Previous line: "${input.previousText}"`);
-          contextLines.push(`${input.characterName} says: "${input.text}"`);
+          const turnDescriptions = turns.map((t, i) => `Turn ${i + 1}: "${t.text}"`);
           const tagResponse = await invokeLLM({
             messages: [
               {
                 role: 'system',
-                content: 'You are an audio director for an AI story reader. Given dialogue context, output a single ElevenLabs v3 audio delivery tag in square brackets that best captures the emotional delivery. Examples: [laughing], [whispering], [shouting], [crying], [nervous], [angry], [excited], [sad], [sarcastic], [tense], [seductive], [terrified]. Output ONLY the tag (e.g. "[nervous]") or nothing at all if the delivery should be neutral. Do not explain.'
+                content: `You are an audio director for an AI story reader using ElevenLabs v3. Given ${turns.length} dialogue turn(s) in order, add a single delivery tag to each turn that best captures the emotional delivery given the full context. Tags are natural language in square brackets: [laughing], [whispering], [shouting], [crying], [nervous], [angry], [excited], [sad], [sarcastic], [tense], [seductive], [terrified], [relieved], [disgusted], [fearful], [surprised], etc. For neutral delivery, output the text unchanged. Output ONLY the tagged lines, one per line, in the same order. Do not add any explanation or numbering.`
               },
               {
                 role: 'user',
-                content: contextLines.join('\n')
+                content: turnDescriptions.join('\n')
               }
             ]
           });
           const msgContent = tagResponse?.choices?.[0]?.message?.content;
-          const raw = (typeof msgContent === 'string' ? msgContent : '').trim();
-          // Only use it if it looks like a valid tag: [word] or [two words]
-          if (/^\[[a-z ]{1,30}\]$/i.test(raw)) deliveryTag = raw;
+          if (typeof msgContent === 'string') {
+            const lines = msgContent.trim().split('\n').map(l => l.trim()).filter(Boolean);
+            if (lines.length === turns.length) {
+              lines.forEach((line, i) => { taggedTexts[i] = line; });
+            }
+          }
         } catch {
-          // Non-fatal — proceed without tag if LLM fails
+          // Non-fatal — proceed without tags if LLM fails
         }
 
-        // Prepend delivery tag (and optional accent tag) to the text
-        const accentTag = input.languageCode ? `[${input.languageCode === 'it' ? 'Italian' : input.languageCode === 'fr' ? 'French' : input.languageCode === 'de' ? 'German' : input.languageCode === 'es' ? 'Spanish' : input.languageCode === 'ja' ? 'Japanese' : input.languageCode === 'ko' ? 'Korean' : input.languageCode === 'en-GB' ? 'British' : input.languageCode === 'en-AU' ? 'Australian' : ''} accent]`.replace('[ accent]', '') : '';
-        const tagPrefix = [accentTag, deliveryTag].filter(Boolean).join('');
-        const textWithTags = tagPrefix ? `${tagPrefix} ${input.text}` : input.text;
+        // Build Text to Dialogue inputs
+        const dialogueInputs = turns.map((t, i) => ({ text: taggedTexts[i], voice_id: t.voiceId }));
 
-        const ttsBody: Record<string, unknown> = {
-          text: textWithTags,
+        // Call Text to Dialogue API
+        const dialogueBody: Record<string, unknown> = {
+          inputs: dialogueInputs,
           model_id: 'eleven_v3',
-          voice_settings: {
-            stability: parseFloat(input.stability),
-            similarity_boost: parseFloat(input.similarityBoost),
-            style: parseFloat(input.style),
-          },
         };
-        if (input.languageCode) ttsBody.language_code = input.languageCode;
+        if (input.languageCode) dialogueBody.language_code = input.languageCode;
 
-        const ttsRes = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${input.voiceId}?output_format=mp3_44100_128`, {
+        const dialogueRes = await fetch('https://api.elevenlabs.io/v1/text-to-dialogue?output_format=mp3_44100_128', {
           method: 'POST',
-          headers: {
-            'xi-api-key': apiKey,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(ttsBody),
+          headers: { 'xi-api-key': apiKey, 'Content-Type': 'application/json' },
+          body: JSON.stringify(dialogueBody),
         });
 
-        if (!ttsRes.ok) {
-          const errText = await ttsRes.text();
-          throw new Error(`ElevenLabs TTS failed (${ttsRes.status}): ${errText}`);
+        let audioBuffer: Buffer;
+        if (!dialogueRes.ok) {
+          // Fallback to single-turn TTS if Text to Dialogue fails
+          const ttsRes = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${input.voiceId}?output_format=mp3_44100_128`, {
+            method: 'POST',
+            headers: { 'xi-api-key': apiKey, 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              text: taggedTexts[currentTurnIndex],
+              model_id: 'eleven_v3',
+              voice_settings: {
+                stability: parseFloat(input.stability),
+                similarity_boost: parseFloat(input.similarityBoost),
+                style: parseFloat(input.style),
+              },
+              ...(input.languageCode ? { language_code: input.languageCode } : {}),
+            }),
+          });
+          if (!ttsRes.ok) {
+            const errText = await ttsRes.text();
+            throw new Error(`ElevenLabs TTS failed (${ttsRes.status}): ${errText}`);
+          }
+          audioBuffer = Buffer.from(await ttsRes.arrayBuffer());
+        } else {
+          audioBuffer = Buffer.from(await dialogueRes.arrayBuffer());
         }
 
         // Upload audio to S3
-        const audioBuffer = Buffer.from(await ttsRes.arrayBuffer());
         const fileKey = `tts/${input.worldId}/${input.panelId}/${input.characterName.replace(/[^a-z0-9]/gi, '_')}.mp3`;
         const { url: audioUrl } = await storagePut(fileKey, audioBuffer, 'audio/mpeg');
 
