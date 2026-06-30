@@ -2343,7 +2343,7 @@ export const appRouter = router({
             messages: [
               {
                 role: 'system',
-                content: `You are an audio director for an AI story reader using ElevenLabs v3. Given ${turns.length} dialogue turn(s) in order, add a single delivery tag to each turn that best captures the emotional delivery given the full context. Tags are natural language in square brackets: [laughing], [whispering], [shouting], [crying], [nervous], [angry], [excited], [sad], [sarcastic], [tense], [seductive], [terrified], [relieved], [disgusted], [fearful], [surprised], etc. For neutral delivery, output the text unchanged. Output ONLY the tagged lines, one per line, in the same order. Do not add any explanation or numbering.`
+                content: `You are an audio director for an AI story reader using ElevenLabs v3. Given ${turns.length} dialogue turn(s) in order, add delivery tags to each turn that best capture the emotional delivery given the full context. You may use one or more tags per turn — place them at the start of the text in square brackets. Tags are natural language: [laughing], [whispering], [shouting], [crying], [nervous], [angry], [excited], [sad], [sarcastic], [tense], [seductive], [terrified], [relieved], [disgusted], [fearful], [surprised], [sighing], [breathless], [trembling], [cold], [warm], [playful], [bitter], [desperate], etc. Multiple tags are allowed, e.g. [nervous][whispering]. For neutral delivery, output the text unchanged. Output ONLY the tagged lines, one per line, in the same order. Do not add any explanation or numbering.`
               },
               {
                 role: 'user',
@@ -2362,9 +2362,23 @@ export const appRouter = router({
           // Non-fatal — proceed without tags if LLM fails
         }
 
+        // Prepend accent tag if languageCode is set
+        const accentTagMap: Record<string, string> = {
+          'it': 'Italian', 'fr': 'French', 'de': 'German', 'es': 'Spanish',
+          'pt': 'Portuguese', 'ja': 'Japanese', 'ko': 'Korean', 'zh': 'Chinese',
+          'ru': 'Russian', 'ar': 'Arabic', 'hi': 'Hindi', 'pl': 'Polish',
+          'nl': 'Dutch', 'sv': 'Swedish', 'tr': 'Turkish',
+          'en-GB': 'British', 'en-AU': 'Australian',
+        };
+        const accentLabel = input.languageCode ? accentTagMap[input.languageCode] : null;
+        const accentTag = accentLabel ? `[${accentLabel} accent]` : '';
+        const currentTaggedText = accentTag
+          ? `${accentTag} ${taggedTexts[currentTurnIndex]}`
+          : taggedTexts[currentTurnIndex];
+
         // Call single-turn TTS with the LLM-tagged current panel text
         const ttsBody: Record<string, unknown> = {
-          text: taggedTexts[currentTurnIndex],
+          text: currentTaggedText,
           model_id: 'eleven_v3',
           voice_settings: {
             stability: parseFloat(input.stability),
