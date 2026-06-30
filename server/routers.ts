@@ -2361,24 +2361,27 @@ export const appRouter = router({
           if (grokApiKey) {
             const turnDescriptions = turns.map((t, i) => `Turn ${i + 1}: "${t.text}"`);
             const systemPrompt = `You are an audio director for an AI story reader using ElevenLabs v3. Given ${turns.length} dialogue turn(s) in order, add delivery tags to each turn that best capture the emotional delivery given the full context. You may use one or more tags per turn — place them at the start of the text in square brackets. Tags are natural language: [laughing], [whispering], [shouting], [yelling], [screaming], [crying], [nervous], [angry], [furious], [excited], [sad], [sarcastic], [tense], [seductive], [terrified], [relieved], [disgusted], [fearful], [surprised], [sighing], [breathless], [trembling], [cold], [warm], [playful], [bitter], [desperate], etc. Multiple tags are allowed, e.g. [nervous][whispering]. IMPORTANT: If the text is written in ALL CAPS or contains ALL CAPS words, the character is shouting or yelling — always tag it with [shouting] or [yelling]. For neutral delivery, output the text unchanged. Output ONLY the tagged lines, one per line, in the same order. Do not add any explanation or numbering.`;
-            const grokRes = await fetch('https://api.x.ai/v1/chat/completions', {
+            const grokRes = await fetch('https://api.x.ai/v1/responses', {
               method: 'POST',
               headers: {
                 'Authorization': `Bearer ${grokApiKey}`,
                 'Content-Type': 'application/json',
               },
               body: JSON.stringify({
-                model: 'grok-3-mini',
-                messages: [
+                model: 'grok-4.3',
+                store: false, // Don't store on xAI servers
+                input: [
                   { role: 'system', content: systemPrompt },
                   { role: 'user', content: turnDescriptions.join('\n') },
                 ],
-                max_tokens: 300,
+                max_output_tokens: 300,
               }),
             });
             if (grokRes.ok) {
-              const grokData = await grokRes.json() as { choices?: Array<{ message?: { content?: string } }> };
-              const msgContent = grokData?.choices?.[0]?.message?.content;
+              const grokData = await grokRes.json() as { output?: Array<{ type: string; content?: Array<{ type: string; text?: string }> }> };
+              // Find the message output item and extract its text content
+              const msgItem = grokData?.output?.find(o => o.type === 'message');
+              const msgContent = msgItem?.content?.find(c => c.type === 'output_text')?.text;
               if (typeof msgContent === 'string') {
                 const lines = msgContent.trim().split('\n').map((l: string) => l.trim()).filter(Boolean);
                 if (lines.length === turns.length) {
