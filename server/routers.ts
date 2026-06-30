@@ -2354,32 +2354,41 @@ export const appRouter = router({
         }
         const currentTurnIndex = turns.findIndex(t => t.isCurrent);
 
-        // LLM: add delivery tags to all turns using full context
+        // LLM: add delivery tags to all turns using full context (via Grok API)
         const taggedTexts = turns.map(t => t.text); // default: no tags
         try {
-          const { invokeLLM } = await import('./_core/llm');
-          const turnDescriptions = turns.map((t, i) => `Turn ${i + 1}: "${t.text}"`);
-          const tagResponse = await invokeLLM({
-            messages: [
-              {
-                role: 'system',
-                content: `You are an audio director for an AI story reader using ElevenLabs v3. Given ${turns.length} dialogue turn(s) in order, add delivery tags to each turn that best capture the emotional delivery given the full context. You may use one or more tags per turn — place them at the start of the text in square brackets. Tags are natural language: [laughing], [whispering], [shouting], [yelling], [screaming], [crying], [nervous], [angry], [furious], [excited], [sad], [sarcastic], [tense], [seductive], [terrified], [relieved], [disgusted], [fearful], [surprised], [sighing], [breathless], [trembling], [cold], [warm], [playful], [bitter], [desperate], etc. Multiple tags are allowed, e.g. [nervous][whispering]. IMPORTANT: If the text is written in ALL CAPS or contains ALL CAPS words, the character is shouting or yelling — always tag it with [shouting] or [yelling]. For neutral delivery, output the text unchanged. Output ONLY the tagged lines, one per line, in the same order. Do not add any explanation or numbering.`
+          const grokApiKey = process.env.GROK_API_KEY;
+          if (grokApiKey) {
+            const turnDescriptions = turns.map((t, i) => `Turn ${i + 1}: "${t.text}"`);
+            const systemPrompt = `You are an audio director for an AI story reader using ElevenLabs v3. Given ${turns.length} dialogue turn(s) in order, add delivery tags to each turn that best capture the emotional delivery given the full context. You may use one or more tags per turn — place them at the start of the text in square brackets. Tags are natural language: [laughing], [whispering], [shouting], [yelling], [screaming], [crying], [nervous], [angry], [furious], [excited], [sad], [sarcastic], [tense], [seductive], [terrified], [relieved], [disgusted], [fearful], [surprised], [sighing], [breathless], [trembling], [cold], [warm], [playful], [bitter], [desperate], etc. Multiple tags are allowed, e.g. [nervous][whispering]. IMPORTANT: If the text is written in ALL CAPS or contains ALL CAPS words, the character is shouting or yelling — always tag it with [shouting] or [yelling]. For neutral delivery, output the text unchanged. Output ONLY the tagged lines, one per line, in the same order. Do not add any explanation or numbering.`;
+            const grokRes = await fetch('https://api.x.ai/v1/chat/completions', {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${grokApiKey}`,
+                'Content-Type': 'application/json',
               },
-              {
-                role: 'user',
-                content: turnDescriptions.join('\n')
+              body: JSON.stringify({
+                model: 'grok-3-mini',
+                messages: [
+                  { role: 'system', content: systemPrompt },
+                  { role: 'user', content: turnDescriptions.join('\n') },
+                ],
+                max_tokens: 300,
+              }),
+            });
+            if (grokRes.ok) {
+              const grokData = await grokRes.json() as { choices?: Array<{ message?: { content?: string } }> };
+              const msgContent = grokData?.choices?.[0]?.message?.content;
+              if (typeof msgContent === 'string') {
+                const lines = msgContent.trim().split('\n').map((l: string) => l.trim()).filter(Boolean);
+                if (lines.length === turns.length) {
+                  lines.forEach((line: string, i: number) => { taggedTexts[i] = line; });
+                }
               }
-            ]
-          });
-          const msgContent = tagResponse?.choices?.[0]?.message?.content;
-          if (typeof msgContent === 'string') {
-            const lines = msgContent.trim().split('\n').map(l => l.trim()).filter(Boolean);
-            if (lines.length === turns.length) {
-              lines.forEach((line, i) => { taggedTexts[i] = line; });
             }
           }
         } catch {
-          // Non-fatal — proceed without tags if LLM fails
+          // Non-fatal — proceed without tags if Grok fails
         }
 
         // Prepend accent tag if languageCode is set
