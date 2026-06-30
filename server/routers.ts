@@ -2362,47 +2362,30 @@ export const appRouter = router({
           // Non-fatal — proceed without tags if LLM fails
         }
 
-        // Build Text to Dialogue inputs
-        const dialogueInputs = turns.map((t, i) => ({ text: taggedTexts[i], voice_id: t.voiceId }));
-
-        // Call Text to Dialogue API
-        const dialogueBody: Record<string, unknown> = {
-          inputs: dialogueInputs,
+        // Call single-turn TTS with the LLM-tagged current panel text
+        const ttsBody: Record<string, unknown> = {
+          text: taggedTexts[currentTurnIndex],
           model_id: 'eleven_v3',
+          voice_settings: {
+            stability: parseFloat(input.stability),
+            similarity_boost: parseFloat(input.similarityBoost),
+            style: parseFloat(input.style),
+          },
         };
-        if (input.languageCode) dialogueBody.language_code = input.languageCode;
+        if (input.languageCode) ttsBody.language_code = input.languageCode;
 
-        const dialogueRes = await fetch('https://api.elevenlabs.io/v1/text-to-dialogue?output_format=mp3_44100_128', {
+        const ttsRes = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${input.voiceId}?output_format=mp3_44100_128`, {
           method: 'POST',
           headers: { 'xi-api-key': apiKey, 'Content-Type': 'application/json' },
-          body: JSON.stringify(dialogueBody),
+          body: JSON.stringify(ttsBody),
         });
 
-        let audioBuffer: Buffer;
-        if (!dialogueRes.ok) {
-          // Fallback to single-turn TTS if Text to Dialogue fails
-          const ttsRes = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${input.voiceId}?output_format=mp3_44100_128`, {
-            method: 'POST',
-            headers: { 'xi-api-key': apiKey, 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              text: taggedTexts[currentTurnIndex],
-              model_id: 'eleven_v3',
-              voice_settings: {
-                stability: parseFloat(input.stability),
-                similarity_boost: parseFloat(input.similarityBoost),
-                style: parseFloat(input.style),
-              },
-              ...(input.languageCode ? { language_code: input.languageCode } : {}),
-            }),
-          });
-          if (!ttsRes.ok) {
-            const errText = await ttsRes.text();
-            throw new Error(`ElevenLabs TTS failed (${ttsRes.status}): ${errText}`);
-          }
-          audioBuffer = Buffer.from(await ttsRes.arrayBuffer());
-        } else {
-          audioBuffer = Buffer.from(await dialogueRes.arrayBuffer());
+        if (!ttsRes.ok) {
+          const errText = await ttsRes.text();
+          throw new Error(`ElevenLabs TTS failed (${ttsRes.status}): ${errText}`);
         }
+
+        const audioBuffer = Buffer.from(await ttsRes.arrayBuffer());
 
         // Upload audio to S3
         const fileKey = `tts/${input.worldId}/${input.panelId}/${input.characterName.replace(/[^a-z0-9]/gi, '_')}.mp3`;
