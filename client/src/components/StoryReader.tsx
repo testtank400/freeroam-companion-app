@@ -519,6 +519,36 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
   const { data: voiceEnabledSetting } = trpc.voice.getSetting.useQuery({ key: 'voice_enabled' });
   const voiceEnabled = voiceEnabledSetting !== 'false'; // default true if not set
 
+  // Helper: play an audio clip with error/stall handling for poor connections
+  const playAudioClip = useCallback((audioUrl: string, panel: PanelData) => {
+    audioRef.current?.pause();
+    const audio = new Audio(audioUrl);
+    audioRef.current = audio;
+    ttsWillPlayRef.current = true;
+    setIsGeneratingTts(false);
+    audio.play().catch(() => { ttsWillPlayRef.current = false; });
+    setIsPlayingAudio(true);
+
+    const handlePlaybackFailure = () => {
+      // Audio failed or stalled — clear playing state, let fallback timer handle auto-advance
+      ttsWillPlayRef.current = false;
+      setIsPlayingAudio(false);
+    };
+    audio.onerror = handlePlaybackFailure;
+    audio.onstalled = handlePlaybackFailure;
+
+    audio.onended = () => {
+      setIsPlayingAudio(false);
+      ttsWillPlayRef.current = false;
+      if (autoAdvanceEnabledRef.current && !autoAdvancePausedRef.current) {
+        autoAdvanceTimerRef.current = setTimeout(() => {
+          loadPanelRef.current?.(panel.next_panel_id!, world.external_id);
+        }, Math.max(0, autoAdvanceMinDelayRef.current * 1000));
+      }
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [world.external_id]);
+
   // TTS: trigger speech generation and playback for a panel
   const triggerTTS = useCallback(async (panel: PanelData) => {
     if (!panel.panel_content) return;
@@ -584,24 +614,7 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
           if (!checkStillCurrent()) return;
           if (pollUrl) {
             setCurrentAudioUrl(pollUrl);
-            if (autoPlayEnabled) {
-              audioRef.current?.pause();
-              const audio = new Audio(pollUrl);
-              audioRef.current = audio;
-              ttsWillPlayRef.current = true;
-              setIsGeneratingTts(false);
-              audio.play().catch(() => { ttsWillPlayRef.current = false; });
-              setIsPlayingAudio(true);
-              audio.onended = () => {
-                setIsPlayingAudio(false);
-                ttsWillPlayRef.current = false;
-                if (autoAdvanceEnabledRef.current && !autoAdvancePausedRef.current) {
-                  autoAdvanceTimerRef.current = setTimeout(() => {
-                    loadPanelRef.current?.(panel.next_panel_id!, world.external_id);
-                  }, Math.max(0, autoAdvanceMinDelayRef.current * 1000));
-                }
-              };
-            }
+            if (autoPlayEnabled) playAudioClip(pollUrl, panel);
           } else {
             setIsGeneratingTts(false);
             ttsConfirmedNoVoiceRef.current = true; // treat as no-voice for auto-advance
@@ -610,25 +623,7 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
         }
         if (result.audioUrl) {
           setCurrentAudioUrl(result.audioUrl);
-          if (autoPlayEnabled) {
-            audioRef.current?.pause();
-            const audio = new Audio(result.audioUrl);
-            audioRef.current = audio;
-            ttsWillPlayRef.current = true;
-            setIsGeneratingTts(false); // generation done, audio starting
-            audio.play().catch(() => { ttsWillPlayRef.current = false; });
-            setIsPlayingAudio(true);
-            audio.onended = () => {
-              setIsPlayingAudio(false);
-              ttsWillPlayRef.current = false;
-              // Use refs — state values are stale in async closures
-              if (autoAdvanceEnabledRef.current && !autoAdvancePausedRef.current) {
-                autoAdvanceTimerRef.current = setTimeout(() => {
-                  loadPanelRef.current?.(panel.next_panel_id!, world.external_id);
-                }, Math.max(0, autoAdvanceMinDelayRef.current * 1000));
-              }
-            };
-          }
+          if (autoPlayEnabled) playAudioClip(result.audioUrl, panel);
         }
       } catch { setIsGeneratingTts(false); /* Non-fatal */ }
       return;
@@ -759,24 +754,7 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
         if (!checkStillCurrent()) return;
         if (pollUrl) {
           setCurrentAudioUrl(pollUrl);
-          if (autoPlayEnabled) {
-            audioRef.current?.pause();
-            const audio = new Audio(pollUrl);
-            audioRef.current = audio;
-            ttsWillPlayRef.current = true;
-            setIsGeneratingTts(false);
-            audio.play().catch(() => { ttsWillPlayRef.current = false; });
-            setIsPlayingAudio(true);
-            audio.onended = () => {
-              setIsPlayingAudio(false);
-              ttsWillPlayRef.current = false;
-              if (autoAdvanceEnabledRef.current && !autoAdvancePausedRef.current) {
-                autoAdvanceTimerRef.current = setTimeout(() => {
-                  loadPanelRef.current?.(panel.next_panel_id!, world.external_id);
-                }, Math.max(0, autoAdvanceMinDelayRef.current * 1000));
-              }
-            };
-          }
+          if (autoPlayEnabled) playAudioClip(pollUrl, panel);
         } else {
           setIsGeneratingTts(false);
           ttsConfirmedNoVoiceRef.current = true; // treat as no-voice for auto-advance
@@ -786,25 +764,7 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
 
       if (result.audioUrl) {
         setCurrentAudioUrl(result.audioUrl);
-        if (autoPlayEnabled) {
-          audioRef.current?.pause();
-          const audio = new Audio(result.audioUrl);
-          audioRef.current = audio;
-          ttsWillPlayRef.current = true;
-          setIsGeneratingTts(false); // generation done, audio starting
-          audio.play().catch(() => { ttsWillPlayRef.current = false; }); // Ignore autoplay policy errors
-          setIsPlayingAudio(true);
-          audio.onended = () => {
-            setIsPlayingAudio(false);
-            ttsWillPlayRef.current = false;
-            // Use refs — state values are stale in async closures
-            if (autoAdvanceEnabledRef.current && !autoAdvancePausedRef.current) {
-              autoAdvanceTimerRef.current = setTimeout(() => {
-                loadPanelRef.current?.(panel.next_panel_id!, world.external_id);
-              }, Math.max(0, autoAdvanceMinDelayRef.current * 1000));
-            }
-          };
-        }
+        if (autoPlayEnabled) playAudioClip(result.audioUrl, panel);
       }
     } catch {
       // Non-fatal — TTS failure should not interrupt navigation
