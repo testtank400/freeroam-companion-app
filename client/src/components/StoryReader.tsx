@@ -1227,20 +1227,28 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
               touchStartX.current = null;
             }}
           >
-            {/* Only the pill itself is clickable */}
+            {/* Pill tap target — wider/taller invisible area for easy mobile tap */}
             <div
               onClick={() => { setMenuOpen(true); pauseAutoAdvance(); }}
               aria-label="Open story menu"
               style={{
+                width: '80px',
+                height: '28px',
+                display: 'flex',
+                alignItems: 'flex-start',
+                justifyContent: 'center',
+                paddingTop: '8px',
+                cursor: 'pointer',
+                pointerEvents: 'auto',
+              }}
+            >
+              <div style={{
                 width: '36px',
                 height: '4px',
                 borderRadius: '2px',
                 background: 'rgba(255,255,255,0.5)',
-                marginTop: '8px',
-                cursor: 'pointer',
-                pointerEvents: 'auto',
-              }}
-            />
+              }} />
+            </div>
           </div>
 
           {/* Story menu overlay */}
