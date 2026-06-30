@@ -443,6 +443,15 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
                 pollAbortRef.current = null;
                 setIsPolling(false);
                 setIsImagePolling(false);
+                // Update the cached panel so future revisits don't re-trigger polling
+                const cachedPanel = panelCache.current.get(panelId);
+                if (cachedPanel) {
+                  panelCache.current.set(panelId, {
+                    ...cachedPanel,
+                    next_panel_id: result.panel_id,
+                    forward_state: 'ready',
+                  });
+                }
                 await loadPanelRef.current?.(result.panel_id, world.external_id);
               }
               return;
