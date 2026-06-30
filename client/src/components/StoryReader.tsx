@@ -988,10 +988,11 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
   useEffect(() => {
     if (!currentPanel) return;
     const { forward_state, next_panel_id, is_action } = currentPanel;
+    // Only auto-poll when the AI is actively generating (forward_state=generating).
+    // Do NOT auto-poll on forward_state=ready with no next_panel_id — that state is
+    // ambiguous (Freeroam API quirk) and causes unwanted auto-advance on normal panels.
     const shouldPoll =
-      (forward_state === 'ready' && !next_panel_id) ||
-      (is_action && forward_state === 'generating' && !next_panel_id) ||
-      (!next_panel_id && forward_state === 'generating'); // catch all generating panels without a next_panel_id
+      (forward_state === 'generating' && !next_panel_id);
     if (shouldPoll && !isPolling) {
       startPolling(currentPanel.panel_id);
     }
