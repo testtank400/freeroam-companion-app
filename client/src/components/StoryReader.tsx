@@ -536,10 +536,17 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
       pc != null && typeof pc.type === 'string' && pc.type !== '[Max Depth]';
     const cached = panelCache.current.get(panelId);
     if (cached && isPanelContentValid(cached.panel_content)) {
-      setCurrentPanel(cached); currentPanelIdRef.current = (cached)?.panel_id ?? null;
-      setPanelMutation.mutate({ worldId, panelId });
-      setIsLoading(false);
-      return;
+      // Don't serve cached panels with forward_state=generating — they may be stale
+      // (cached when the panel was first created, before Freeroam updated it to ready).
+      // Always re-fetch generating panels to get the latest state.
+      if (cached.forward_state === 'generating') {
+        panelCache.current.delete(panelId);
+      } else {
+        setCurrentPanel(cached); currentPanelIdRef.current = (cached)?.panel_id ?? null;
+        setPanelMutation.mutate({ worldId, panelId });
+        setIsLoading(false);
+        return;
+      }
     } else if (cached) {
       // Remove broken cached entry (null or [Max Depth] strings) and fetch fresh
       panelCache.current.delete(panelId);
