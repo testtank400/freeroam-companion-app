@@ -1892,11 +1892,15 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
           {/* Choice options — Freeroam-style with lettered options, OR divider, custom input */}
           {hasChoice && !isLoading && (
             <div
-              className="absolute bottom-0 left-0 right-0 z-20 flex flex-col gap-2 px-4 pb-4 pt-10"
-              style={{ background: 'linear-gradient(to top, rgba(0,0,0,0.92) 55%, transparent)' }}
+              className="absolute bottom-0 left-0 right-0 z-20 flex flex-col px-4 pb-4"
+              style={{
+                background: 'linear-gradient(to top, rgba(0,0,0,0.92) 55%, transparent)',
+                maxHeight: '80dvh',
+                overflow: 'hidden',
+              }}
             >
-              {/* IDEAS/HIDE toggle — always at top so it's reachable regardless of choice list height */}
-              <div className="flex justify-end mb-1">
+              {/* IDEAS/HIDE toggle — sticky at top so it's always reachable */}
+              <div className="flex justify-end pt-10 pb-1 flex-shrink-0">
                 <button
                   onClick={() => setChoiceIdeasVisible(v => !v)}
                   className="flex items-center gap-1 transition-all hover:brightness-125"
@@ -1906,6 +1910,8 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
                   <ChevronDown size={12} strokeWidth={2.5} style={{ transform: choiceIdeasVisible ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
                 </button>
               </div>
+              {/* Scrollable content area */}
+              <div className="flex flex-col gap-2 overflow-y-auto" style={{ overscrollBehavior: 'contain' }}>
               {/* Question text */}
               {choice.question && (
                 <p style={{ fontFamily: 'Outfit, sans-serif', fontSize: '14px', fontWeight: 500, color: 'rgba(255,255,255,0.7)', marginBottom: '4px' }}>
@@ -1979,6 +1985,7 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
                   {isSendingAction ? <Loader2 size={14} className="animate-spin" /> : <ChevronRight size={16} strokeWidth={2.5} />}
                 </button>
               </div>
+              </div>{/* end scrollable content */}
             </div>
           )}
         {/* Action bar — hidden on choice/requires_action panels */}
