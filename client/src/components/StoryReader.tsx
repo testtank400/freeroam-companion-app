@@ -510,12 +510,13 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
       panelCache.current.delete(panelId);
     }
     setIsNavigating(true);
-    // Retry up to 3 times with a 1s delay — Freeroam sometimes returns a panel_id
-    // before the panel actually exists (404/fetch error on first attempt).
+    // Retry up to 10 times with a 2s delay — Freeroam sometimes returns a panel_id
+    // before the panel actually exists, and server-side fetches can fail transiently.
+    // More retries with longer gaps gives the panel time to become available.
     let lastErr: unknown;
-    for (let attempt = 0; attempt < 3; attempt++) {
+    for (let attempt = 0; attempt < 10; attempt++) {
       try {
-        if (attempt > 0) await new Promise(resolve => setTimeout(resolve, 1000));
+        if (attempt > 0) await new Promise(resolve => setTimeout(resolve, 2000));
         const data = await utils.worlds.getPanel.fetch({ worldId, panelId });
         const panel = data as PanelData;
         // Only cache if panel_content has real data (not [Max Depth] strings)
