@@ -1894,11 +1894,16 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
             <div
               className="absolute bottom-0 left-0 right-0 z-20 px-4 pb-4 pt-10"
               style={{
-                background: 'linear-gradient(to top, rgba(0,0,0,0.82) 40%, transparent)',
+                background: 'rgba(28,28,28,0.42)',
+                border: '1px solid rgba(255,255,255,0.12)',
+                backdropFilter: 'blur(28px) saturate(1.6)',
+                WebkitBackdropFilter: 'blur(28px) saturate(1.6)',
                 maxHeight: '85dvh',
                 overflowY: 'auto',
                 WebkitOverflowScrolling: 'touch',
                 overscrollBehavior: 'contain',
+                borderRadius: '20px',
+                marginBottom: '8px',
                 display: 'block',
               }}
             >
@@ -1928,13 +1933,16 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
                     onClick={() => handleChoice(opt.text)}
                     className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl transition-all active:scale-95 group ${isSelected ? 'hover-selected-choice' : 'hover:brightness-110'}`}
                     style={{
-                      background: isSelected ? 'rgba(34,197,94,0.25)' : 'rgba(30,30,40,0.72)',
-                      border: 'none',
-                      boxShadow: isSelected ? '0 4px 20px rgba(34,197,94,0.4), 0 2px 8px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.15), inset 0 0 0 1px rgba(34,197,94,0.5)' : 'inset 0 0 0 1px rgba(255,255,255,0.12)',
-                      backdropFilter: 'blur(10px)',
+                      background: isSelected ? 'rgba(34,197,94,0.25)' : 'rgba(30,30,30,0.65)',
+                      border: isSelected ? '1px solid rgba(34,197,94,0.5)' : '1px solid rgba(255,255,255,0.22)',
+                      borderRadius: '20px',
+                      boxShadow: isSelected ? '0 2px 8px rgba(0,0,0,0.3)' : '0 2px 8px rgba(0,0,0,0.3)',
+                      backdropFilter: 'blur(12px)',
+                      WebkitBackdropFilter: 'blur(12px)',
                       textAlign: 'left',
                       cursor: 'pointer',
                       marginBottom: '8px',
+                      color: 'rgba(255,255,255,0.95)',
                     }}
                     onMouseEnter={(e) => { if (isSelected) (e.currentTarget as HTMLButtonElement).style.background = 'rgba(50,50,60,0.9)'; }}
                     onMouseLeave={(e) => { if (isSelected) (e.currentTarget as HTMLButtonElement).style.background = 'rgba(34,197,94,0.25)'; }}
