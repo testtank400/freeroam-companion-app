@@ -1891,18 +1891,13 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
 
           {/* Choice options — Freeroam-style with lettered options, OR divider, custom input */}
           {hasChoice && !isLoading && (
-            <div
-              className="absolute bottom-0 left-0 right-0 z-20 flex flex-col px-4 pb-4"
-              style={{
-                background: 'rgba(10,10,16,0.92)',
-                backdropFilter: 'blur(12px)',
-                WebkitBackdropFilter: 'blur(12px)',
-                maxHeight: '80dvh',
-                overflow: 'hidden',
-              }}
-            >
+            <div className="absolute bottom-0 left-0 right-0 z-20 flex flex-col" style={{ maxHeight: '80dvh' }}>
+              {/* Gradient fade at top — blends into the image */}
+              <div style={{ height: '48px', flexShrink: 0, background: 'linear-gradient(to bottom, transparent, rgba(10,10,16,0.95))' }} />
+              {/* Solid panel body — scrollable */}
+              <div className="flex flex-col overflow-hidden" style={{ background: 'rgba(10,10,16,0.97)', flex: 1 }}>
               {/* IDEAS/HIDE toggle — sticky at top so it's always reachable */}
-              <div className="flex justify-end pt-10 pb-1 flex-shrink-0">
+              <div className="flex justify-end px-4 pt-2 pb-1 flex-shrink-0">
                 <button
                   onClick={() => setChoiceIdeasVisible(v => !v)}
                   className="flex items-center gap-1 transition-all hover:brightness-125"
@@ -1913,7 +1908,7 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
                 </button>
               </div>
               {/* Scrollable content area */}
-              <div className="flex flex-col gap-2 overflow-y-auto" style={{ overscrollBehavior: 'contain' }}>
+              <div className="flex flex-col gap-2 overflow-y-auto px-4 pb-4" style={{ overscrollBehavior: 'contain' }}>
               {/* Question text */}
               {choice.question && (
                 <p style={{ fontFamily: 'Outfit, sans-serif', fontSize: '14px', fontWeight: 500, color: 'rgba(255,255,255,0.7)', marginBottom: '4px' }}>
@@ -1988,6 +1983,7 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
                 </button>
               </div>
               </div>{/* end scrollable content */}
+              </div>{/* end solid panel body */}
             </div>
           )}
         {/* Action bar — hidden on choice/requires_action panels */}
