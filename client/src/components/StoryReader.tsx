@@ -1072,13 +1072,17 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
   //       that causes unwanted auto-advance on already-generated panels.
   useEffect(() => {
     if (!currentPanel) return;
-    const { forward_state, next_panel_id } = currentPanel;
-    // Poll whenever forward_state=generating, regardless of whether next_panel_id is set.
-    // Freeroam can return next_panel_id while still in generating state — the panel
-    // exists but isn't ready to fetch yet. We need to keep polling in that case too.
-    const shouldPoll = forward_state === 'generating';
-    if (shouldPoll && !isPolling) {
-      startPolling(currentPanel.panel_id);
+    const { forward_state, next_panel_id, is_action } = currentPanel;
+    // Polling strategy for generating panels:
+    // - Action panels OR panels with no next_panel_id yet: use startPolling (nextReady loop, auto-navigates)
+    // - Non-action panels with next_panel_id already set: use startDirectPanelPolling
+    //   (retries loading the known panel ID without auto-advancing — prevents skipping dialogue panels)
+    if (forward_state === 'generating' && !isPolling) {
+      if (is_action || !next_panel_id) {
+        startPolling(currentPanel.panel_id);
+      } else if (next_panel_id) {
+        startDirectPanelPolling(next_panel_id);
+      }
     }
     // NOTE: Do NOT add isPolling to deps or include stopPolling in cleanup here.
     // Doing so creates an infinite loop: isPolling change → effect re-runs → cleanup
