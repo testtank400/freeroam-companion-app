@@ -488,9 +488,11 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
     cancelAutoAdvance();
     setPendingActionText(null); // Clear pending action text when navigating to next panel
     setChoiceIdeasVisible(showChoiceIdeasByDefault);
-    // Check panel cache first for instant navigation (only use if panel_content has real data, not [Max Depth] strings)
+    // Check panel cache first for instant navigation.
+    // Only reject if panel_content is null or contains [Max Depth] truncation markers.
+    // images can legitimately be null/empty on some panels, so don't require it to be an array.
     const isPanelContentValid = (pc: PanelData['panel_content']) =>
-      pc != null && Array.isArray(pc.images);
+      pc != null && typeof pc.type === 'string' && pc.type !== '[Max Depth]';
     const cached = panelCache.current.get(panelId);
     if (cached && isPanelContentValid(cached.panel_content)) {
       setCurrentPanel(cached); currentPanelIdRef.current = (cached)?.panel_id ?? null;
@@ -1048,8 +1050,8 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
       setPanelMutation.mutate({ worldId: world.external_id, panelId: embedded.panel_id });
       setIsNavigating(false);
       setIsLoading(false);
-      // If the embedded panel also has a next_panel_id but no next_panel data, start polling if needed
-      if (embedded.forward_state === 'ready' && !embedded.next_panel_id) {
+      // If the embedded panel is still generating, start polling
+      if (embedded.forward_state === 'generating' && !embedded.next_panel_id) {
         startPolling(embedded.panel_id);
       }
       return;
