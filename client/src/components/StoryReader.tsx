@@ -1903,22 +1903,22 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
               }}
             >
               {/* IDEAS/HIDE toggle — always at top so it's reachable regardless of choice list height */}
-              <div className="flex justify-end mb-1">
+              {/* Question text with inline IDEAS/HIDE toggle — Freeroam style */}
+              <div style={{ textAlign: 'center', marginBottom: '8px' }}>
+                {choice.question && (
+                  <span style={{ fontFamily: 'Outfit, sans-serif', fontSize: '14px', fontWeight: 500, color: 'rgba(255,255,255,0.7)' }}>
+                    {choice.question}{' '}
+                  </span>
+                )}
                 <button
                   onClick={() => setChoiceIdeasVisible(v => !v)}
-                  className="flex items-center gap-1 transition-all hover:brightness-125"
-                  style={{ fontFamily: 'Outfit, sans-serif', fontSize: '12px', fontWeight: 600, color: 'rgba(255,255,255,0.5)', letterSpacing: '0.05em' }}
+                  className="inline-flex items-center gap-1 transition-all hover:brightness-125"
+                  style={{ fontFamily: 'Outfit, sans-serif', fontSize: '12px', fontWeight: 600, color: 'rgba(255,255,255,0.5)', letterSpacing: '0.05em', verticalAlign: 'middle' }}
                 >
                   {choiceIdeasVisible ? 'HIDE' : 'IDEAS'}
                   <ChevronDown size={12} strokeWidth={2.5} style={{ transform: choiceIdeasVisible ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
                 </button>
               </div>
-              {/* Question text */}
-              {choice.question && (
-                <p style={{ fontFamily: 'Outfit, sans-serif', fontSize: '14px', fontWeight: 500, color: 'rgba(255,255,255,0.7)', marginBottom: '4px' }}>
-                  {choice.question}
-                </p>
-              )}
               {/* Lettered options — shown based on choiceIdeasVisible, always interactive */}
               {choiceIdeasVisible && choice!.options.map((opt, i) => {
                 const isSelected = !!choice!.selected_choice && choice!.selected_choice === opt.text;
@@ -1962,7 +1962,7 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
                   <div style={{ flex: 1, height: '1px', background: 'rgba(255,255,255,0.15)' }} />
                 </div>
               )}
-              <div className="flex items-start gap-2 px-4 py-2 rounded-2xl" style={{ background: 'rgba(30,30,40,0.85)', border: '1px solid rgba(255,255,255,0.15)', backdropFilter: 'blur(10px)' }}>
+              <div className="flex items-start gap-2 px-4 py-2" style={{ background: 'rgba(30,30,30,0.65)', border: '1px solid rgba(255,255,255,0.22)', borderRadius: '20px', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', boxShadow: '0 2px 8px rgba(0,0,0,0.3)' }}>
                 <textarea
                   rows={1}
                   value={actionInput}
