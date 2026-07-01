@@ -305,8 +305,7 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
       } else if (result.forward_state === 'generating' || result.forward_state === 'ready') {
         // Poll for the next panel — Freeroam may return next_panel_id before the panel exists
         // startPolling handles both cases: polls nextReady until ready, then loads the panel
-        // Action panels always auto-navigate when polling resolves
-        startPolling(result.action_panel_id, isImageAction, true);
+        startPolling(result.action_panel_id, isImageAction);
       }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to send action');
@@ -415,10 +414,8 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
   }, []);
 
   // Start polling for next panel using Freeroam's sequential for-loop pattern (500ms, max 240 iterations)
-  // Polls nextReady every 500ms. When ready, loads the panel (if autoNavigate=true) or just updates
-  // the panel cache and canGoForward (if autoNavigate=false, for non-action panels).
-  // autoNavigate should only be true for action panels (is_action=true).
-  const startPolling = useCallback((panelId: string, isImage = false, autoNavigate = false) => {
+  // Polls nextReady every 500ms. When ready, always loads the panel (auto-navigates).
+  const startPolling = useCallback((panelId: string, isImage = false) => {
     // Abort any existing poll
     if (pollAbortRef.current) pollAbortRef.current.abort();
     const controller = new AbortController();
@@ -454,15 +451,7 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
                     forward_state: 'ready',
                   });
                 }
-                // Also update currentPanel state so canGoForward becomes true
-                setCurrentPanel(prev => {
-                  if (!prev || prev.panel_id !== panelId) return prev;
-                  return { ...prev, next_panel_id: result.panel_id, forward_state: 'ready' };
-                });
-                // Only auto-navigate on action panels — non-action panels let the user tap the arrow
-                if (autoNavigate) {
-                  await loadPanelRef.current?.(result.panel_id, world.external_id);
-                }
+                await loadPanelRef.current?.(result.panel_id, world.external_id);
               }
               return;
             }
@@ -1032,9 +1021,7 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
     const shouldPoll =
       (forward_state === 'generating' && !next_panel_id);
     if (shouldPoll && !isPolling) {
-      // autoNavigate=true only for action panels — non-action panels show the spinner
-      // but require the user to tap the arrow to advance.
-      startPolling(currentPanel.panel_id, false, currentPanel.is_action);
+      startPolling(currentPanel.panel_id);
     }
     return () => stopPolling();
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1092,9 +1079,8 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
       // NOTE: This condition mirrors the polling effect at line ~991.
       //       If you change it here, update that effect too.
       // NOTE: Do NOT use forward_state=ready here — see comment in the polling effect.
-      // autoNavigate=true only for action panels — same rule as the polling effect.
       if (embedded.forward_state === 'generating' && !embedded.next_panel_id) {
-        startPolling(embedded.panel_id, false, embedded.is_action);
+        startPolling(embedded.panel_id);
       }
       return;
     }
