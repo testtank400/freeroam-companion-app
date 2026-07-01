@@ -112,7 +112,8 @@ Auto-advance is **paused** when any of these are open: action input (Act/Direct/
 |---|---|---|
 | `[Max Depth]` strings in nested panel data | tRPC superjson truncates deeply nested objects. `panel_content.images` may appear as `"[Max Depth]"` in raw responses. | `getPanel` manually extracts and flattens all fields. `isPanelContentValid` checks `pc.type` not `pc.images`. |
 | `forward_state: 'ready'` with `next_panel_id: null` | Some panels return this state even when already generated. Auto-polling this causes unwanted advance. | Only auto-poll on `forward_state: 'generating'`. |
-| `next_panel_id` returned before panel exists | `sendAction` returns `next_panel_id` immediately but the panel may 404 for a few seconds. | Use `nextReady` polling instead of navigating directly to the ID. |
+| `next_panel_id` returned before panel exists | `sendAction` returns `next_panel_id` immediately but the panel may 404 for a few seconds. | `loadPanel` retries up to 10 times with 2s delay. If all retries fail on an action panel, falls back to `startDirectPanelPolling`. |
+| `forward_state: 'generating'` with `next_panel_id` already set | Panel ID is known but the panel isn't ready to fetch yet. Polling must still run. | `shouldPoll = forward_state === 'generating'` (no `!next_panel_id` guard). Non-action panels use `startDirectPanelPolling` to avoid auto-advancing. |
 | Character names use hyphens | Freeroam uses `Aerith-Guthrie` internally. Display replaces hyphens with spaces. | `speechBubble.character.replace(/-/g, ' ')` for display. |
 
 ---
@@ -167,3 +168,5 @@ The Grok call is **non-fatal** — if it fails for any reason, TTS proceeds with
 - **Narrator voice picker** — narrator voice is set via a raw voice ID in settings. A proper browse-and-assign dialog (same as character voice picker) would improve UX.
 - **Visual countdown bar** — auto-advance has no visual indicator. A thin draining progress bar at the bottom of the panel would help.
 - **Debug mode** — a debug overlay is available in preferences (Voice Settings → Debug Mode). Shows `forward_state`, `next_panel_id`, `isPolling`, `isNavigating`, `canGoForward`, `is_action`, `requires_action` in real time. Leave on when investigating navigation issues.
+- **Choice panel design** — uses `display: block` (not `flex flex-col`) on the outer container to prevent Tailwind's custom `.flex` from squishing button heights. Choice buttons use Freeroam's exact CSS: `rgba(30,30,30,0.65)` background, `1px solid rgba(255,255,255,0.22)` border, `border-radius: 20px`, `backdrop-filter: blur(12px)`. The outer container uses `linear-gradient(to top, rgba(0,0,0,0.82) 40%, transparent)` with `max-height: 85dvh` and `overflow-y: auto` + `-webkit-overflow-scrolling: touch` for iOS scrolling.
+- **Story text brightness** — deliberately kept at `rgba(255,255,255,0.85)` rather than full white. Freeroam uses full white which can wash out against bright panel images. Our softer value is intentional.
