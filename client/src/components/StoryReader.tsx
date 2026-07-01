@@ -1894,16 +1894,11 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
             <div
               className="absolute bottom-0 left-0 right-0 z-20 px-4 pb-4 pt-10"
               style={{
-                background: 'rgba(28,28,28,0.42)',
-                border: '1px solid rgba(255,255,255,0.12)',
-                backdropFilter: 'blur(28px) saturate(1.6)',
-                WebkitBackdropFilter: 'blur(28px) saturate(1.6)',
+                background: 'linear-gradient(to top, rgba(0,0,0,0.82) 40%, transparent)',
                 maxHeight: '85dvh',
                 overflowY: 'auto',
                 WebkitOverflowScrolling: 'touch',
                 overscrollBehavior: 'contain',
-                borderRadius: '20px',
-                marginBottom: '8px',
                 display: 'block',
               }}
             >
