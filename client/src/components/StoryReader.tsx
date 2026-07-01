@@ -417,6 +417,41 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
     setIsImagePolling(false);
   }, []);
 
+  // Poll getPanel directly every 2s when the panel ID is known but the panel isn't available yet.
+  // Used as a fallback when loadPanel fails all retries but next_panel_id is already set.
+  const startDirectPanelPolling = useCallback((targetPanelId: string) => {
+    if (pollAbortRef.current) pollAbortRef.current.abort();
+    const controller = new AbortController();
+    pollAbortRef.current = controller;
+    setIsPolling(true);
+    (async () => {
+      for (let i = 0; i < 120 && !controller.signal.aborted; i++) {
+        try {
+          if (i > 0) await new Promise(resolve => setTimeout(resolve, 500));
+          if (controller.signal.aborted) return;
+          await loadPanelRef.current?.(targetPanelId, world.external_id);
+          // If loadPanel succeeded, it sets currentPanel and isNavigating=false
+          // We just need to clear the polling state
+          if (!controller.signal.aborted) {
+            pollAbortRef.current = null;
+            setIsPolling(false);
+          }
+          return;
+        } catch {
+          if (controller.signal.aborted) return;
+          // Keep retrying
+        }
+      }
+      // Timed out
+      if (!controller.signal.aborted) {
+        pollAbortRef.current = null;
+        setIsPolling(false);
+        toast.error('Failed to load next panel after multiple attempts');
+      }
+    })();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [world.external_id]);
+
   // Start polling for next panel using Freeroam's sequential for-loop pattern (500ms, max 240 iterations)
   // Polls nextReady every 500ms. When ready, always loads the panel (auto-navigates).
   const startPolling = useCallback((panelId: string, isImage = false) => {
@@ -537,23 +572,26 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
       }
     }
     if (lastErr) {
-      // If the current panel is still generating or is a ready action panel,
-      // the panel we tried to load may not exist yet (Freeroam returns next_panel_id
-      // before the panel is ready). Fall back to polling instead of showing an error.
+      // The panel fetch failed all retries. If the source panel is an action panel
+      // (generating or ready), the target panel may not be available yet.
+      // Use startDirectPanelPolling to keep retrying getPanel every 500ms
+      // with the spinner showing, until the panel becomes available.
       const currentPanelId = currentPanelIdRef.current;
       const sourcePanelData = currentPanelId ? panelCache.current.get(currentPanelId) : null;
       const shouldFallbackToPoll =
         sourcePanelData?.forward_state === 'generating' ||
         (sourcePanelData?.forward_state === 'ready' && sourcePanelData?.is_action);
-      if (shouldFallbackToPoll && currentPanelId) {
-        startPolling(currentPanelId);
+      if (shouldFallbackToPoll) {
+        // Poll getPanel directly since we already know the target panel_id
+        startDirectPanelPolling(panelId);
+        return; // Don't clear isNavigating — let polling handle it
       } else {
         toast.error(lastErr instanceof Error ? lastErr.message : 'Failed to load panel');
       }
     }
     setIsNavigating(false);
     setIsLoading(false);
-  }, [utils, setPanelMutation, stopPolling, showChoiceIdeasByDefault, startPolling]);
+  }, [utils, setPanelMutation, stopPolling, showChoiceIdeasByDefault, startPolling, startDirectPanelPolling]);
 
   // Load voice_enabled setting
   const { data: voiceEnabledSetting } = trpc.voice.getSetting.useQuery({ key: 'voice_enabled' });
