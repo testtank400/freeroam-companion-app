@@ -1894,11 +1894,9 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
             <div
               className="absolute bottom-0 left-0 right-0 z-20 flex flex-col gap-2 px-4 pb-4 pt-10"
               style={{
-                background: choiceIdeasVisible
-                  ? 'rgba(0,0,0,0.92)'
-                  : 'linear-gradient(to top, rgba(0,0,0,0.92) 55%, transparent)',
+                background: 'linear-gradient(to top, rgba(0,0,0,0.92) 55%, transparent)',
                 maxHeight: '85dvh',
-                overflowY: choiceIdeasVisible ? 'auto' : 'visible',
+                overflowY: 'auto',
                 overscrollBehavior: 'contain',
               }}
             >
@@ -1928,9 +1926,10 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
                     onClick={() => handleChoice(opt.text)}
                     className={`w-full flex items-start gap-3 px-4 py-3 rounded-2xl transition-all active:scale-95 group ${isSelected ? 'hover-selected-choice' : 'hover:brightness-110'}`}
                     style={{
-                      background: isSelected ? 'rgba(34,197,94,0.4)' : 'rgba(30,30,40,1.0)',
+                      background: isSelected ? 'rgba(34,197,94,0.25)' : 'rgba(30,30,40,0.85)',
                       border: 'none',
                       boxShadow: isSelected ? '0 4px 20px rgba(34,197,94,0.4), 0 2px 8px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.15), inset 0 0 0 1px rgba(34,197,94,0.5)' : 'inset 0 0 0 1px rgba(255,255,255,0.12)',
+                      backdropFilter: 'blur(10px)',
                       textAlign: 'left',
                       cursor: 'pointer',
                     }}
