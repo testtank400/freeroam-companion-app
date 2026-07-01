@@ -420,7 +420,7 @@ export default function CharacterPanel({
                         {/* Minus / restore button */}
                         {char.removable && (
                           <button
-                            onClick={() => handleToggleRemove(char)}
+                            onClick={(e) => { e.stopPropagation(); handleToggleRemove(char); }}
                             className="absolute top-2 right-2 flex items-center justify-center rounded-full transition-all hover:brightness-125"
                             style={{
                               width: '24px',
