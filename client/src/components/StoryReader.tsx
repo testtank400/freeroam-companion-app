@@ -1892,14 +1892,14 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
           {/* Choice options — Freeroam-style with lettered options, OR divider, custom input */}
           {hasChoice && !isLoading && (
             <div
-              className="absolute bottom-0 left-0 right-0 z-20 flex flex-col gap-2 px-4 pb-4 pt-10"
+              className="absolute bottom-0 left-0 right-0 z-20 px-4 pb-4 pt-10"
               style={{
                 background: 'linear-gradient(to top, rgba(0,0,0,0.92) 55%, transparent)',
                 maxHeight: '85dvh',
                 overflowY: 'auto',
                 WebkitOverflowScrolling: 'touch',
                 overscrollBehavior: 'contain',
-                top: 'auto',
+                display: 'block',
               }}
             >
               {/* IDEAS/HIDE toggle — always at top so it's reachable regardless of choice list height */}
@@ -1934,6 +1934,8 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
                       backdropFilter: 'blur(10px)',
                       textAlign: 'left',
                       cursor: 'pointer',
+                      display: 'block',
+                      marginBottom: '8px',
                     }}
                     onMouseEnter={(e) => { if (isSelected) (e.currentTarget as HTMLButtonElement).style.background = 'rgba(50,50,60,0.9)'; }}
                     onMouseLeave={(e) => { if (isSelected) (e.currentTarget as HTMLButtonElement).style.background = 'rgba(34,197,94,0.25)'; }}
