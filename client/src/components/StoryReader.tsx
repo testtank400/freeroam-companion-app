@@ -1073,8 +1073,10 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
   useEffect(() => {
     if (!currentPanel) return;
     const { forward_state, next_panel_id } = currentPanel;
-    const shouldPoll =
-      (forward_state === 'generating' && !next_panel_id);
+    // Poll whenever forward_state=generating, regardless of whether next_panel_id is set.
+    // Freeroam can return next_panel_id while still in generating state — the panel
+    // exists but isn't ready to fetch yet. We need to keep polling in that case too.
+    const shouldPoll = forward_state === 'generating';
     if (shouldPoll && !isPolling) {
       startPolling(currentPanel.panel_id);
     }
@@ -1136,7 +1138,9 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
       // NOTE: This condition mirrors the polling effect at line ~991.
       //       If you change it here, update that effect too.
       // NOTE: Do NOT use forward_state=ready here — see comment in the polling effect.
-      if (embedded.forward_state === 'generating' && !embedded.next_panel_id) {
+      // Poll on all generating panels, even if next_panel_id is already set
+      // (mirrors the polling effect condition above)
+      if (embedded.forward_state === 'generating') {
         startPolling(embedded.panel_id);
       }
       return;
