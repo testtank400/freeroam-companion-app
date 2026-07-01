@@ -536,12 +536,15 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
       }
     }
     if (lastErr) {
-      // If the current panel has forward_state=generating, the panel we tried to load
-      // may not exist yet (Freeroam returns next_panel_id before the panel is ready).
-      // Fall back to polling the current panel's nextReady instead of showing an error.
+      // If the current panel is still generating or is a ready action panel,
+      // the panel we tried to load may not exist yet (Freeroam returns next_panel_id
+      // before the panel is ready). Fall back to polling instead of showing an error.
       const currentPanelId = currentPanelIdRef.current;
       const sourcePanelData = currentPanelId ? panelCache.current.get(currentPanelId) : null;
-      if (sourcePanelData?.forward_state === 'generating' && currentPanelId) {
+      const shouldFallbackToPoll =
+        sourcePanelData?.forward_state === 'generating' ||
+        (sourcePanelData?.forward_state === 'ready' && sourcePanelData?.is_action);
+      if (shouldFallbackToPoll && currentPanelId) {
         startPolling(currentPanelId);
       } else {
         toast.error(lastErr instanceof Error ? lastErr.message : 'Failed to load panel');
