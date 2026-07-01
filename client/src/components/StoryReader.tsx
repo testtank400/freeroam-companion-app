@@ -1891,13 +1891,19 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
 
           {/* Choice options — Freeroam-style with lettered options, OR divider, custom input */}
           {hasChoice && !isLoading && (
-            <div className="absolute bottom-0 left-0 right-0 z-20 flex flex-col" style={{ maxHeight: '80dvh' }}>
-              {/* Gradient fade at top — blends into the image */}
-              <div style={{ height: '48px', flexShrink: 0, background: 'linear-gradient(to bottom, transparent, rgba(10,10,16,0.95))' }} />
-              {/* Solid panel body — scrollable */}
-              <div className="flex flex-col overflow-hidden" style={{ background: 'rgba(10,10,16,0.97)', flex: 1 }}>
-              {/* IDEAS/HIDE toggle — sticky at top so it's always reachable */}
-              <div className="flex justify-end px-4 pt-2 pb-1 flex-shrink-0">
+            <div
+              className="absolute bottom-0 left-0 right-0 z-20 flex flex-col gap-2 px-4 pb-4 pt-10"
+              style={{
+                background: choiceIdeasVisible
+                  ? 'rgba(0,0,0,0.92)'
+                  : 'linear-gradient(to top, rgba(0,0,0,0.92) 55%, transparent)',
+                maxHeight: '85dvh',
+                overflowY: choiceIdeasVisible ? 'auto' : 'visible',
+                overscrollBehavior: 'contain',
+              }}
+            >
+              {/* IDEAS/HIDE toggle — always at top so it's reachable regardless of choice list height */}
+              <div className="flex justify-end mb-1">
                 <button
                   onClick={() => setChoiceIdeasVisible(v => !v)}
                   className="flex items-center gap-1 transition-all hover:brightness-125"
@@ -1907,8 +1913,6 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
                   <ChevronDown size={12} strokeWidth={2.5} style={{ transform: choiceIdeasVisible ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
                 </button>
               </div>
-              {/* Scrollable content area */}
-              <div className="flex flex-col gap-2 overflow-y-auto px-4 pb-4" style={{ overscrollBehavior: 'contain' }}>
               {/* Question text */}
               {choice.question && (
                 <p style={{ fontFamily: 'Outfit, sans-serif', fontSize: '14px', fontWeight: 500, color: 'rgba(255,255,255,0.7)', marginBottom: '4px' }}>
@@ -1982,8 +1986,6 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
                   {isSendingAction ? <Loader2 size={14} className="animate-spin" /> : <ChevronRight size={16} strokeWidth={2.5} />}
                 </button>
               </div>
-              </div>{/* end scrollable content */}
-              </div>{/* end solid panel body */}
             </div>
           )}
         {/* Action bar — hidden on choice/requires_action panels */}
