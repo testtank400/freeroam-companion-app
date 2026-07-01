@@ -536,11 +536,20 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
       }
     }
     if (lastErr) {
-      toast.error(lastErr instanceof Error ? lastErr.message : 'Failed to load panel');
+      // If the current panel has forward_state=generating, the panel we tried to load
+      // may not exist yet (Freeroam returns next_panel_id before the panel is ready).
+      // Fall back to polling the current panel's nextReady instead of showing an error.
+      const currentPanelId = currentPanelIdRef.current;
+      const sourcePanelData = currentPanelId ? panelCache.current.get(currentPanelId) : null;
+      if (sourcePanelData?.forward_state === 'generating' && currentPanelId) {
+        startPolling(currentPanelId);
+      } else {
+        toast.error(lastErr instanceof Error ? lastErr.message : 'Failed to load panel');
+      }
     }
     setIsNavigating(false);
     setIsLoading(false);
-  }, [utils, setPanelMutation, stopPolling, showChoiceIdeasByDefault]);
+  }, [utils, setPanelMutation, stopPolling, showChoiceIdeasByDefault, startPolling]);
 
   // Load voice_enabled setting
   const { data: voiceEnabledSetting } = trpc.voice.getSetting.useQuery({ key: 'voice_enabled' });
