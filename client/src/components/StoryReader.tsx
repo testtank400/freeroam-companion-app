@@ -1351,7 +1351,7 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
       <button
         onClick={() => handleNavigate('prev')}
         disabled={!canGoBack || isNavigating}
-        className="absolute left-0 top-0 bottom-0 z-20 flex items-center justify-start pl-2 sm:pl-4 disabled:opacity-0 transition-opacity"
+        className="absolute left-0 top-0 bottom-0 z-25 flex items-center justify-start pl-2 sm:pl-4 disabled:opacity-0 transition-opacity"
         style={{ width: 'clamp(44px, 15vw, 100px)', cursor: canGoBack ? 'pointer' : 'default' }}
         aria-label="Previous panel"
       >
@@ -1367,7 +1367,7 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
       <button
         onClick={() => handleNavigate('next')}
         disabled={(!canGoForward && !isPolling && !isRegeneratePolling) || isNavigating}
-        className="absolute right-0 top-0 bottom-0 z-20 flex items-center justify-end pr-2 sm:pr-4 disabled:opacity-0 transition-opacity"
+        className="absolute right-0 top-0 bottom-0 z-25 flex items-center justify-end pr-2 sm:pr-4 disabled:opacity-0 transition-opacity"
         style={{ width: 'clamp(44px, 15vw, 100px)', cursor: canGoForward ? 'pointer' : 'default' }}
         aria-label="Next panel"
       >
@@ -1895,21 +1895,22 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
               className="absolute bottom-0 left-0 right-0 z-20 flex flex-col gap-2 px-4 pb-4 pt-10"
               style={{ background: 'linear-gradient(to top, rgba(0,0,0,0.92) 55%, transparent)' }}
             >
-              {/* Question + IDEAS/HIDE toggle */}
+              {/* IDEAS/HIDE toggle — always at top so it's reachable regardless of choice list height */}
+              <div className="flex justify-end mb-1">
+                <button
+                  onClick={() => setChoiceIdeasVisible(v => !v)}
+                  className="flex items-center gap-1 transition-all hover:brightness-125"
+                  style={{ fontFamily: 'Outfit, sans-serif', fontSize: '12px', fontWeight: 600, color: 'rgba(255,255,255,0.5)', letterSpacing: '0.05em' }}
+                >
+                  {choiceIdeasVisible ? 'HIDE' : 'IDEAS'}
+                  <ChevronDown size={12} strokeWidth={2.5} style={{ transform: choiceIdeasVisible ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
+                </button>
+              </div>
+              {/* Question text */}
               {choice.question && (
-                <div className="flex items-center gap-2 mb-1">
-                  <p style={{ fontFamily: 'Outfit, sans-serif', fontSize: '14px', fontWeight: 500, color: 'rgba(255,255,255,0.7)', flex: 1 }}>
-                    {choice.question}
-                  </p>
-                  <button
-                    onClick={() => setChoiceIdeasVisible(v => !v)}
-                    className="flex items-center gap-1 transition-all hover:brightness-125 flex-shrink-0"
-                    style={{ fontFamily: 'Outfit, sans-serif', fontSize: '12px', fontWeight: 600, color: 'rgba(255,255,255,0.5)', letterSpacing: '0.05em' }}
-                  >
-                    {choiceIdeasVisible ? 'HIDE' : 'IDEAS'}
-                    <ChevronDown size={12} strokeWidth={2.5} style={{ transform: choiceIdeasVisible ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
-                  </button>
-                </div>
+                <p style={{ fontFamily: 'Outfit, sans-serif', fontSize: '14px', fontWeight: 500, color: 'rgba(255,255,255,0.7)', marginBottom: '4px' }}>
+                  {choice.question}
+                </p>
               )}
               {/* Lettered options — shown based on choiceIdeasVisible, always interactive */}
               {choiceIdeasVisible && choice!.options.map((opt, i) => {
