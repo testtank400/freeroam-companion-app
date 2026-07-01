@@ -305,7 +305,8 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
       } else if (result.forward_state === 'generating' || result.forward_state === 'ready') {
         // Poll for the next panel — Freeroam may return next_panel_id before the panel exists
         // startPolling handles both cases: polls nextReady until ready, then loads the panel
-        startPolling(result.action_panel_id, isImageAction);
+        // Action panels always auto-navigate when polling resolves
+        startPolling(result.action_panel_id, isImageAction, true);
       }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to send action');
