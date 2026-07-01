@@ -491,6 +491,9 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
     // Check panel cache first for instant navigation.
     // Only reject if panel_content is null or contains [Max Depth] truncation markers.
     // images can legitimately be null/empty on some panels, so don't require it to be an array.
+    // NOTE: This same validity check is also used when caching embedded next_panel data
+    //       at line ~514 (loadPanel) and line ~1041 (handleNavigate embedded fast path).
+    //       If you change this logic, update those sites too.
     const isPanelContentValid = (pc: PanelData['panel_content']) =>
       pc != null && typeof pc.type === 'string' && pc.type !== '[Max Depth]';
     const cached = panelCache.current.get(panelId);
@@ -789,7 +792,13 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
   // Track whether the reader has advanced past the first panel load
   const hasNavigatedRef = useRef(false);
 
-  // Trigger TTS when panel changes and has spoken dialogue
+  // Trigger TTS when panel changes and has spoken dialogue.
+  // NOTE: TTS is also re-fired by the worldCharacters effect (line ~805) when character
+  //       IDs first become available after the initial panel load.
+  // NOTE: The actual audio playback is in playAudioClip (line ~522), which is called
+  //       from triggerTTS. All 4 audio play sites use playAudioClip.
+  // NOTE: ttsWillPlayRef must be set to true before audio.play() and false on
+  //       audio.onended/onerror/onstalled. The auto-advance fallback timer checks it.
   useEffect(() => {
     if (!currentPanel) return;
     // Reset TTS flags — triggerTTS will update them based on outcome
@@ -831,9 +840,14 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [worldCharacters]);
 
-  // Auto-advance timer: fires when panel changes and auto-advance is enabled
-  // Voice-based advance is handled in triggerTTS audio.onended
-  // This handles panels without voice: text-based timer or static delay
+  // Auto-advance timer: fires when panel changes and auto-advance is enabled.
+  // Voice-based advance is handled in triggerTTS audio.onended (playAudioClip helper).
+  // This handles panels without voice: text-based timer or static delay.
+  // NOTE: Auto-advance is also controlled by autoAdvancePausedRef (set by pauseAutoAdvance/
+  //       resumeAutoAdvance). Pause triggers: action input open, Characters panel open,
+  //       story menu open. All must be dismissed before advance resumes.
+  // NOTE: The advance itself fires in audio.onended (voiced panels) or noVoiceTimer
+  //       (unvoiced panels). If you add a new advance path, check both.
   useEffect(() => {
     if (!currentPanel || !autoAdvanceEnabled || autoAdvancePaused) return;
     // Don't auto-advance on choice, action, or polling panels
@@ -985,14 +999,16 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
       });
   }, []);
 
-  // Poll when forward_state is "ready" but next_panel_id is null (AI generating).
+  // Poll when forward_state=generating and next_panel_id is null (AI still working).
   // Also restarts polling when navigating back to a panel that is still generating.
+  // NOTE: The polling condition (forward_state=generating && !next_panel_id) is also
+  //       duplicated in handleNavigate's embedded fast path (line ~1053).
+  //       If you change the condition here, update that site too.
+  // NOTE: Do NOT add forward_state=ready here — that state is a Freeroam API quirk
+  //       that causes unwanted auto-advance on already-generated panels.
   useEffect(() => {
     if (!currentPanel) return;
-    const { forward_state, next_panel_id, is_action } = currentPanel;
-    // Only auto-poll when the AI is actively generating (forward_state=generating).
-    // Do NOT auto-poll on forward_state=ready with no next_panel_id — that state is
-    // ambiguous (Freeroam API quirk) and causes unwanted auto-advance on normal panels.
+    const { forward_state, next_panel_id } = currentPanel;
     const shouldPoll =
       (forward_state === 'generating' && !next_panel_id);
     if (shouldPoll && !isPolling) {
@@ -1050,7 +1066,10 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
       setPanelMutation.mutate({ worldId: world.external_id, panelId: embedded.panel_id });
       setIsNavigating(false);
       setIsLoading(false);
-      // If the embedded panel is still generating, start polling
+      // If the embedded panel is still generating, start polling.
+      // NOTE: This condition mirrors the polling effect at line ~991.
+      //       If you change it here, update that effect too.
+      // NOTE: Do NOT use forward_state=ready here — see comment in the polling effect.
       if (embedded.forward_state === 'generating' && !embedded.next_panel_id) {
         startPolling(embedded.panel_id);
       }
