@@ -161,6 +161,10 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
   // Narrator voice settings
   const { data: narratorVoiceId } = trpc.voice.getSetting.useQuery({ key: 'narrator_voice_id' });
 
+  // Debug mode
+  const { data: debugModeSetting } = trpc.voice.getSetting.useQuery({ key: 'debug_mode' });
+  const debugMode = debugModeSetting === 'true';
+
   // Auto-advance settings
   const [autoAdvanceEnabled, setAutoAdvanceEnabled] = useState(false);
   const [autoAdvanceReadingSpeed, setAutoAdvanceReadingSpeed] = useState(1.0);
@@ -1506,6 +1510,28 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
               freeroam
             </a>
             <div className="flex items-center gap-2 pointer-events-auto">
+              {/* Debug overlay — shown when debug_mode is enabled in preferences */}
+              {debugMode && panel && (
+                <div style={{
+                  fontSize: '9px',
+                  fontFamily: 'monospace',
+                  color: '#fff',
+                  background: 'rgba(0,0,0,0.75)',
+                  border: '1px solid rgba(255,255,255,0.3)',
+                  borderRadius: '4px',
+                  padding: '3px 6px',
+                  lineHeight: 1.6,
+                  maxWidth: '180px',
+                  pointerEvents: 'none',
+                }}>
+                  <div>fs: <span style={{ color: panel.forward_state === 'generating' ? '#f59e0b' : '#4ade80' }}>{panel.forward_state}</span></div>
+                  <div>nxt: <span style={{ color: panel.next_panel_id ? '#4ade80' : '#f87171' }}>{panel.next_panel_id ? panel.next_panel_id.slice(0,8) : 'null'}</span></div>
+                  <div>poll: <span style={{ color: isPolling ? '#f59e0b' : '#4ade80' }}>{isPolling ? 'true' : 'false'}</span></div>
+                  <div>nav: <span style={{ color: isNavigating ? '#f59e0b' : '#4ade80' }}>{isNavigating ? 'true' : 'false'}</span></div>
+                  <div>fwd: <span style={{ color: canGoForward ? '#4ade80' : '#f87171' }}>{canGoForward ? 'true' : 'false'}</span></div>
+                  <div>act: {panel.is_action ? 'Y' : 'N'} | req: {panel.requires_action ? 'Y' : 'N'}</div>
+                </div>
+              )}
               {/* Debug: flashes amber while ElevenLabs is generating (cache miss) */}
               {isGeneratingTts && (
                 <span
