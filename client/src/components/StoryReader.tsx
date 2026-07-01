@@ -1926,7 +1926,7 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
                   <button
                     key={i}
                     onClick={() => handleChoice(opt.text)}
-                    className={`w-full flex items-start gap-3 px-4 py-3 rounded-2xl transition-all active:scale-95 group ${isSelected ? 'hover-selected-choice' : 'hover:brightness-110'}`}
+                    className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl transition-all active:scale-95 group ${isSelected ? 'hover-selected-choice' : 'hover:brightness-110'}`}
                     style={{
                       background: isSelected ? 'rgba(34,197,94,0.25)' : 'rgba(30,30,40,0.85)',
                       border: 'none',
