@@ -226,10 +226,24 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
   const [actionBarVisible, setActionBarVisible] = useState(true);
   const [activeInputMode, setActiveInputMode] = useState<'act' | 'direct' | 'image' | null>(null);
   const [actionInput, setActionInput] = useState('');
+  const actionTextareaRef = useRef<HTMLTextAreaElement>(null);
   const [isSendingAction, setIsSendingAction] = useState(false);
   // Text the user submitted — shown centered on screen while the next panel generates
   const [pendingActionText, setPendingActionText] = useState<string | null>(null);
   const sendActionMutation = trpc.worlds.sendAction.useMutation();
+
+  // When image mode activates, position cursor at end of the pre-filled text
+  useEffect(() => {
+    if (activeInputMode === 'image' && actionTextareaRef.current) {
+      const el = actionTextareaRef.current;
+      const len = el.value.length;
+      // Use requestAnimationFrame to ensure the textarea has rendered and focused
+      requestAnimationFrame(() => {
+        el.setSelectionRange(len, len);
+        el.focus();
+      });
+    }
+  }, [activeInputMode]);
 
   const handleActionBarButton = (mode: 'act' | 'direct' | 'image') => {
     if (activeInputMode === mode) {
@@ -2067,6 +2081,7 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
               style={{ background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)', borderTop: '1px solid rgba(255,255,255,0.08)' }}
             >
               <textarea
+                ref={actionTextareaRef}
                 autoFocus
                 rows={1}
                 value={actionInput}
