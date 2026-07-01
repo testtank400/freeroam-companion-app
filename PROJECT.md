@@ -67,13 +67,27 @@ Voice generation happens server-side in the `voice.generateSpeech` procedure (`s
 
 ### Polling state machine
 
-Polling fires when `forward_state === 'generating' && !next_panel_id`. It calls Freeroam's `nextReady` endpoint every 500ms. When ready, it updates the panel cache entry with the resolved `next_panel_id` and `forward_state: 'ready'`, then loads the next panel.
+Polling fires when `forward_state === 'generating'`, regardless of whether `next_panel_id` is set. Freeroam can return `next_panel_id` while still in `generating` state — the panel exists but isn't ready to fetch yet.
 
-**Critical:** Do **not** auto-poll on `forward_state === 'ready' && !next_panel_id`. This is a Freeroam API quirk on some already-generated panels and causes unwanted auto-advance.
+**Three polling paths:**
 
-The polling condition exists in **two places** — both must be kept in sync:
-1. The polling `useEffect` (line ~991 in `StoryReader.tsx`)
-2. The `handleNavigate` embedded fast path (line ~1058)
+| Condition | Method | Behavior |
+|---|---|---|
+| `generating` + `is_action=true` OR `next_panel_id=null` | `startPolling` (nextReady loop) | Auto-navigates when ready |
+| `generating` + `is_action=false` + `next_panel_id` set | `startDirectPanelPolling` | Retries `getPanel` every 500ms, shows spinner, does NOT auto-navigate |
+| `startPolling` resolves + `is_action=false` | Update `canGoForward` only | Arrow appears, user taps to advance |
+
+**Critical rules:**
+- Do **not** auto-poll on `forward_state === 'ready'` — Freeroam API quirk that causes unwanted auto-advance
+- Do **not** add `isPolling` to the polling effect's dependency array — causes infinite loop (isPolling change → cleanup → stopPolling → isPolling change → repeat)
+- Never serve a cached panel with `forward_state=generating` — always re-fetch to get current state
+- When polling completes, update the panel cache with the resolved `next_panel_id` and `forward_state: 'ready'`
+
+**Polling condition exists in two places — keep in sync:**
+1. The polling `useEffect` (line ~1073 in `StoryReader.tsx`)
+2. The `handleNavigate` embedded fast path (line ~1137)
+
+**`startDirectPanelPolling`:** Used when `next_panel_id` is already known but `loadPanel` keeps failing. Polls `getPanel` directly every 500ms (up to 60 seconds) with spinner showing. Falls back to this from `loadPanel` when all retries fail on an action panel.
 
 ### `isNavigating` safety reset
 
@@ -152,3 +166,4 @@ The Grok call is **non-fatal** — if it fails for any reason, TTS proceeds with
 - **Thumbs up/down** — UI exists but not wired to Freeroam's feedback endpoints.
 - **Narrator voice picker** — narrator voice is set via a raw voice ID in settings. A proper browse-and-assign dialog (same as character voice picker) would improve UX.
 - **Visual countdown bar** — auto-advance has no visual indicator. A thin draining progress bar at the bottom of the panel would help.
+- **Debug mode** — a debug overlay is available in preferences (Voice Settings → Debug Mode). Shows `forward_state`, `next_panel_id`, `isPolling`, `isNavigating`, `canGoForward`, `is_action`, `requires_action` in real time. Leave on when investigating navigation issues.
