@@ -1029,7 +1029,9 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
     }
     return () => stopPolling();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentPanel?.panel_id, currentPanel?.forward_state, currentPanel?.next_panel_id, currentPanel?.is_action]);
+  // isPolling is included so the effect re-evaluates when polling stops —
+  // without it, if polling finishes and shouldPoll is still true, polling never restarts.
+  }, [currentPanel?.panel_id, currentPanel?.forward_state, currentPanel?.next_panel_id, currentPanel?.is_action, isPolling]);
 
   // Safety reset: if isNavigating has been stuck true for >5s, reset it
   useEffect(() => {
