@@ -1934,7 +1934,6 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
                       backdropFilter: 'blur(10px)',
                       textAlign: 'left',
                       cursor: 'pointer',
-                      display: 'block',
                       marginBottom: '8px',
                     }}
                     onMouseEnter={(e) => { if (isSelected) (e.currentTarget as HTMLButtonElement).style.background = 'rgba(50,50,60,0.9)'; }}
