@@ -1978,7 +1978,7 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
                       if (actionInput.trim()) handleSendAction(actionInput, 'choice');
                     }
                   }}
-                  placeholder="Type your response..."
+                  placeholder="Or type your own response..."
                   className="flex-1 outline-none resize-none"
                   style={{ fontFamily: 'Outfit, sans-serif', fontSize: '14px', color: 'rgba(255,255,255,0.75)', background: 'transparent', border: 'none', minWidth: 0, lineHeight: 1.5, overflow: 'hidden', maxHeight: '120px', overflowY: 'auto' }}
                 />
