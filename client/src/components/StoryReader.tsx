@@ -507,26 +507,36 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
       panelCache.current.delete(panelId);
     }
     setIsNavigating(true);
-    try {
-      const data = await utils.worlds.getPanel.fetch({ worldId, panelId });
-      const panel = data as PanelData;
-      // Only cache if panel_content has real data (not [Max Depth] strings)
-      if (isPanelContentValid(panel.panel_content)) {
-        panelCache.current.set(panelId, panel);
-        // Also cache the embedded next_panel if present and valid
-        if (panel.next_panel) {
-          const next = panel.next_panel as PanelData;
-          if (next.panel_id && isPanelContentValid(next.panel_content)) panelCache.current.set(next.panel_id, next);
+    // Retry up to 3 times with a 1s delay — Freeroam sometimes returns a panel_id
+    // before the panel actually exists (404/fetch error on first attempt).
+    let lastErr: unknown;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        if (attempt > 0) await new Promise(resolve => setTimeout(resolve, 1000));
+        const data = await utils.worlds.getPanel.fetch({ worldId, panelId });
+        const panel = data as PanelData;
+        // Only cache if panel_content has real data (not [Max Depth] strings)
+        if (isPanelContentValid(panel.panel_content)) {
+          panelCache.current.set(panelId, panel);
+          // Also cache the embedded next_panel if present and valid
+          if (panel.next_panel) {
+            const next = panel.next_panel as PanelData;
+            if (next.panel_id && isPanelContentValid(next.panel_content)) panelCache.current.set(next.panel_id, next);
+          }
         }
+        setCurrentPanel(panel); currentPanelIdRef.current = (panel)?.panel_id ?? null;
+        setPanelMutation.mutate({ worldId, panelId });
+        lastErr = null;
+        break; // success
+      } catch (err) {
+        lastErr = err;
       }
-      setCurrentPanel(panel); currentPanelIdRef.current = (panel)?.panel_id ?? null;
-      setPanelMutation.mutate({ worldId, panelId });
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to load panel');
-    } finally {
-      setIsNavigating(false);
-      setIsLoading(false);
     }
+    if (lastErr) {
+      toast.error(lastErr instanceof Error ? lastErr.message : 'Failed to load panel');
+    }
+    setIsNavigating(false);
+    setIsLoading(false);
   }, [utils, setPanelMutation, stopPolling, showChoiceIdeasByDefault]);
 
   // Load voice_enabled setting
