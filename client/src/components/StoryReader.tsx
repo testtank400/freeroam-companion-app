@@ -1903,17 +1903,18 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
               }}
             >
               {/* IDEAS/HIDE toggle — always at top so it's reachable regardless of choice list height */}
-              {/* Question text with inline IDEAS/HIDE toggle — Freeroam style */}
+              {/* Question text */}
+              {choice.question && (
+                <p style={{ fontFamily: 'Outfit, sans-serif', fontSize: '14px', fontWeight: 500, color: 'rgba(255,255,255,0.7)', textAlign: 'center', marginBottom: '4px' }}>
+                  {choice.question}
+                </p>
+              )}
+              {/* IDEAS/HIDE toggle — centered on its own line below question text */}
               <div style={{ textAlign: 'center', marginBottom: '8px' }}>
-                {choice.question && (
-                  <span style={{ fontFamily: 'Outfit, sans-serif', fontSize: '14px', fontWeight: 500, color: 'rgba(255,255,255,0.7)' }}>
-                    {choice.question}{' '}
-                  </span>
-                )}
                 <button
                   onClick={() => setChoiceIdeasVisible(v => !v)}
                   className="inline-flex items-center gap-1 transition-all hover:brightness-125"
-                  style={{ fontFamily: 'Outfit, sans-serif', fontSize: '12px', fontWeight: 600, color: 'rgba(255,255,255,0.5)', letterSpacing: '0.05em', verticalAlign: 'middle' }}
+                  style={{ fontFamily: 'Outfit, sans-serif', fontSize: '12px', fontWeight: 600, color: 'rgba(255,255,255,0.5)', letterSpacing: '0.05em' }}
                 >
                   {choiceIdeasVisible ? 'HIDE' : 'IDEAS'}
                   <ChevronDown size={12} strokeWidth={2.5} style={{ transform: choiceIdeasVisible ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
@@ -1977,7 +1978,7 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
                       if (actionInput.trim()) handleSendAction(actionInput, 'choice');
                     }
                   }}
-                  placeholder="Or type your own"
+                  placeholder="Type your response..."
                   className="flex-1 outline-none resize-none"
                   style={{ fontFamily: 'Outfit, sans-serif', fontSize: '14px', color: 'rgba(255,255,255,0.75)', background: 'transparent', border: 'none', minWidth: 0, lineHeight: 1.5, overflow: 'hidden', maxHeight: '120px', overflowY: 'auto' }}
                 />
