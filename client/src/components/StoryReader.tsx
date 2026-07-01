@@ -1894,7 +1894,9 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
             <div
               className="absolute bottom-0 left-0 right-0 z-20 flex flex-col px-4 pb-4"
               style={{
-                background: 'linear-gradient(to top, rgba(0,0,0,0.92) 55%, transparent)',
+                background: 'rgba(10,10,16,0.92)',
+                backdropFilter: 'blur(12px)',
+                WebkitBackdropFilter: 'blur(12px)',
                 maxHeight: '80dvh',
                 overflow: 'hidden',
               }}
