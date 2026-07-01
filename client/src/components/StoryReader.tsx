@@ -1897,7 +1897,9 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
                 background: 'linear-gradient(to top, rgba(0,0,0,0.92) 55%, transparent)',
                 maxHeight: '85dvh',
                 overflowY: 'auto',
+                WebkitOverflowScrolling: 'touch',
                 overscrollBehavior: 'contain',
+                top: 'auto',
               }}
             >
               {/* IDEAS/HIDE toggle — always at top so it's reachable regardless of choice list height */}
