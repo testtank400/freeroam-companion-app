@@ -490,7 +490,22 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
                     forward_state: 'ready',
                   });
                 }
-                await loadPanelRef.current?.(result.panel_id, world.external_id);
+                // Only auto-navigate for action panels.
+                // Non-action panels (dialogue/narration) that happen to be in generating
+                // state should show the arrow and let the user advance manually.
+                const isActionPanel = cachedPanel?.is_action ?? false;
+                if (isActionPanel) {
+                  await loadPanelRef.current?.(result.panel_id, world.external_id);
+                } else {
+                  // Update currentPanel state so canGoForward becomes true
+                  setCurrentPanel(prev => {
+                    if (!prev || prev.panel_id !== panelId) return prev;
+                    return { ...prev, next_panel_id: result.panel_id, forward_state: 'ready' };
+                  });
+                  setIsPolling(false);
+                  setIsImagePolling(false);
+                  pollAbortRef.current = null;
+                }
               }
               return;
             }
