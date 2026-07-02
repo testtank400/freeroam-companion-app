@@ -1400,20 +1400,20 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
       >
         <div
           className="relative flex items-center justify-center"
-          style={{ width: '40px', height: '40px', color: regenerateTimedOut ? '#ef4444' : 'rgba(255,255,255,0.8)', filter: 'drop-shadow(0 1px 3px rgba(0,0,0,0.9))' }}
+          style={{ width: '24px', height: '24px', color: regenerateTimedOut ? '#ef4444' : 'rgba(255,255,255,0.8)', filter: 'drop-shadow(0 1px 3px rgba(0,0,0,0.9))' }}
         >
           {/* Spinning ring for polling states */}
           {(isPolling || isRegeneratePolling || regenerateTimedOut) && (
             <svg
               className="absolute inset-0"
-              viewBox="0 0 40 40"
+              viewBox="0 0 24 24"
               style={{
                 animation: regenerateTimedOut ? 'none' : 'spin 1s linear infinite',
               }}
             >
               <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
               <circle
-                cx="20" cy="20" r="17"
+                cx="12" cy="12" r="10"
                 fill="none"
                 stroke={regenerateTimedOut ? '#ef4444' : 'rgba(255,255,255,0.7)'}
                 strokeWidth="2.5"
