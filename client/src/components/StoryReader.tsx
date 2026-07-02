@@ -2058,6 +2058,9 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
               <ChevronDown size={15} strokeWidth={2} />
             </button>
 
+          {/* Vertical divider — separates fixed controls from scrollable pills */}
+          <div style={{ width: '1px', height: '20px', background: 'rgba(255,255,255,0.2)', flexShrink: 0, marginLeft: '2px', marginRight: '2px' }} />
+
           {/* Pill action buttons */}
           <div className="flex items-center gap-1.5 overflow-x-auto flex-1" style={{ scrollbarWidth: 'none' }}>
             {[
