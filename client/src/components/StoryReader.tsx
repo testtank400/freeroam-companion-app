@@ -225,7 +225,17 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
   // Action bar state
   const [actionBarVisible, setActionBarVisible] = useState(true);
   const [activeInputMode, setActiveInputMode] = useState<'act' | 'direct' | 'image' | null>(null);
-  const [actionInput, setActionInput] = useState('');
+  // Separate buffers per mode — switching modes preserves each buffer
+  const [actInput, setActInput] = useState('');
+  const [directInput, setDirectInput] = useState('');
+  const [imageInput, setImageInput] = useState('Change the image to ');
+  // Derived: current active buffer value
+  const actionInput = activeInputMode === 'act' ? actInput : activeInputMode === 'direct' ? directInput : activeInputMode === 'image' ? imageInput : '';
+  const setActionInput = (val: string) => {
+    if (activeInputMode === 'act') setActInput(val);
+    else if (activeInputMode === 'direct') setDirectInput(val);
+    else if (activeInputMode === 'image') setImageInput(val);
+  };
   const actionTextareaRef = useRef<HTMLTextAreaElement>(null);
   const [isSendingAction, setIsSendingAction] = useState(false);
   // Text the user submitted — shown centered on screen while the next panel generates
@@ -252,8 +262,7 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
       if (!charPanelOpen) resumeAutoAdvance();
     } else {
       setActiveInputMode(mode);
-      // Auto-fill prefix for Image mode
-      setActionInput(mode === 'image' ? 'Change the image to ' : '');
+      // Do NOT wipe buffers — each mode preserves its own text
       // Pause auto-advance (and cancel any running timer) while user is composing
       pauseAutoAdvance();
     }
@@ -273,8 +282,12 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
   ) => {
     if (!panel || !text.trim() || isSendingAction) return;
     setIsSendingAction(true);
+    // Clear only the buffer that was just submitted; reset image buffer to prefix
+    if (activeInputMode === 'act' || actionType === 'take-action') setActInput('');
+    else if (activeInputMode === 'direct' || actionType === 'steer-story') setDirectInput('');
+    else if (activeInputMode === 'image' || actionType === 'image') setImageInput('Change the image to ');
+    else if (actionType === 'choice') { /* choice input cleared separately */ }
     setActiveInputMode(null);
-    setActionInput('');
     setPendingActionText(text.trim());
     try {
       const result = await sendActionMutation.mutateAsync({
@@ -2030,7 +2043,7 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
 
             {/* Toggle down button */}
             <button
-              onClick={() => { setActionBarVisible(false); setActiveInputMode(null); setActionInput(''); if (!charPanelOpen) resumeAutoAdvance(); }}
+              onClick={() => { setActionBarVisible(false); setActiveInputMode(null); if (!charPanelOpen) resumeAutoAdvance(); }}
               className="flex items-center justify-center rounded-full flex-shrink-0 transition-all hover:bg-white/10"
               style={{ width: '34px', height: '34px', color: 'rgba(255,255,255,0.6)' }}
             >
@@ -2092,7 +2105,7 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
                   e.target.style.height = e.target.scrollHeight + 'px';
                 }}
                 onKeyDown={(e) => {
-                  if (e.key === 'Escape') { setActiveInputMode(null); setActionInput(''); if (!charPanelOpen) resumeAutoAdvance(); }
+                  if (e.key === 'Escape') { setActiveInputMode(null); if (!charPanelOpen) resumeAutoAdvance(); }
                   // Enter without shift submits; shift+Enter adds newline
                   if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault();
