@@ -230,6 +230,14 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
   const [directInput, setDirectInput] = useState('');
   const [imageInput, setImageInput] = useState('Change the image to ');
   const [choiceInput, setChoiceInput] = useState('');
+  const choiceTextareaRef = useRef<HTMLTextAreaElement>(null);
+  // Auto-grow the choice textarea whenever the value changes
+  useEffect(() => {
+    const el = choiceTextareaRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = el.scrollHeight + 'px';
+  }, [choiceInput]);
   // Derived: current active buffer value
   const actionInput = activeInputMode === 'act' ? actInput : activeInputMode === 'direct' ? directInput : activeInputMode === 'image' ? imageInput : '';
   const setActionInput = (val: string) => {
@@ -1993,12 +2001,11 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
               )}
               <div className="flex items-start gap-2 px-4 py-2" style={{ background: 'rgba(30,30,30,0.65)', border: '1px solid rgba(255,255,255,0.22)', borderRadius: '20px', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', boxShadow: '0 2px 8px rgba(0,0,0,0.3)' }}>
                 <textarea
+                  ref={choiceTextareaRef}
                   rows={1}
                   value={choiceInput}
                   onChange={(e) => {
                     setChoiceInput(e.target.value);
-                    e.target.style.height = 'auto';
-                    e.target.style.height = e.target.scrollHeight + 'px';
                   }}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && !e.shiftKey) {
