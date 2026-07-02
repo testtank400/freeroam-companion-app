@@ -229,6 +229,7 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
   const [actInput, setActInput] = useState('');
   const [directInput, setDirectInput] = useState('');
   const [imageInput, setImageInput] = useState('Change the image to ');
+  const [choiceInput, setChoiceInput] = useState('');
   // Derived: current active buffer value
   const actionInput = activeInputMode === 'act' ? actInput : activeInputMode === 'direct' ? directInput : activeInputMode === 'image' ? imageInput : '';
   const setActionInput = (val: string) => {
@@ -1417,7 +1418,7 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
                 fill="none"
                 stroke={regenerateTimedOut ? '#ef4444' : 'rgba(255,255,255,0.7)'}
                 strokeWidth="2.5"
-                strokeDasharray="80 26"
+                strokeDasharray="47 16"
                 strokeLinecap="round"
               />
             </svg>
@@ -1993,16 +1994,16 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
               <div className="flex items-start gap-2 px-4 py-2" style={{ background: 'rgba(30,30,30,0.65)', border: '1px solid rgba(255,255,255,0.22)', borderRadius: '20px', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', boxShadow: '0 2px 8px rgba(0,0,0,0.3)' }}>
                 <textarea
                   rows={1}
-                  value={actionInput}
+                  value={choiceInput}
                   onChange={(e) => {
-                    setActionInput(e.target.value);
+                    setChoiceInput(e.target.value);
                     e.target.style.height = 'auto';
                     e.target.style.height = e.target.scrollHeight + 'px';
                   }}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && !e.shiftKey) {
                       e.preventDefault();
-                      if (actionInput.trim()) handleSendAction(actionInput, 'choice');
+                      if (choiceInput.trim()) handleSendAction(choiceInput, 'choice');
                     }
                   }}
                   placeholder="Or type your own response..."
@@ -2010,8 +2011,8 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
                   style={{ fontFamily: 'Outfit, sans-serif', fontSize: '14px', color: 'rgba(255,255,255,0.75)', background: 'transparent', border: 'none', minWidth: 0, lineHeight: 1.5, overflow: 'hidden', maxHeight: '120px', overflowY: 'auto' }}
                 />
                 <button
-                  onClick={() => { if (actionInput.trim()) handleSendAction(actionInput, 'choice'); }}
-                  disabled={!actionInput.trim() || isSendingAction}
+                  onClick={() => { if (choiceInput.trim()) { handleSendAction(choiceInput, 'choice'); setChoiceInput(''); } }}
+                  disabled={!choiceInput.trim() || isSendingAction}
                   className="flex items-center justify-center rounded-full flex-shrink-0 transition-all hover:brightness-125 disabled:opacity-40 mt-0.5"
                   style={{ width: '32px', height: '32px', background: 'rgba(255,255,255,0.15)', color: '#fff' }}
                 >
