@@ -938,6 +938,8 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
       hasNavigatedRef.current = true;
       return;
     }
+    // Reset choice input on every panel change — no buffer for choice panels
+    setChoiceInput('');
     // Fire TTS in background (non-blocking)
     triggerTTS(currentPanel);
   // eslint-disable-next-line react-hooks/exhaustive-deps
