@@ -805,21 +805,18 @@ export default function StoryMenu({
 
   return (
     <>
-      {isOpen && (
-        <div className="fixed inset-0 z-[200]" style={{ background: 'rgba(0,0,0,0.5)' }} onClick={onClose} />
-      )}
-
       <div
         className="fixed top-0 left-0 right-0 z-[210] overflow-y-auto"
         style={{
-          maxHeight: isOpen ? '100dvh' : '0',
-          overflow: isOpen ? 'auto' : 'hidden',
-          transition: 'max-height 0.35s cubic-bezier(0.4, 0, 0.2, 1)',
+          maxHeight: '100dvh',
+          transform: isOpen ? 'translateY(0)' : 'translateY(-100%)',
+          transition: 'transform 0.25s ease',
           background: 'rgba(10, 10, 16, 0.97)',
           backdropFilter: 'blur(24px)',
           borderBottomLeftRadius: '20px',
           borderBottomRightRadius: '20px',
           boxShadow: '0 12px 48px rgba(0,0,0,0.7)',
+          pointerEvents: isOpen ? 'auto' : 'none',
         }}
       >
         <div className="mx-auto px-5 pt-4 pb-8" style={{ maxWidth: '680px' }}>
