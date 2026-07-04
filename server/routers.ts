@@ -2721,19 +2721,29 @@ export const appRouter = router({
           }
 
           if (missingNames.size > 0 && cookie) {
-            // Single call to /characters/current — returns all current world characters
-            // with full appearance, backstory, and headshot_url
+            // Single call to /world/{worldId}/characters/current?current_panel_external_id={panelId}
+            // Returns world_characters and story_characters with full appearance and headshots
             try {
               const currentCharsResp = await fetch(
-                `https://getfreeroam.com/api/worlds/${encodeURIComponent(input.worldId)}/characters/current`,
-                { headers: { cookie, origin: 'https://getfreeroam.com', referer: 'https://getfreeroam.com' } }
+                `https://getfreeroam.com/api/world/${encodeURIComponent(input.worldId)}/characters/current?current_panel_external_id=${encodeURIComponent(input.panelId)}`,
+                {
+                  headers: {
+                    accept: '*/*',
+                    'accept-language': 'en-US,en;q=0.9',
+                    cookie,
+                    origin: 'https://getfreeroam.com',
+                    referer: 'https://getfreeroam.com',
+                    'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36',
+                  },
+                }
               );
               if (currentCharsResp.ok) {
                 const currentCharsData = await currentCharsResp.json() as {
-                  characters?: Array<{ external_id: string; name: string; appearance?: string; headshot_url?: string; display_headshot_url?: string }>
+                  world_characters?: Array<{ external_id: string; name: string; appearance?: string; headshot_url?: string; display_headshot_url?: string | null }>;
+                  story_characters?: Array<{ external_id: string; name: string; appearance?: string; headshot_url?: string; display_headshot_url?: string | null }>;
                 };
-                const chars = currentCharsData.characters ?? [];
-                for (const char of chars) {
+                const allChars = [...(currentCharsData.world_characters ?? []), ...(currentCharsData.story_characters ?? [])];
+                for (const char of allChars) {
                   const lowerName = char.name.toLowerCase().replace(/-/g, ' ');
                   if (char.appearance) appearanceMap[lowerName] = char.appearance;
                   const headshot = char.display_headshot_url ?? char.headshot_url;
