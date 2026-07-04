@@ -1751,6 +1751,14 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
                   GEN
                 </span>
               )}
+              {isGeneratingNsfwImage && (
+                <span
+                  className="animate-pulse"
+                  style={{ fontSize: '10px', fontFamily: 'Outfit-Medium, Outfit, sans-serif', fontWeight: 600, color: '#3b82f6', background: 'rgba(59,130,246,0.15)', border: '1px solid rgba(59,130,246,0.4)', borderRadius: '6px', padding: '2px 6px', letterSpacing: '0.05em' }}
+                >
+                  IMG
+                </span>
+              )}
               {/* Audio controls — shown when audio is available */}
               {currentAudioUrl && (
                 <button
