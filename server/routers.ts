@@ -2694,10 +2694,10 @@ export const appRouter = router({
           let enhancedPrompt = input.prompt;
           const charRefs = input.characterReferences;
 
-          // Collect reference images and build appearance map.
-          // Always include the Freeroam panel image first — it anchors character likeness and art style.
+          // Collect reference images (character headshots only) and build appearance map.
+          // Do NOT use the Freeroam panel image as a reference — it may contain extreme close-ups
+          // or non-character content that Seedream would replicate literally.
           const referenceImageUrls: string[] = [];
-          if (input.imageUrl) referenceImageUrls.push(input.imageUrl);
           const appearanceMap: Record<string, string> = {};
 
           for (const [, ref] of Object.entries(charRefs) as [string, { external_id: string; name: string; appearance: string | null; headshot_url: string | null; is_main_character: boolean }][]) {
