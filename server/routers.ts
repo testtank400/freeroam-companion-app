@@ -2694,8 +2694,10 @@ export const appRouter = router({
           let enhancedPrompt = input.prompt;
           const charRefs = input.characterReferences;
 
-          // Collect reference images (headshots) and build appearance map
+          // Collect reference images and build appearance map.
+          // Always include the Freeroam panel image first — it anchors character likeness and art style.
           const referenceImageUrls: string[] = [];
+          if (input.imageUrl) referenceImageUrls.push(input.imageUrl);
           const appearanceMap: Record<string, string> = {};
 
           for (const [, ref] of Object.entries(charRefs) as [string, { external_id: string; name: string; appearance: string | null; headshot_url: string | null; is_main_character: boolean }][]) {
