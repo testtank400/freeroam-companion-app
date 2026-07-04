@@ -2761,7 +2761,7 @@ export const appRouter = router({
               model: 'bytedance/seedream-v4.5/edit',
               prompt: enhancedPrompt,
               images: images.length > 0 ? images : undefined,
-              size: '1024*1024',
+              size: '2048*2048',
             }),
           });
 
