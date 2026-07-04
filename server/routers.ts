@@ -2721,32 +2721,24 @@ export const appRouter = router({
           }
 
           if (missingNames.size > 0 && cookie) {
-            // Try to find characters by name from the world characters endpoint
+            // Single call to /characters/current — returns all current world characters
+            // with full appearance, backstory, and headshot_url
             try {
-              const worldCharsResp = await fetch(
-                `https://getfreeroam.com/api/worlds/${encodeURIComponent(input.worldId)}/characters`,
+              const currentCharsResp = await fetch(
+                `https://getfreeroam.com/api/worlds/${encodeURIComponent(input.worldId)}/characters/current`,
                 { headers: { cookie, origin: 'https://getfreeroam.com', referer: 'https://getfreeroam.com' } }
               );
-              if (worldCharsResp.ok) {
-                const worldCharsData = await worldCharsResp.json() as { characters?: Array<{ external_id: string; name: string }> };
-                const chars = worldCharsData.characters ?? [];
+              if (currentCharsResp.ok) {
+                const currentCharsData = await currentCharsResp.json() as {
+                  characters?: Array<{ external_id: string; name: string; appearance?: string; headshot_url?: string; display_headshot_url?: string }>
+                };
+                const chars = currentCharsData.characters ?? [];
                 for (const char of chars) {
                   const lowerName = char.name.toLowerCase().replace(/-/g, ' ');
-                  if (missingNames.has(lowerName) || missingNames.has(char.name.toLowerCase())) {
-                    // Fetch full character data for appearance
-                    try {
-                      const charResp = await fetch(
-                        `https://getfreeroam.com/api/characters/${encodeURIComponent(char.external_id)}`,
-                        { headers: { cookie, origin: 'https://getfreeroam.com', referer: 'https://getfreeroam.com' } }
-                      );
-                      if (charResp.ok) {
-                        const charData = await charResp.json() as { appearance?: string; headshot_url?: string };
-                        if (charData.appearance) appearanceMap[lowerName] = charData.appearance;
-                        if (charData.headshot_url && !referenceImageUrls.includes(charData.headshot_url)) {
-                          referenceImageUrls.push(charData.headshot_url);
-                        }
-                      }
-                    } catch { /* non-fatal */ }
+                  if (char.appearance) appearanceMap[lowerName] = char.appearance;
+                  const headshot = char.display_headshot_url ?? char.headshot_url;
+                  if (headshot && !referenceImageUrls.includes(headshot)) {
+                    referenceImageUrls.push(headshot);
                   }
                 }
               }
