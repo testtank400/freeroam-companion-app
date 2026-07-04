@@ -212,3 +212,21 @@ export const appSettings = mysqlTable("app_settings", {
 
 export type AppSetting = typeof appSettings.$inferSelect;
 export type InsertAppSetting = typeof appSettings.$inferInsert;
+
+// Image cache — stores generated NSFW image URLs keyed by panel
+// Prevents regenerating the same image and incurring extra Atlas Cloud costs
+export const imageCache = mysqlTable("image_cache", {
+  id: int("id").autoincrement().primaryKey(),
+  /** Freeroam panel external_id (UUID string) */
+  panelId: varchar("panelId", { length: 128 }).notNull().unique(),
+  /** Freeroam world external_id (UUID string) */
+  worldId: varchar("worldId", { length: 128 }).notNull(),
+  /** Generation status: 'generating' = in progress, 'ready' = image available */
+  status: varchar("status", { length: 16 }).notNull().default('ready'),
+  /** S3 URL of the generated image (empty string while generating) */
+  imageUrl: text("imageUrl").notNull().default(''),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type ImageCache = typeof imageCache.$inferSelect;
+export type InsertImageCache = typeof imageCache.$inferInsert;

@@ -416,6 +416,13 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
   const [isLiked, setIsLiked] = useState(false);
   const [likeCount, setLikeCount] = useState<number | undefined>(undefined);
   const [isTogglingLike, setIsTogglingLike] = useState(false);
+
+  // NSFW image replacement state
+  const [nsfwImageUrl, setNsfwImageUrl] = useState<string | null>(null);
+  const [isGeneratingNsfwImage, setIsGeneratingNsfwImage] = useState(false);
+  const generateNsfwImageMutation = trpc.voice.generateNsfwImage.useMutation();
+  const { data: unrestrictedImagesSettingData } = trpc.voice.getSetting.useQuery({ key: 'unrestricted_images' });
+  const unrestrictedImagesEnabled = unrestrictedImagesSettingData === 'true';
   const likeMutation = trpc.worlds.like.useMutation();
   const unlikeMutation = trpc.worlds.unlike.useMutation();
 
@@ -945,6 +952,9 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
     }
     // Reset choice input on every panel change — no buffer for choice panels
     setChoiceInput('');
+    // Reset NSFW image state on panel change
+    setNsfwImageUrl(null);
+    setIsGeneratingNsfwImage(false);
     // Fire TTS in background (non-blocking)
     triggerTTS(currentPanel);
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -968,6 +978,74 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
     triggerTTS(currentPanel);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [worldCharacters]);
+
+  // NSFW image detection and replacement.
+  // When unrestricted_images is enabled and the panel image prompt contains explicit content,
+  // call generateNsfwImage to replace the Freeroam image with a Seedream-generated one.
+  useEffect(() => {
+    if (!currentPanel || !unrestrictedImagesEnabled) return;
+    const img = currentPanel.panel_content?.images?.[0];
+    if (!img?.prompt) return;
+    const prompt = img.prompt;
+    // Quick client-side NSFW keyword check to avoid unnecessary server calls
+    const nsfwKeywords = /\b(naked|nude|erect|cock|penis|vagina|pussy|nipple|breast|sex|orgasm|cum|masturbat|intercourse|genitals|explicit|nsfw)\b/i;
+    if (!nsfwKeywords.test(prompt)) return;
+    // Check cache first
+    const panelId = currentPanel.panel_id;
+    (async () => {
+      try {
+        const cached = await utils.voice.checkImageReady.fetch({ panelId });
+        if (cached.status === 'ready' && cached.imageUrl) {
+          setNsfwImageUrl(cached.imageUrl);
+          return;
+        }
+        if (cached.status === 'generating') {
+          setIsGeneratingNsfwImage(true);
+          // Poll until ready
+          for (let i = 0; i < 60; i++) {
+            await new Promise(r => setTimeout(r, 2000));
+            const poll = await utils.voice.checkImageReady.fetch({ panelId });
+            if (poll.status === 'ready' && poll.imageUrl) {
+              setNsfwImageUrl(poll.imageUrl);
+              setIsGeneratingNsfwImage(false);
+              return;
+            }
+            if (poll.status === 'not_found') break;
+          }
+          setIsGeneratingNsfwImage(false);
+          return;
+        }
+        // Generate new NSFW image
+        setIsGeneratingNsfwImage(true);
+        const charRefs = (currentPanel as unknown as { character_references?: Record<string, { external_id: string; name: string; appearance: string | null; headshot_url: string | null; is_main_character: boolean }> }).character_references ?? {};
+        const result = await generateNsfwImageMutation.mutateAsync({
+          panelId,
+          worldId: world.external_id,
+          prompt,
+          shot: img.shot ?? null,
+          characterReferences: charRefs,
+        });
+        if (result.generating) {
+          // Poll until ready
+          for (let i = 0; i < 60; i++) {
+            await new Promise(r => setTimeout(r, 2000));
+            const poll = await utils.voice.checkImageReady.fetch({ panelId });
+            if (poll.status === 'ready' && poll.imageUrl) {
+              setNsfwImageUrl(poll.imageUrl);
+              break;
+            }
+          }
+        } else if (result.imageUrl) {
+          setNsfwImageUrl(result.imageUrl);
+        }
+      } catch {
+        // Non-fatal — fall back to original Freeroam image
+      } finally {
+        setIsGeneratingNsfwImage(false);
+      }
+    })();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentPanel?.panel_id, unrestrictedImagesEnabled]);
 
   // Auto-advance timer: fires when panel changes and auto-advance is enabled.
   // Voice-based advance is handled in triggerTTS audio.onended (playAudioClip helper).
@@ -1307,7 +1385,10 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
   const panel = currentPanel;
   const content = panel?.panel_content;
   const image = content?.images?.[0];
-  const imageUrl = image?.url ?? null;
+  const originalImageUrl = image?.url ?? null;
+
+  // The image URL to display — NSFW replacement takes priority over original
+  const imageUrl = nsfwImageUrl ?? originalImageUrl;
   const speechBubble = content?.speech_bubbles?.[0] ?? null;
   const narration = content?.narration ?? null;
   const choice = content?.choice ?? null;

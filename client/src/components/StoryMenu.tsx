@@ -420,6 +420,7 @@ function VoiceSettings() {
   const { data: staticDelayData, refetch: refetchStaticDelay } = trpc.voice.getSetting.useQuery({ key: 'auto_advance_static_delay' });
   const { data: narratorVoiceData, refetch: refetchNarratorVoice } = trpc.voice.getSetting.useQuery({ key: 'narrator_voice_id' });
   const { data: debugModeData, refetch: refetchDebugMode } = trpc.voice.getSetting.useQuery({ key: 'debug_mode' });
+  const { data: unrestrictedImagesData, refetch: refetchUnrestrictedImages } = trpc.voice.getSetting.useQuery({ key: 'unrestricted_images' });
   const { data: narratorVoiceNameData, refetch: refetchNarratorVoiceName } = trpc.voice.getSetting.useQuery({ key: 'narrator_voice_name' });
   const { data: voices } = trpc.voice.listVoices.useQuery();
   const setSettingMutation = trpc.voice.setSetting.useMutation();
@@ -438,6 +439,7 @@ function VoiceSettings() {
   const narratorVoiceId = narratorVoiceData ?? null;
   const narratorVoiceName = narratorVoiceNameData ?? null;
   const debugMode = debugModeData === 'true';
+  const unrestrictedImages = unrestrictedImagesData === 'true';
 
   const toggle = async (key: string, currentValue: boolean, refetch: () => void) => {
     await setSettingMutation.mutateAsync({ key, value: (!currentValue).toString() });
@@ -605,6 +607,17 @@ function VoiceSettings() {
             </div>
           </div>
         )}
+      </div>
+
+      {/* Unrestricted images toggle */}
+      <div className="flex items-center justify-between rounded-xl px-4 py-3" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
+        <div>
+          <p style={{ fontFamily: LORA, fontSize: '14px', color: '#fff', marginBottom: '2px' }}>Unrestricted Images</p>
+          <p style={{ fontFamily: LORA, fontSize: '12px', color: 'rgba(255,255,255,0.45)' }}>Use Seedream AI to regenerate NSFW panels without content restrictions</p>
+        </div>
+        <button onClick={() => toggle('unrestricted_images', unrestrictedImages, refetchUnrestrictedImages)} className="flex-shrink-0 rounded-full transition-all" style={{ width: '44px', height: '24px', background: unrestrictedImages ? '#a855f7' : 'rgba(255,255,255,0.15)', position: 'relative', border: 'none', cursor: 'pointer' }}>
+          <span style={{ position: 'absolute', top: '2px', left: unrestrictedImages ? '22px' : '2px', width: '20px', height: '20px', borderRadius: '50%', background: '#fff', transition: 'left 0.2s' }} />
+        </button>
       </div>
 
       {/* Debug mode toggle */}

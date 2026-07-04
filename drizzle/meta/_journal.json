@@ -50,6 +50,13 @@
       "when": 1782788995693,
       "tag": "0006_magical_apocalypse",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "5",
+      "when": 1783150008113,
+      "tag": "0007_oval_nightmare",
+      "breakpoints": true
     }
   ]
 }

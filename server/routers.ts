@@ -1103,6 +1103,22 @@ export const appRouter = router({
           phone_unread_count: raw.phone_unread_count as number ?? 0,
           phone: raw.phone as { total: number; by_app: Record<string, unknown>; recent: unknown[]; version: string | null; seen_at_by_app: Record<string, unknown> } ?? { total: 0, by_app: {}, recent: [], version: null, seen_at_by_app: {} },
           panel_content: extractPanelContent(pc),
+          // character_references: map of characterId -> { external_id, name, appearance, headshot_url, is_main_character }
+          // Used for NSFW image generation — provides appearance descriptions and headshot URLs
+          character_references: pc?.character_references
+            ? Object.fromEntries(
+                Object.entries(pc.character_references as Record<string, Record<string, unknown>>).map(([id, ref]) => [
+                  id,
+                  {
+                    external_id: ref.external_id as string,
+                    name: ref.name as string,
+                    appearance: ref.appearance as string | null,
+                    headshot_url: ref.headshot_url as string | null,
+                    is_main_character: ref.is_main_character as boolean,
+                  },
+                ])
+              )
+            : {},
           next_panel: np ? {
             panel_id: np.panel_id as string,
             world_id: np.world_id as string ?? raw.world_id as string,
@@ -2561,6 +2577,214 @@ export const appRouter = router({
         if (!db) return null;
         const rows = await db.select().from(appSettings).where(eq(appSettings.key, input.key)).limit(1);
         return rows[0]?.value ?? null;
+      }),
+
+    /** Generate NSFW image using Seedream v4.5 Edit via Atlas Cloud.
+     * Takes the Freeroam image prompt, shot type, and character references.
+     * Replaces ~~CharacterName tokens with appearance descriptions.
+     * Uses character headshots as reference images for Seedream.
+     * Results are cached in image_cache to avoid regeneration.
+     */
+    generateNsfwImage: publicProcedure
+      .input(z.object({
+        panelId: z.string(),
+        worldId: z.string(),
+        /** Original Freeroam image prompt (may contain ~~CharacterName tokens) */
+        prompt: z.string(),
+        /** Shot type from Freeroam: 'Close-Up', 'Full', etc. */
+        shot: z.string().nullable(),
+        /** Character references from panel_content.character_references */
+        characterReferences: z.record(z.string(), z.object({
+          external_id: z.string(),
+          name: z.string(),
+          appearance: z.string().nullable(),
+          headshot_url: z.string().nullable(),
+          is_main_character: z.boolean(),
+        })).default({}),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const { getDb } = await import('./db');
+        const { imageCache } = await import('../drizzle/schema');
+        const { eq } = await import('drizzle-orm');
+        const db = await getDb();
+        if (!db) throw new Error('Database not available');
+
+        // Check cache first
+        const cached = await db.select().from(imageCache).where(eq(imageCache.panelId, input.panelId)).limit(1);
+        if (cached.length > 0) {
+          if (cached[0].status === 'ready' && cached[0].imageUrl) {
+            return { imageUrl: cached[0].imageUrl, fromCache: true, generating: false };
+          }
+          if (cached[0].status === 'generating') {
+            return { imageUrl: null, fromCache: false, generating: true };
+          }
+        }
+
+        // Insert placeholder to prevent duplicate generation
+        // Delete any stale entry first, then insert fresh
+        await db.delete(imageCache).where(eq(imageCache.panelId, input.panelId));
+        await db.insert(imageCache).values({
+          panelId: input.panelId,
+          worldId: input.worldId,
+          status: 'generating',
+          imageUrl: '',
+        });
+
+        const atlasKey = process.env.ATLAS_CLOUD_API_KEY;
+        if (!atlasKey) {
+          await db.delete(imageCache).where(eq(imageCache.panelId, input.panelId));
+          throw new Error('ATLAS_CLOUD_API_KEY not configured');
+        }
+
+        try {
+          // Build enhanced prompt: replace ~~CharacterName with appearance description
+          let enhancedPrompt = input.prompt;
+          const charRefs = input.characterReferences;
+
+          // Collect reference images (headshots) and build appearance map
+          const referenceImageUrls: string[] = [];
+          const appearanceMap: Record<string, string> = {};
+
+          for (const [, ref] of Object.entries(charRefs) as [string, { external_id: string; name: string; appearance: string | null; headshot_url: string | null; is_main_character: boolean }][]) {
+            const name = ref.name;
+            if (ref.appearance) {
+              appearanceMap[name.toLowerCase()] = ref.appearance;
+            }
+            if (ref.headshot_url) {
+              referenceImageUrls.push(ref.headshot_url);
+            }
+          }
+
+          // If some characters are missing appearances, fetch from Freeroam
+          const cookie = getFreeroamCookie(ctx);
+          const missingNames = new Set<string>();
+          const tokenRegex = /~~([\w-]+)/g;
+          let match;
+          while ((match = tokenRegex.exec(input.prompt)) !== null) {
+            const name = match[1].toLowerCase();
+            if (!appearanceMap[name]) missingNames.add(name);
+          }
+
+          if (missingNames.size > 0 && cookie) {
+            // Try to find characters by name from the world characters endpoint
+            try {
+              const worldCharsResp = await fetch(
+                `https://getfreeroam.com/api/worlds/${encodeURIComponent(input.worldId)}/characters`,
+                { headers: { cookie, origin: 'https://getfreeroam.com', referer: 'https://getfreeroam.com' } }
+              );
+              if (worldCharsResp.ok) {
+                const worldCharsData = await worldCharsResp.json() as { characters?: Array<{ external_id: string; name: string }> };
+                const chars = worldCharsData.characters ?? [];
+                for (const char of chars) {
+                  const lowerName = char.name.toLowerCase().replace(/-/g, ' ');
+                  if (missingNames.has(lowerName) || missingNames.has(char.name.toLowerCase())) {
+                    // Fetch full character data for appearance
+                    try {
+                      const charResp = await fetch(
+                        `https://getfreeroam.com/api/characters/${encodeURIComponent(char.external_id)}`,
+                        { headers: { cookie, origin: 'https://getfreeroam.com', referer: 'https://getfreeroam.com' } }
+                      );
+                      if (charResp.ok) {
+                        const charData = await charResp.json() as { appearance?: string; headshot_url?: string };
+                        if (charData.appearance) appearanceMap[lowerName] = charData.appearance;
+                        if (charData.headshot_url && !referenceImageUrls.includes(charData.headshot_url)) {
+                          referenceImageUrls.push(charData.headshot_url);
+                        }
+                      }
+                    } catch { /* non-fatal */ }
+                  }
+                }
+              }
+            } catch { /* non-fatal */ }
+          }
+
+          // Replace ~~CharacterName tokens with appearance descriptions
+          enhancedPrompt = enhancedPrompt.replace(/~~([\w-]+)/g, (_, name: string) => {
+            const appearance = appearanceMap[name.toLowerCase()];
+            return appearance ? `${name} (${appearance})` : name;
+          });
+
+          // Add shot type context
+          if (input.shot) {
+            enhancedPrompt = `[${input.shot} shot] ${enhancedPrompt}`;
+          }
+
+          // Limit reference images to 5 (Atlas Cloud limit)
+          const images = referenceImageUrls.slice(0, 5);
+
+          // Call Atlas Cloud Seedream v4.5 Edit
+          const generateResp = await fetch('https://api.atlascloud.ai/api/v1/model/generateImage', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${atlasKey}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              model: 'bytedance/seedream-v4.5/edit',
+              prompt: enhancedPrompt,
+              images: images.length > 0 ? images : undefined,
+              size: '1024*1024',
+            }),
+          });
+
+          if (!generateResp.ok) {
+            const errText = await generateResp.text();
+            throw new Error(`Atlas Cloud generation failed (${generateResp.status}): ${errText}`);
+          }
+
+          const generateData = await generateResp.json() as { data: { id: string } };
+          const predictionId = generateData.data.id;
+
+          // Poll for result (max 120s)
+          let resultUrl: string | null = null;
+          for (let i = 0; i < 60; i++) {
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            const pollResp = await fetch(`https://api.atlascloud.ai/api/v1/model/prediction/${predictionId}`, {
+              headers: { 'Authorization': `Bearer ${atlasKey}` },
+            });
+            if (!pollResp.ok) continue;
+            const pollData = await pollResp.json() as { data: { status: string; outputs?: string[]; error?: string } };
+            if (pollData.data.status === 'completed' && pollData.data.outputs?.[0]) {
+              resultUrl = pollData.data.outputs[0];
+              break;
+            }
+            if (pollData.data.status === 'failed') {
+              throw new Error(`Atlas Cloud generation failed: ${pollData.data.error ?? 'unknown error'}`);
+            }
+          }
+
+          if (!resultUrl) throw new Error('Atlas Cloud generation timed out');
+
+          // Upload to S3
+          const imgResp = await fetch(resultUrl);
+          if (!imgResp.ok) throw new Error('Failed to fetch generated image');
+          const imgBuffer = Buffer.from(await imgResp.arrayBuffer());
+          const { storagePut } = await import('./storage');
+          const { url: s3Url } = await storagePut(`nsfw-images/${input.panelId}.webp`, imgBuffer, 'image/webp');
+
+          // Update cache to ready
+          await db.update(imageCache).set({ status: 'ready', imageUrl: s3Url }).where(eq(imageCache.panelId, input.panelId));
+
+          return { imageUrl: s3Url, fromCache: false, generating: false };
+        } catch (err) {
+          // Clean up placeholder on failure
+          await db.delete(imageCache).where(eq(imageCache.panelId, input.panelId));
+          throw err;
+        }
+      }),
+
+    /** Check if an NSFW image is ready in the cache */
+    checkImageReady: publicProcedure
+      .input(z.object({ panelId: z.string() }))
+      .query(async ({ input }) => {
+        const { getDb } = await import('./db');
+        const { imageCache } = await import('../drizzle/schema');
+        const { eq } = await import('drizzle-orm');
+        const db = await getDb();
+        if (!db) return { status: 'not_found', imageUrl: null };
+        const rows = await db.select().from(imageCache).where(eq(imageCache.panelId, input.panelId)).limit(1);
+        if (!rows.length) return { status: 'not_found', imageUrl: null };
+        return { status: rows[0].status, imageUrl: rows[0].imageUrl || null };
       }),
 
     /** Set an app setting */
