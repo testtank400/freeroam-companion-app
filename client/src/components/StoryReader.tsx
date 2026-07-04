@@ -420,6 +420,7 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
   // NSFW image replacement state
   const [nsfwImageUrl, setNsfwImageUrl] = useState<string | null>(null);
   const [isGeneratingNsfwImage, setIsGeneratingNsfwImage] = useState(false);
+  const nsfwGeneratingPanelRef = useRef<string | null>(null); // tracks which panel is currently being processed
   const generateNsfwImageMutation = trpc.voice.generateNsfwImage.useMutation();
   const { data: unrestrictedImagesSettingData } = trpc.voice.getSetting.useQuery({ key: 'unrestricted_images' });
   const unrestrictedImagesEnabled = unrestrictedImagesSettingData === 'true';
@@ -955,6 +956,7 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
     // Reset NSFW image state on panel change
     setNsfwImageUrl(null);
     setIsGeneratingNsfwImage(false);
+    nsfwGeneratingPanelRef.current = null;
     // Fire TTS in background (non-blocking)
     triggerTTS(currentPanel);
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -988,8 +990,10 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
     if (!img?.prompt) return;
     const prompt = img.prompt;
     // Always call server — Grok classification happens server-side
-    // Check cache first
+    // Guard against duplicate calls for the same panel
     const panelId = currentPanel.panel_id;
+    if (nsfwGeneratingPanelRef.current === panelId) return;
+    nsfwGeneratingPanelRef.current = panelId;
     (async () => {
       try {
         const cached = await utils.voice.checkImageReady.fetch({ panelId });
