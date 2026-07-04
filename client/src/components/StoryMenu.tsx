@@ -244,6 +244,9 @@ function JournalPreferences() {
   const [isSaving, setIsSaving] = useState(false);
   const [isDirty, setIsDirty] = useState(false);
   const updateMutation = trpc.preferences.update.useMutation();
+  const setSettingMutation = trpc.voice.setSetting.useMutation();
+  const { data: unrestrictedImagesData, refetch: refetchUnrestrictedImages } = trpc.voice.getSetting.useQuery({ key: 'unrestricted_images' });
+  const unrestrictedImages = unrestrictedImagesData === 'true';
 
   // Load preferences on mount
   useState(() => {
@@ -339,6 +342,13 @@ function JournalPreferences() {
               {opt.label}
             </button>
           ))}
+          {/* Unrestricted — local setting that enables Seedream NSFW image generation */}
+          <button
+            onClick={() => { setSettingMutation.mutateAsync({ key: 'unrestricted_images', value: (!unrestrictedImages).toString() }).then(() => refetchUnrestrictedImages()); }}
+            className="px-4 py-2 rounded-full transition-all"
+            style={{ fontFamily: LORA, fontSize: '13px', color: unrestrictedImages ? '#fff' : 'rgba(255,255,255,0.45)', background: unrestrictedImages ? 'rgba(168,85,247,0.35)' : 'rgba(255,255,255,0.06)', border: `1px solid ${unrestrictedImages ? 'rgba(168,85,247,0.6)' : 'rgba(255,255,255,0.1)'}` }}>
+            Unrestricted
+          </button>
         </div>
       </div>
 
@@ -609,16 +619,8 @@ function VoiceSettings() {
         )}
       </div>
 
-      {/* Unrestricted images toggle */}
-      <div className="flex items-center justify-between rounded-xl px-4 py-3" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
-        <div>
-          <p style={{ fontFamily: LORA, fontSize: '14px', color: '#fff', marginBottom: '2px' }}>Unrestricted Images</p>
-          <p style={{ fontFamily: LORA, fontSize: '12px', color: 'rgba(255,255,255,0.45)' }}>Use Seedream AI to regenerate NSFW panels without content restrictions</p>
-        </div>
-        <button onClick={() => toggle('unrestricted_images', unrestrictedImages, refetchUnrestrictedImages)} className="flex-shrink-0 rounded-full transition-all" style={{ width: '44px', height: '24px', background: unrestrictedImages ? '#a855f7' : 'rgba(255,255,255,0.15)', position: 'relative', border: 'none', cursor: 'pointer' }}>
-          <span style={{ position: 'absolute', top: '2px', left: unrestrictedImages ? '22px' : '2px', width: '20px', height: '20px', borderRadius: '50%', background: '#fff', transition: 'left 0.2s' }} />
-        </button>
-      </div>
+      {/* Other settings header */}
+      <p style={{ fontFamily: LORA, fontSize: '12px', fontWeight: 700, color: 'rgba(255,255,255,0.55)', marginTop: '8px', textTransform: 'uppercase', letterSpacing: '0.1em' }}>Other</p>
 
       {/* Debug mode toggle */}
       <div className="flex items-center justify-between rounded-xl px-4 py-3" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
