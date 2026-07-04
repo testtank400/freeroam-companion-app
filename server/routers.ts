@@ -2625,6 +2625,19 @@ export const appRouter = router({
           }
         }
 
+        // If character_references is empty, the panel image hasn't changed from a previous panel.
+        // Freeroam is reusing the same image. Without character data we can't generate a better image,
+        // so skip generation and cache as not_nsfw to avoid repeated useless calls.
+        const hasCharacterRefs = Object.keys(input.characterReferences).length > 0;
+        if (!hasCharacterRefs) {
+          await db.insert(imageCache).values({
+            panelId: input.panelId,
+            worldId: input.worldId,
+            status: 'not_nsfw',
+          }).catch(() => {}); // non-fatal if already exists
+          return { imageUrl: null, fromCache: false, generating: false, notNsfw: true };
+        }
+
         // Grok NSFW classification — ask if the prompt describes sexual/adult content
         // Combined Grok call: classify NSFW AND detect art style from the panel image
         let detectedArtStyle: string | null = null;
