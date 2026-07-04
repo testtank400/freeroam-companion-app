@@ -562,8 +562,6 @@ function VoiceSettings() {
 
       {/* Auto-Advance section */}
       <div className="rounded-xl px-4 py-3 space-y-4" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
-        <p style={{ fontFamily: LORA, fontSize: '12px', fontWeight: 700, color: 'rgba(255,255,255,0.55)', textTransform: 'uppercase', letterSpacing: '0.1em' }}>Auto-Advance</p>
-
         {/* Auto-advance toggle */}
         <div className="flex items-center justify-between">
           <div>
