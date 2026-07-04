@@ -2615,9 +2615,47 @@ export const appRouter = router({
           if (cached[0].status === 'ready' && cached[0].imageUrl) {
             return { imageUrl: cached[0].imageUrl, fromCache: true, generating: false };
           }
+          if (cached[0].status === 'not_nsfw') {
+            return { imageUrl: null, fromCache: false, generating: false, notNsfw: true };
+          }
           if (cached[0].status === 'generating') {
             return { imageUrl: null, fromCache: false, generating: true };
           }
+        }
+
+        // Grok NSFW classification — ask if the prompt describes sexual/adult content
+        const grokKey = process.env.GROK_API_KEY;
+        if (grokKey) {
+          try {
+            const classifyResp = await fetch('https://api.x.ai/v1/responses', {
+              method: 'POST',
+              headers: { 'Authorization': `Bearer ${grokKey}`, 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                model: 'grok-4.3',
+                store: false,
+                input: [
+                  { role: 'system', content: 'You are a content classifier. Determine if an image generation prompt describes sexual or adult content. Reply with only "YES" or "NO".' },
+                  { role: 'user', content: `Is this image prompt NSFW (sexual or adult content)?\n\n"${input.prompt}"` },
+                ],
+                max_output_tokens: 10,
+              }),
+            });
+            if (classifyResp.ok) {
+              const classifyData = await classifyResp.json();
+              const msgItem = classifyData?.output?.find((o: { type: string }) => o.type === 'message');
+              const answer = msgItem?.content?.find((c: { type: string }) => c.type === 'output_text')?.text?.trim().toUpperCase();
+              if (answer && answer !== 'YES') {
+                // Not NSFW — cache this result so we don't classify again
+                await db.insert(imageCache).values({
+                  panelId: input.panelId,
+                  worldId: input.worldId,
+                  status: 'not_nsfw',
+                  imageUrl: '',
+                }).catch(() => {}); // non-fatal if already exists
+                return { imageUrl: null, fromCache: false, generating: false, notNsfw: true };
+              }
+            }
+          } catch { /* non-fatal — proceed with generation if classification fails */ }
         }
 
         // Insert placeholder to prevent duplicate generation

@@ -987,9 +987,7 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
     const img = currentPanel.panel_content?.images?.[0];
     if (!img?.prompt) return;
     const prompt = img.prompt;
-    // Quick client-side NSFW keyword check to avoid unnecessary server calls
-    const nsfwKeywords = /\b(naked|nude|erect|cock|penis|vagina|pussy|nipple|breast|sex|orgasm|cum|masturbat|intercourse|genitals|explicit|nsfw)\b/i;
-    if (!nsfwKeywords.test(prompt)) return;
+    // Always call server — Grok classification happens server-side
     // Check cache first
     const panelId = currentPanel.panel_id;
     (async () => {
