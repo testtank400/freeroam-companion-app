@@ -1017,8 +1017,7 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
           setIsGeneratingNsfwImage(false);
           return;
         }
-        // Generate new NSFW image
-        setIsGeneratingNsfwImage(true);
+        // Generate new NSFW image — don't show IMG badge yet, wait for server to confirm it's actually generating
         const charRefs = (currentPanel as unknown as { character_references?: Record<string, { external_id: string; name: string; appearance: string | null; headshot_url: string | null; is_main_character: boolean }> }).character_references ?? {};
         const result = await generateNsfwImageMutation.mutateAsync({
           panelId,
@@ -1029,6 +1028,7 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
           characterReferences: charRefs,
         });
         if (result.generating) {
+          setIsGeneratingNsfwImage(true);
           // Poll until ready
           for (let i = 0; i < 60; i++) {
             await new Promise(r => setTimeout(r, 2000));
