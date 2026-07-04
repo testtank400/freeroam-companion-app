@@ -2591,6 +2591,8 @@ export const appRouter = router({
         worldId: z.string(),
         /** Original Freeroam image prompt (may contain ~~CharacterName tokens) */
         prompt: z.string(),
+        /** URL of the original Freeroam panel image (used for art style detection) */
+        imageUrl: z.string().nullable(),
         /** Shot type from Freeroam: 'Close-Up', 'Full', etc. */
         shot: z.string().nullable(),
         /** Character references from panel_content.character_references */
@@ -2624,9 +2626,17 @@ export const appRouter = router({
         }
 
         // Grok NSFW classification — ask if the prompt describes sexual/adult content
+        // Combined Grok call: classify NSFW AND detect art style from the panel image
+        let detectedArtStyle: string | null = null;
         const grokKey = process.env.GROK_API_KEY;
         if (grokKey) {
           try {
+            const userContent: Array<{ type: string; text?: string; image_url?: { url: string } }> = [
+              { type: 'text', text: `Analyze this image and the prompt below. Return a JSON object with two fields:\n1. "isNsfw": true if the prompt describes sexual or adult content, false otherwise\n2. "artStyle": a short description of the art style visible in the image (e.g. "anime illustration, cel-shaded", "semi-realistic digital painting", "photorealistic", "watercolor style"). Be concise, max 10 words.\n\nPrompt: "${input.prompt}"` },
+            ];
+            if (input.imageUrl) {
+              userContent.push({ type: 'image_url', image_url: { url: input.imageUrl } });
+            }
             const classifyResp = await fetch('https://api.x.ai/v1/responses', {
               method: 'POST',
               headers: { 'Authorization': `Bearer ${grokKey}`, 'Content-Type': 'application/json' },
@@ -2634,25 +2644,30 @@ export const appRouter = router({
                 model: 'grok-4.3',
                 store: false,
                 input: [
-                  { role: 'system', content: 'You are a content classifier. Determine if an image generation prompt describes sexual or adult content. Reply with only "YES" or "NO".' },
-                  { role: 'user', content: `Is this image prompt NSFW (sexual or adult content)?\n\n"${input.prompt}"` },
+                  { role: 'system', content: 'You are a content and style analyzer. Always respond with valid JSON only, no markdown.' },
+                  { role: 'user', content: userContent },
                 ],
-                max_output_tokens: 10,
+                max_output_tokens: 100,
               }),
             });
             if (classifyResp.ok) {
               const classifyData = await classifyResp.json();
               const msgItem = classifyData?.output?.find((o: { type: string }) => o.type === 'message');
-              const answer = msgItem?.content?.find((c: { type: string }) => c.type === 'output_text')?.text?.trim().toUpperCase();
-              if (answer && answer !== 'YES') {
-                // Not NSFW — cache this result so we don't classify again
-                await db.insert(imageCache).values({
-                  panelId: input.panelId,
-                  worldId: input.worldId,
-                  status: 'not_nsfw',
-                  imageUrl: '',
-                }).catch(() => {}); // non-fatal if already exists
-                return { imageUrl: null, fromCache: false, generating: false, notNsfw: true };
+              const rawText = msgItem?.content?.find((c: { type: string }) => c.type === 'output_text')?.text?.trim();
+              if (rawText) {
+                try {
+                  const parsed = JSON.parse(rawText) as { isNsfw?: boolean; artStyle?: string };
+                  if (parsed.isNsfw === false) {
+                    // Not NSFW — cache this result so we don't classify again
+                    await db.insert(imageCache).values({
+                      panelId: input.panelId,
+                      worldId: input.worldId,
+                      status: 'not_nsfw',
+                    }).catch(() => {}); // non-fatal if already exists
+                    return { imageUrl: null, fromCache: false, generating: false, notNsfw: true };
+                  }
+                  if (parsed.artStyle) detectedArtStyle = parsed.artStyle;
+                } catch { /* JSON parse failed — proceed without style */ }
               }
             }
           } catch { /* non-fatal — proceed with generation if classification fails */ }
@@ -2742,7 +2757,10 @@ export const appRouter = router({
             return appearance ? `${name} (${appearance})` : name;
           });
 
-          // Add shot type context
+          // Add shot type and art style context
+          if (detectedArtStyle) {
+            enhancedPrompt = `[${detectedArtStyle}] ${enhancedPrompt}`;
+          }
           if (input.shot) {
             enhancedPrompt = `[${input.shot} shot] ${enhancedPrompt}`;
           }

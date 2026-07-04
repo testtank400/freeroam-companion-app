@@ -1024,6 +1024,7 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
           panelId,
           worldId: world.external_id,
           prompt,
+          imageUrl: img.url ?? null,
           shot: img.shot ?? null,
           characterReferences: charRefs,
         });
