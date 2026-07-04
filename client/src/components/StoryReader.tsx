@@ -512,6 +512,11 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
           if (res.ok) {
             const data = await res.json();
             const result = data?.[0]?.result?.data?.json;
+            // Detect image generation: partial.done=true means text is complete,
+            // image is now being generated. Show the image icon spinner.
+            if (result && !result.ready && result.partial?.done === true) {
+              setIsImagePolling(true);
+            }
             if (result?.ready && result?.panel_id) {
               if (!controller.signal.aborted) {
                 pollAbortRef.current = null;

@@ -1180,7 +1180,17 @@ export const appRouter = router({
           const text = await response.text();
           throw new Error(`Next ready check failed (${response.status}): ${text}`);
         }
-        return response.json() as Promise<{ ready: false } | { ready: true; panel_id: string }>;
+        // Pass through the full response including the partial field.
+        // Freeroam now returns partial panel data while the panel is generating:
+        //   { ready: false } — still generating, no text yet
+        //   { ready: false, partial: { text: string, speaker: string|null, done: boolean } }
+        //     partial.done=false → text still streaming
+        //     partial.done=true  → text complete, image is now generating
+        //   { ready: true, panel_id: string } — both text and image are done
+        return response.json() as Promise<
+          | { ready: false; partial?: { text: string; speaker: string | null; done: boolean } }
+          | { ready: true; panel_id: string }
+        >;
       }),
 
     /** Add a bookmark for a panel */
