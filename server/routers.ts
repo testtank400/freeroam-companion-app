@@ -2691,37 +2691,6 @@ export const appRouter = router({
           } catch { /* non-fatal */ }
         }
 
-        // Step B: DeepSeek V4 Flash via Atlas Cloud — explicit prompt enhancement
-        // DeepSeek handles adult content without restrictions, unlike Grok
-        if (atlasLlmKey) {
-          try {
-            const sourcePrompt = input.actionText || input.prompt.replace(/~~([\w-]+)/g, (_, n: string) => n.replace(/-/g, ' '));
-            const enhanceResp = await fetch('https://api.atlascloud.ai/v1/chat/completions', {
-              method: 'POST',
-              headers: { 'Authorization': `Bearer ${atlasLlmKey}`, 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                model: 'deepseek-ai/deepseek-v4-flash',
-                messages: [
-                  { role: 'system', content: 'You are an adult image prompt writer. Write explicit, detailed image generation prompts for adult AI image models. Always respond with valid JSON only, no markdown.' },
-                  { role: 'user', content: `Rewrite this as an explicit, detailed image generation prompt for an adult AI image model. Include anatomical detail, sexual positioning, character appearance cues, and scene context. Keep it under 150 words. Respond with JSON: {"prompt": "..."}\n\nSource: "${sourcePrompt}"` },
-                ],
-                max_tokens: 300,
-                temperature: 0.7,
-              }),
-            });
-            if (enhanceResp.ok) {
-              const enhanceData = await enhanceResp.json();
-              const rawText = enhanceData?.choices?.[0]?.message?.content?.trim();
-              if (rawText) {
-                try {
-                  const parsed = JSON.parse(rawText) as { prompt?: string };
-                  if (parsed.prompt) enhancedSeedreamPrompt = parsed.prompt;
-                } catch { /* JSON parse failed — proceed without enhancement */ }
-              }
-            }
-          } catch { /* non-fatal */ }
-        }
-
         // Insert placeholder to prevent duplicate generation
         // Delete any stale entry first, then insert fresh
         await db.delete(imageCache).where(eq(imageCache.panelId, input.panelId));
@@ -2747,22 +2716,24 @@ export const appRouter = router({
             promptedNames.add(match[1].toLowerCase().replace(/-/g, ' '));
           }
 
-          // Step 2: Build headshot map ONLY for characters that appear in the prompt.
+          // Step 2: Build headshot map AND appearance map for characters that appear in the prompt.
           // Never include headshots for characters not in the prompt — Seedream can't tell them apart.
           // Never use display_headshot_url — only headshot_url.
           const headshotMap: Record<string, string> = {}; // lowerName -> headshot_url
+          const appearanceMap: Record<string, string> = {}; // lowerName -> appearance description
           const charRefs = input.characterReferences;
 
           for (const [, ref] of Object.entries(charRefs) as [string, { external_id: string; name: string; appearance: string | null; headshot_url: string | null; is_main_character: boolean }][]) {
             const lowerName = ref.name.toLowerCase().replace(/-/g, ' ');
-            if (promptedNames.has(lowerName) && ref.headshot_url) {
-              headshotMap[lowerName] = ref.headshot_url;
+            if (promptedNames.has(lowerName)) {
+              if (ref.headshot_url) headshotMap[lowerName] = ref.headshot_url;
+              if (ref.appearance) appearanceMap[lowerName] = ref.appearance;
             }
           }
 
-          // Step 3: If any prompted characters are still missing headshots, fetch from Freeroam
+          // Step 3: If any prompted characters are still missing headshots or appearances, fetch from Freeroam
           const cookie = getFreeroamCookie(ctx);
-          const missingNames = new Set(Array.from(promptedNames).filter(n => !headshotMap[n]));
+          const missingNames = new Set(Array.from(promptedNames).filter(n => !headshotMap[n] || !appearanceMap[n]));
 
           if (missingNames.size > 0 && cookie) {
             try {
@@ -2781,29 +2752,66 @@ export const appRouter = router({
               );
               if (currentCharsResp.ok) {
                 const currentCharsData = await currentCharsResp.json() as {
-                  world_characters?: Array<{ name: string; headshot_url?: string }>;
-                  story_characters?: Array<{ name: string; headshot_url?: string }>;
+                  world_characters?: Array<{ name: string; headshot_url?: string; appearance?: string }>;
+                  story_characters?: Array<{ name: string; headshot_url?: string; appearance?: string }>;
                 };
                 const allChars = [...(currentCharsData.world_characters ?? []), ...(currentCharsData.story_characters ?? [])];
                 for (const char of allChars) {
                   const lowerName = char.name.toLowerCase().replace(/-/g, ' ');
-                  // Only add if this character is actually in the prompt AND has a headshot
-                  if (missingNames.has(lowerName) && char.headshot_url) {
-                    headshotMap[lowerName] = char.headshot_url;
+                  if (missingNames.has(lowerName)) {
+                    if (char.headshot_url) headshotMap[lowerName] = char.headshot_url;
+                    if (char.appearance) appearanceMap[lowerName] = char.appearance;
                   }
                 }
               }
             } catch { /* non-fatal */ }
           }
 
-          // Step 4: Build the Seedream prompt.
-          // Priority: Grok-enhanced prompt > user action text > stripped scene description
+          // Step 4: DeepSeek V4 Flash — explicit prompt enhancement with character appearances
+          // Now that appearanceMap is populated, pass character descriptions to DeepSeek
+          if (atlasLlmKey) {
+            try {
+              const sourcePrompt = input.actionText || input.prompt.replace(/~~([\w-]+)/g, (_, n: string) => n.replace(/-/g, ' '));
+              const charDescriptions = Object.entries(appearanceMap)
+                .map(([name, desc]) => `- ${name}: ${desc}`)
+                .join('\n');
+              const charContext = charDescriptions
+                ? `Character descriptions (use these EXACTLY, do not invent or change):\n${charDescriptions}\n\n`
+                : '';
+              const enhanceResp = await fetch('https://api.atlascloud.ai/v1/chat/completions', {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${atlasLlmKey}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  model: 'deepseek-ai/deepseek-v4-flash',
+                  messages: [
+                    { role: 'system', content: 'You are an adult image prompt writer. Write explicit, detailed image generation prompts for adult AI image models. Always respond with valid JSON only, no markdown. Always use the provided character descriptions exactly as given.' },
+                    { role: 'user', content: `${charContext}Rewrite this as an explicit, detailed image generation prompt for an adult AI image model. Use the character descriptions above for appearance details. Include anatomical detail, sexual positioning, and scene context. Keep it under 150 words. Respond with JSON: {"prompt": ".."}\n\nSource: "${sourcePrompt}"` },
+                  ],
+                  max_tokens: 300,
+                  temperature: 0.7,
+                }),
+              });
+              if (enhanceResp.ok) {
+                const enhanceData = await enhanceResp.json();
+                const rawText = enhanceData?.choices?.[0]?.message?.content?.trim();
+                if (rawText) {
+                  try {
+                    const parsed = JSON.parse(rawText) as { prompt?: string };
+                    if (parsed.prompt) enhancedSeedreamPrompt = parsed.prompt;
+                  } catch { /* JSON parse failed — proceed without enhancement */ }
+                }
+              }
+            } catch { /* non-fatal */ }
+          }
+
+          // Build final Seedream prompt
+          // Priority: DeepSeek-enhanced prompt > user action text > stripped scene description
           let seedreamPrompt: string;
           if (enhancedSeedreamPrompt) {
             // Best: DeepSeek rewrote the source into an explicit, detailed image prompt
             seedreamPrompt = enhancedSeedreamPrompt;
           } else if (input.actionText) {
-            // Fallback: user's own words (Grok call may have failed)
+            // Fallback: user's own words (DeepSeek call may have failed)
             seedreamPrompt = input.actionText;
           } else {
             // Last resort: strip ~~Name tokens, keep the scene description clean
