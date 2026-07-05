@@ -2593,6 +2593,8 @@ export const appRouter = router({
         prompt: z.string(),
         /** URL of the original Freeroam panel image (used for art style detection) */
         imageUrl: z.string().nullable(),
+        /** User's action text if this is an action panel (e.g. 'Blake fucking Starlight') — used as edit instruction directly */
+        actionText: z.string().nullable(),
         /** Shot type from Freeroam: 'Close-Up', 'Full', etc. */
         shot: z.string().nullable(),
         /** Character references from panel_content.character_references */
@@ -2703,39 +2705,32 @@ export const appRouter = router({
         }
 
         try {
-          // Build enhanced prompt: replace ~~CharacterName with appearance description
-          let enhancedPrompt = input.prompt;
-          const charRefs = input.characterReferences;
-
-          // Collect reference images (character headshots only) and build appearance map.
-          // Do NOT use the Freeroam panel image as a reference — it may contain extreme close-ups
-          // or non-character content that Seedream would replicate literally.
-          const referenceImageUrls: string[] = [];
-          const appearanceMap: Record<string, string> = {};
-
-          for (const [, ref] of Object.entries(charRefs) as [string, { external_id: string; name: string; appearance: string | null; headshot_url: string | null; is_main_character: boolean }][]) {
-            const name = ref.name;
-            if (ref.appearance) {
-              appearanceMap[name.toLowerCase()] = ref.appearance;
-            }
-            if (ref.headshot_url) {
-              referenceImageUrls.push(ref.headshot_url);
-            }
-          }
-
-          // If some characters are missing appearances, fetch from Freeroam
-          const cookie = getFreeroamCookie(ctx);
-          const missingNames = new Set<string>();
+          // Step 1: Extract which character names appear in the prompt (~~Name tokens)
+          const promptedNames = new Set<string>();
           const tokenRegex = /~~([\w-]+)/g;
           let match;
           while ((match = tokenRegex.exec(input.prompt)) !== null) {
-            const name = match[1].toLowerCase();
-            if (!appearanceMap[name]) missingNames.add(name);
+            promptedNames.add(match[1].toLowerCase().replace(/-/g, ' '));
           }
 
+          // Step 2: Build headshot map ONLY for characters that appear in the prompt.
+          // Never include headshots for characters not in the prompt — Seedream can't tell them apart.
+          // Never use display_headshot_url — only headshot_url.
+          const headshotMap: Record<string, string> = {}; // lowerName -> headshot_url
+          const charRefs = input.characterReferences;
+
+          for (const [, ref] of Object.entries(charRefs) as [string, { external_id: string; name: string; appearance: string | null; headshot_url: string | null; is_main_character: boolean }][]) {
+            const lowerName = ref.name.toLowerCase().replace(/-/g, ' ');
+            if (promptedNames.has(lowerName) && ref.headshot_url) {
+              headshotMap[lowerName] = ref.headshot_url;
+            }
+          }
+
+          // Step 3: If any prompted characters are still missing headshots, fetch from Freeroam
+          const cookie = getFreeroamCookie(ctx);
+          const missingNames = new Set(Array.from(promptedNames).filter(n => !headshotMap[n]));
+
           if (missingNames.size > 0 && cookie) {
-            // Single call to /world/{worldId}/characters/current?current_panel_external_id={panelId}
-            // Returns world_characters and story_characters with full appearance and headshots
             try {
               const currentCharsResp = await fetch(
                 `https://getfreeroam.com/api/world/${encodeURIComponent(input.worldId)}/characters/current?current_panel_external_id=${encodeURIComponent(input.panelId)}`,
@@ -2752,38 +2747,45 @@ export const appRouter = router({
               );
               if (currentCharsResp.ok) {
                 const currentCharsData = await currentCharsResp.json() as {
-                  world_characters?: Array<{ external_id: string; name: string; appearance?: string; headshot_url?: string; display_headshot_url?: string | null }>;
-                  story_characters?: Array<{ external_id: string; name: string; appearance?: string; headshot_url?: string; display_headshot_url?: string | null }>;
+                  world_characters?: Array<{ name: string; headshot_url?: string }>;
+                  story_characters?: Array<{ name: string; headshot_url?: string }>;
                 };
                 const allChars = [...(currentCharsData.world_characters ?? []), ...(currentCharsData.story_characters ?? [])];
                 for (const char of allChars) {
                   const lowerName = char.name.toLowerCase().replace(/-/g, ' ');
-                  if (char.appearance) appearanceMap[lowerName] = char.appearance;
-                  const headshot = char.display_headshot_url ?? char.headshot_url;
-                  if (headshot && !referenceImageUrls.includes(headshot)) {
-                    referenceImageUrls.push(headshot);
+                  // Only add if this character is actually in the prompt AND has a headshot
+                  if (missingNames.has(lowerName) && char.headshot_url) {
+                    headshotMap[lowerName] = char.headshot_url;
                   }
                 }
               }
             } catch { /* non-fatal */ }
           }
 
-          // Replace ~~CharacterName tokens with appearance descriptions
-          enhancedPrompt = enhancedPrompt.replace(/~~([\w-]+)/g, (_, name: string) => {
-            const appearance = appearanceMap[name.toLowerCase()];
-            return appearance ? `${name} (${appearance})` : name;
-          });
+          // Step 4: Build the Seedream prompt.
+          // Case A: user action panel — use the action text directly as the edit instruction
+          // Case B: natural panel — Grok already returned artStyle; use a simple scene description
+          // In both cases, strip ~~Name tokens and replace with just the name (no verbose appearance)
+          let seedreamPrompt: string;
+          if (input.actionText) {
+            // Case A: user's own words are the best edit instruction
+            seedreamPrompt = input.actionText;
+          } else {
+            // Case B: strip ~~Name tokens, keep the scene description clean
+            seedreamPrompt = input.prompt.replace(/~~([\w-]+)/g, (_, name: string) => name.replace(/-/g, ' '));
+          }
 
-          // Add shot type and art style context
+          // Add art style context from Grok
           if (detectedArtStyle) {
-            enhancedPrompt = `[${detectedArtStyle}] ${enhancedPrompt}`;
-          }
-          if (input.shot) {
-            enhancedPrompt = `[${input.shot} shot] ${enhancedPrompt}`;
+            seedreamPrompt = `[${detectedArtStyle}] ${seedreamPrompt}`;
           }
 
-          // Limit reference images to 5 (Atlas Cloud limit)
-          const images = referenceImageUrls.slice(0, 5);
+          // Reference images: only headshots of characters actually in the prompt, max 2
+          // (Seedream works best with 1-2 clear reference images, not a flood)
+          const referenceImageUrls = Object.values(headshotMap).slice(0, 2);
+
+          // Limit reference images to 2 max
+          const images = referenceImageUrls;
 
           // Call Atlas Cloud Seedream v4.5 Edit
           const generateResp = await fetch('https://api.atlascloud.ai/api/v1/model/generateImage', {
@@ -2794,7 +2796,7 @@ export const appRouter = router({
             },
             body: JSON.stringify({
               model: 'bytedance/seedream-v4.5/edit',
-              prompt: enhancedPrompt,
+              prompt: seedreamPrompt,
               images: images.length > 0 ? images : undefined,
               size: '2048*2048',
             }),

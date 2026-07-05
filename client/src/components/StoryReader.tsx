@@ -1019,11 +1019,14 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
         }
         // Generate new NSFW image — don't show IMG badge yet, wait for server to confirm it's actually generating
         const charRefs = (currentPanel as unknown as { character_references?: Record<string, { external_id: string; name: string; appearance: string | null; headshot_url: string | null; is_main_character: boolean }> }).character_references ?? {};
+        // For action panels, pass the user's action text as the edit instruction
+        const actionText = ((currentPanel.panel_content as unknown as { action?: string | null })?.action ?? null) as string | null;
         const result = await generateNsfwImageMutation.mutateAsync({
           panelId,
           worldId: world.external_id,
           prompt,
           imageUrl: img.url ?? null,
+          actionText,
           shot: img.shot ?? null,
           characterReferences: charRefs,
         });
