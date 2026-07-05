@@ -1019,8 +1019,15 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
         }
         // Generate new NSFW image — don't show IMG badge yet, wait for server to confirm it's actually generating
         const charRefs = (currentPanel as unknown as { character_references?: Record<string, { external_id: string; name: string; appearance: string | null; headshot_url: string | null; is_main_character: boolean }> }).character_references ?? {};
-        // For action panels, pass the user's action text as the edit instruction
-        const actionText = ((currentPanel.panel_content as unknown as { action?: string | null })?.action ?? null) as string | null;
+        // For action panels, pass the user's action text as the edit instruction.
+        // If the current panel has no action text, check the previous panel in the cache
+        // (the result panel comes after the action panel, so prev_panel_id points to the action panel).
+        let actionText = ((currentPanel.panel_content as unknown as { action?: string | null })?.action ?? null) as string | null;
+        if (!actionText && currentPanel.prev_panel_id) {
+          const prevPanel = panelCache.current.get(currentPanel.prev_panel_id);
+          const prevAction = ((prevPanel?.panel_content as unknown as { action?: string | null })?.action ?? null) as string | null;
+          if (prevAction) actionText = prevAction;
+        }
         const result = await generateNsfwImageMutation.mutateAsync({
           panelId,
           worldId: world.external_id,
