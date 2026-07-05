@@ -2792,8 +2792,8 @@ export const appRouter = router({
 
           // Step 4: DeepSeek V4 Flash — explicit prompt enhancement with character appearances
           // DeepSeek rewrites the source into an explicit action/scene prompt.
-          // Character appearance is NOT included — Seedream receives headshot images as visual references.
-          // DeepSeek only needs to describe WHAT the characters are doing, not what they look like.
+          // Character names are replaced with physical descriptors derived from their appearance text.
+          // Headshot images handle face/hair/colors — DeepSeek handles body type, species traits, proportions.
           if (atlasLlmKey) {
             try {
               const sourcePrompt = input.actionText || input.prompt.replace(/~~([\w-]+)/g, (_, n: string) => n.replace(/-/g, ' '));
@@ -2805,16 +2805,27 @@ export const appRouter = router({
               const sceneContext = sceneLines.length > 0
                 ? `Story context (use to understand the mood, setting, and what is happening):\n${sceneLines.join('\n')}\n\n`
                 : '';
+              // Build character appearance block — name -> full appearance text
+              // DeepSeek will extract sex/species/body descriptors and use them instead of names
+              const charAppearanceLines: string[] = [];
+              for (const [, ref] of Object.entries(charRefs) as [string, { name: string; appearance: string | null }][]) {
+                if (ref.appearance) {
+                  charAppearanceLines.push(`${ref.name}: ${ref.appearance}`);
+                }
+              }
+              const charAppearanceBlock = charAppearanceLines.length > 0
+                ? `Character appearances (use ONLY these to derive physical descriptors — do not invent anything not stated here):\n${charAppearanceLines.join('\n')}\n\n`
+                : '';
               const enhanceResp = await fetch('https://api.atlascloud.ai/v1/chat/completions', {
                 method: 'POST',
                 headers: { 'Authorization': `Bearer ${atlasLlmKey}`, 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                   model: 'deepseek-ai/deepseek-v4-flash',
                   messages: [
-                    { role: 'system', content: 'You are an adult image prompt writer for an AI image editor. The characters\' appearances are already provided as reference images — do NOT describe what they look like. Use the story context to understand the scene mood and setting. Focus only on the action, sexual positioning, and scene context. Always respond with valid JSON only, no markdown.' },
-                    { role: 'user', content: `${sceneContext}Rewrite this as an explicit, detailed image generation prompt. Use the story context above for scene mood and setting. Focus on the sexual action and positioning. Do NOT describe character appearances — those are handled by reference images. Keep it under 100 words. Respond with JSON: {"prompt": ".."}\n\nUser intent: "${sourcePrompt}"` },
+                    { role: 'system', content: 'You are an adult image prompt writer for an AI image editor. NEVER use character names in your output — replace them with physical descriptors derived strictly from the provided appearance descriptions (e.g. "a voluptuous succubus woman with large breasts and bat wings", "a tall human man"). Only use body type, species, sex, and notable physical traits from the appearance text. Do not invent anything not stated. The characters\' faces, hair, and colors are handled by reference images — focus on body type, species traits, and proportions. Use the story context for scene mood and setting. Always respond with valid JSON only, no markdown.' },
+                    { role: 'user', content: `${charAppearanceBlock}${sceneContext}Rewrite this as an explicit, detailed image generation prompt. Replace all character names with physical descriptors from their appearance above. Include relevant body type and species traits in the scene description. Focus on the sexual action and positioning. Keep it under 120 words. Respond with JSON: {"prompt": ".."}\n\nUser intent: "${sourcePrompt}"` },
                   ],
-                  max_tokens: 200,
+                  max_tokens: 250,
                   temperature: 0.7,
                 }),
               });
