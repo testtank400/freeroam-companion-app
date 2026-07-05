@@ -423,3 +423,4 @@ The choice panel is `absolute bottom-0` and uses `display: block` (not `flex fle
 - **Debug mode** — a debug overlay is available in preferences (Voice Settings → Debug Mode). Shows `forward_state`, `next_panel_id`, `isPolling`, `isNavigating`, `canGoForward`, `is_action`, `requires_action` in real time. Leave on when investigating navigation issues.
 - **Story text brightness** — deliberately kept at `rgba(255,255,255,0.85)` rather than full white. Freeroam uses full white which can wash out against bright panel images. Our softer value is intentional.
 - **Choice panel design** — uses `display: block` (not `flex flex-col`) on the outer container to prevent Tailwind's custom `.flex` from squishing button heights.
+
