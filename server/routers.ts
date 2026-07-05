@@ -2860,6 +2860,11 @@ User intent: "${sourcePrompt}"` },
             seedreamPrompt = input.prompt.replace(/~~([\w-]+)/g, (_, name: string) => name.replace(/-/g, ' '));
           }
 
+          // Always ensure nudity is stated — append if not already present
+          if (!/\bnaked\b|\bnude\b|\bundressed\b|\bfully\s+unclothed\b/i.test(seedreamPrompt)) {
+            seedreamPrompt = `${seedreamPrompt}, both characters fully naked`;
+          }
+
           // Add art style context from Grok (prepend so Seedream respects the style)
           if (detectedArtStyle) {
             seedreamPrompt = `[${detectedArtStyle}] ${seedreamPrompt}`;
