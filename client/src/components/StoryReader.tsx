@@ -1032,35 +1032,42 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
           actionText = actionText.replace(/^change\s+the\s+image\s+to\s+/i, '').trim();
           if (!actionText) actionText = null;
         }
-        // Show IMG badge now — generation is about to start
-        setIsGeneratingNsfwImage(true);
-        const result = await generateNsfwImageMutation.mutateAsync({
-          panelId,
-          worldId: world.external_id,
-          prompt,
-          imageUrl: img.url ?? null,
-          actionText,
-          shot: img.shot ?? null,
-          characterReferences: charRefs,
-        });
-        if (result.generating) {
-          setIsGeneratingNsfwImage(true);
-          // Poll until ready
-          for (let i = 0; i < 60; i++) {
-            await new Promise(r => setTimeout(r, 2000));
-            const poll = await utils.voice.checkImageReady.fetch({ panelId });
-            if (poll.status === 'ready' && poll.imageUrl) {
-              setNsfwImageUrl(poll.imageUrl);
-              break;
+        // Show IMG badge after a short delay — fast responses (not_nsfw, cache hit) complete before
+        // the timer fires and the badge never shows. Slow responses (actual generation) show the badge.
+        const badgeTimer = setTimeout(() => setIsGeneratingNsfwImage(true), 800);
+        try {
+          const result = await generateNsfwImageMutation.mutateAsync({
+            panelId,
+            worldId: world.external_id,
+            prompt,
+            imageUrl: img.url ?? null,
+            actionText,
+            shot: img.shot ?? null,
+            characterReferences: charRefs,
+          });
+          clearTimeout(badgeTimer);
+          if (result.generating) {
+            setIsGeneratingNsfwImage(true);
+            // Poll until ready
+            for (let i = 0; i < 60; i++) {
+              await new Promise(r => setTimeout(r, 2000));
+              const poll = await utils.voice.checkImageReady.fetch({ panelId });
+              if (poll.status === 'ready' && poll.imageUrl) {
+                setNsfwImageUrl(poll.imageUrl);
+                break;
+              }
             }
+          } else if (result.imageUrl) {
+            setNsfwImageUrl(result.imageUrl);
           }
-        } else if (result.imageUrl) {
-          setNsfwImageUrl(result.imageUrl);
+        } catch {
+          clearTimeout(badgeTimer);
+          // Non-fatal — fall back to original Freeroam image
+        } finally {
+          setIsGeneratingNsfwImage(false);
         }
       } catch {
-        // Non-fatal — fall back to original Freeroam image
-      } finally {
-        setIsGeneratingNsfwImage(false);
+        // Outer catch — non-fatal
       }
     })();
   // eslint-disable-next-line react-hooks/exhaustive-deps
