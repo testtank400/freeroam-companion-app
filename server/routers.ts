@@ -2834,7 +2834,9 @@ export const appRouter = router({
                 const rawText = enhanceData?.choices?.[0]?.message?.content?.trim();
                 if (rawText) {
                   try {
-                    const parsed = JSON.parse(rawText) as { prompt?: string };
+                    // Strip markdown code fences if DeepSeek wrapped the JSON
+                    const cleaned = rawText.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
+                    const parsed = JSON.parse(cleaned) as { prompt?: string };
                     if (parsed.prompt) enhancedSeedreamPrompt = parsed.prompt;
                   } catch { /* JSON parse failed — proceed without enhancement */ }
                 }
