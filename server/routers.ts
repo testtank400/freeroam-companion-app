@@ -2805,16 +2805,16 @@ export const appRouter = router({
               const sceneContext = sceneLines.length > 0
                 ? `Story context (use to understand the mood, setting, and what is happening):\n${sceneLines.join('\n')}\n\n`
                 : '';
-              // Build character appearance block — name -> full appearance text
-              // DeepSeek will extract sex/species/body descriptors and use them instead of names
-              const charAppearanceLines: string[] = [];
+              // Build character descriptor block — name -> "[sex] [species]" only
+              // Full character visuals are already in the reference images; we only need sex+species for the prompt
+              const charDescriptorLines: string[] = [];
               for (const [, ref] of Object.entries(charRefs) as [string, { name: string; appearance: string | null }][]) {
                 if (ref.appearance) {
-                  charAppearanceLines.push(`${ref.name}: ${ref.appearance}`);
+                  charDescriptorLines.push(`${ref.name}: ${ref.appearance}`);
                 }
               }
-              const charAppearanceBlock = charAppearanceLines.length > 0
-                ? `Character appearances (use ONLY these to derive physical descriptors — do not invent anything not stated here):\n${charAppearanceLines.join('\n')}\n\n`
+              const charDescriptorBlock = charDescriptorLines.length > 0
+                ? `Characters (extract ONLY sex and species to use as name replacements, e.g. "succubus woman", "human man", "elf male" — nothing else):\n${charDescriptorLines.join('\n')}\n\n`
                 : '';
               const enhanceResp = await fetch('https://api.atlascloud.ai/v1/chat/completions', {
                 method: 'POST',
@@ -2822,10 +2822,10 @@ export const appRouter = router({
                 body: JSON.stringify({
                   model: 'deepseek-ai/deepseek-v4-flash',
                   messages: [
-                    { role: 'system', content: 'You are an adult image prompt writer for an AI image editor. NEVER use character names in your output — replace them with physical descriptors derived strictly from the provided appearance descriptions (e.g. "a voluptuous succubus woman with large breasts and bat wings", "a tall human man"). Only use body type, species, sex, and notable physical traits from the appearance text. Do not invent anything not stated. The characters\' faces, hair, and colors are handled by reference images — focus on body type, species traits, and proportions. Use the story context for scene mood and setting. Always respond with valid JSON only, no markdown.' },
-                    { role: 'user', content: `${charAppearanceBlock}${sceneContext}Rewrite this as an explicit, detailed image generation prompt. Replace all character names with physical descriptors from their appearance above. Include relevant body type and species traits in the scene description. Focus on the sexual action and positioning. Keep it under 120 words. Respond with JSON: {"prompt": ".."}\n\nUser intent: "${sourcePrompt}"` },
+                    { role: 'system', content: 'You are an adult image edit prompt writer. You are editing an existing image, not generating a new one. Write the prompt as a directive: "have [descriptor] doing X". NEVER use character names — replace them with sex+species only (e.g. "the succubus woman", "the human man"). Do NOT describe appearance, clothing, hair, or body details — the reference image already shows all of that. Focus only on the sexual action, positioning, and scene context. Use the story context for mood and setting. Always respond with valid JSON only, no markdown.' },
+                    { role: 'user', content: `${charDescriptorBlock}${sceneContext}Rewrite this as an explicit image edit instruction. Use "have [descriptor] doing X" phrasing. Replace all character names with sex+species descriptors from the character list above. Do NOT describe appearance. Focus on the action and positioning. Keep it under 80 words. Respond with JSON: {"prompt": ".."}\n\nUser intent: "${sourcePrompt}"` },
                   ],
-                  max_tokens: 250,
+                  max_tokens: 200,
                   temperature: 0.7,
                 }),
               });
