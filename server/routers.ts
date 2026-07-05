@@ -2642,14 +2642,15 @@ export const appRouter = router({
 
         // Grok NSFW classification — classify NSFW, detect art style, AND generate an enhanced Seedream prompt
         let detectedArtStyle: string | null = null;
-        let grokSeedreamPrompt: string | null = null;
+        let enhancedSeedreamPrompt: string | null = null;
         const grokKey = process.env.GROK_API_KEY;
+        const atlasLlmKey = process.env.ATLAS_CLOUD_API_KEY;
+
+        // Step A: Grok — NSFW classification + art style detection (vision call)
         if (grokKey) {
           try {
-            // The source material for the prompt: user action text takes priority over scene description
-            const sourcePrompt = input.actionText || input.prompt.replace(/~~([\w-]+)/g, (_, n: string) => n.replace(/-/g, ' '));
             const userContent: Array<{ type: string; text?: string; image_url?: { url: string } }> = [
-              { type: 'text', text: `Analyze this image prompt and return a JSON object with three fields:\n1. "isNsfw": true if the content describes sexual or adult content, false otherwise\n2. "artStyle": a short description of the art style visible in the image (e.g. "anime illustration, cel-shaded", "semi-realistic digital painting"). Be concise, max 10 words. If no image provided, return null.\n3. "seedreamPrompt": if isNsfw is true, rewrite the source material as an explicit, detailed image generation prompt for an adult AI image model. Include anatomical detail, sexual positioning, character appearance cues, and scene context. Keep it under 150 words. If isNsfw is false, return null.\n\nSource material: "${sourcePrompt}"` },
+              { type: 'text', text: `Analyze this image prompt and return a JSON object with two fields:\n1. "isNsfw": true if the content describes sexual or adult content, false otherwise\n2. "artStyle": a short description of the art style visible in the image (e.g. "anime illustration, cel-shaded", "semi-realistic digital painting"). Be concise, max 10 words. If no image provided, return null.\n\nPrompt: "${input.prompt}"` },
             ];
             if (input.imageUrl) {
               userContent.push({ type: 'image_url', image_url: { url: input.imageUrl } });
@@ -2661,10 +2662,10 @@ export const appRouter = router({
                 model: 'grok-4.3',
                 store: false,
                 input: [
-                  { role: 'system', content: 'You are an adult content and style analyzer. Always respond with valid JSON only, no markdown. Be explicit and detailed in seedreamPrompt.' },
+                  { role: 'system', content: 'You are a content and style analyzer. Always respond with valid JSON only, no markdown.' },
                   { role: 'user', content: userContent },
                 ],
-                max_output_tokens: 300,
+                max_output_tokens: 100,
               }),
             });
             if (classifyResp.ok) {
@@ -2673,7 +2674,7 @@ export const appRouter = router({
               const rawText = msgItem?.content?.find((c: { type: string }) => c.type === 'output_text')?.text?.trim();
               if (rawText) {
                 try {
-                  const parsed = JSON.parse(rawText) as { isNsfw?: boolean; artStyle?: string | null; seedreamPrompt?: string | null };
+                  const parsed = JSON.parse(rawText) as { isNsfw?: boolean; artStyle?: string | null };
                   if (parsed.isNsfw === false) {
                     // Not NSFW — cache this result so we don't classify again
                     await db.insert(imageCache).values({
@@ -2684,11 +2685,41 @@ export const appRouter = router({
                     return { imageUrl: null, fromCache: false, generating: false, notNsfw: true };
                   }
                   if (parsed.artStyle) detectedArtStyle = parsed.artStyle;
-                  if (parsed.seedreamPrompt) grokSeedreamPrompt = parsed.seedreamPrompt;
-                } catch { /* JSON parse failed — proceed without enhancements */ }
+                } catch { /* JSON parse failed — proceed */ }
               }
             }
-          } catch { /* non-fatal — proceed with generation if classification fails */ }
+          } catch { /* non-fatal */ }
+        }
+
+        // Step B: DeepSeek V4 Flash via Atlas Cloud — explicit prompt enhancement
+        // DeepSeek handles adult content without restrictions, unlike Grok
+        if (atlasLlmKey) {
+          try {
+            const sourcePrompt = input.actionText || input.prompt.replace(/~~([\w-]+)/g, (_, n: string) => n.replace(/-/g, ' '));
+            const enhanceResp = await fetch('https://api.atlascloud.ai/v1/chat/completions', {
+              method: 'POST',
+              headers: { 'Authorization': `Bearer ${atlasLlmKey}`, 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                model: 'deepseek-ai/deepseek-v4-flash',
+                messages: [
+                  { role: 'system', content: 'You are an adult image prompt writer. Write explicit, detailed image generation prompts for adult AI image models. Always respond with valid JSON only, no markdown.' },
+                  { role: 'user', content: `Rewrite this as an explicit, detailed image generation prompt for an adult AI image model. Include anatomical detail, sexual positioning, character appearance cues, and scene context. Keep it under 150 words. Respond with JSON: {"prompt": "..."}\n\nSource: "${sourcePrompt}"` },
+                ],
+                max_tokens: 300,
+                temperature: 0.7,
+              }),
+            });
+            if (enhanceResp.ok) {
+              const enhanceData = await enhanceResp.json();
+              const rawText = enhanceData?.choices?.[0]?.message?.content?.trim();
+              if (rawText) {
+                try {
+                  const parsed = JSON.parse(rawText) as { prompt?: string };
+                  if (parsed.prompt) enhancedSeedreamPrompt = parsed.prompt;
+                } catch { /* JSON parse failed — proceed without enhancement */ }
+              }
+            }
+          } catch { /* non-fatal */ }
         }
 
         // Insert placeholder to prevent duplicate generation
@@ -2768,9 +2799,9 @@ export const appRouter = router({
           // Step 4: Build the Seedream prompt.
           // Priority: Grok-enhanced prompt > user action text > stripped scene description
           let seedreamPrompt: string;
-          if (grokSeedreamPrompt) {
-            // Best: Grok rewrote the source into an explicit, detailed image prompt
-            seedreamPrompt = grokSeedreamPrompt;
+          if (enhancedSeedreamPrompt) {
+            // Best: DeepSeek rewrote the source into an explicit, detailed image prompt
+            seedreamPrompt = enhancedSeedreamPrompt;
           } else if (input.actionText) {
             // Fallback: user's own words (Grok call may have failed)
             seedreamPrompt = input.actionText;
