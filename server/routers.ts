@@ -2640,14 +2640,16 @@ export const appRouter = router({
           return { imageUrl: null, fromCache: false, generating: false, notNsfw: true };
         }
 
-        // Grok NSFW classification — ask if the prompt describes sexual/adult content
-        // Combined Grok call: classify NSFW AND detect art style from the panel image
+        // Grok NSFW classification — classify NSFW, detect art style, AND generate an enhanced Seedream prompt
         let detectedArtStyle: string | null = null;
+        let grokSeedreamPrompt: string | null = null;
         const grokKey = process.env.GROK_API_KEY;
         if (grokKey) {
           try {
+            // The source material for the prompt: user action text takes priority over scene description
+            const sourcePrompt = input.actionText || input.prompt.replace(/~~([\w-]+)/g, (_, n: string) => n.replace(/-/g, ' '));
             const userContent: Array<{ type: string; text?: string; image_url?: { url: string } }> = [
-              { type: 'text', text: `Analyze this image and the prompt below. Return a JSON object with two fields:\n1. "isNsfw": true if the prompt describes sexual or adult content, false otherwise\n2. "artStyle": a short description of the art style visible in the image (e.g. "anime illustration, cel-shaded", "semi-realistic digital painting", "photorealistic", "watercolor style"). Be concise, max 10 words.\n\nPrompt: "${input.prompt}"` },
+              { type: 'text', text: `Analyze this image prompt and return a JSON object with three fields:\n1. "isNsfw": true if the content describes sexual or adult content, false otherwise\n2. "artStyle": a short description of the art style visible in the image (e.g. "anime illustration, cel-shaded", "semi-realistic digital painting"). Be concise, max 10 words. If no image provided, return null.\n3. "seedreamPrompt": if isNsfw is true, rewrite the source material as an explicit, detailed image generation prompt for an adult AI image model. Include anatomical detail, sexual positioning, character appearance cues, and scene context. Keep it under 150 words. If isNsfw is false, return null.\n\nSource material: "${sourcePrompt}"` },
             ];
             if (input.imageUrl) {
               userContent.push({ type: 'image_url', image_url: { url: input.imageUrl } });
@@ -2659,10 +2661,10 @@ export const appRouter = router({
                 model: 'grok-4.3',
                 store: false,
                 input: [
-                  { role: 'system', content: 'You are a content and style analyzer. Always respond with valid JSON only, no markdown.' },
+                  { role: 'system', content: 'You are an adult content and style analyzer. Always respond with valid JSON only, no markdown. Be explicit and detailed in seedreamPrompt.' },
                   { role: 'user', content: userContent },
                 ],
-                max_output_tokens: 100,
+                max_output_tokens: 300,
               }),
             });
             if (classifyResp.ok) {
@@ -2671,7 +2673,7 @@ export const appRouter = router({
               const rawText = msgItem?.content?.find((c: { type: string }) => c.type === 'output_text')?.text?.trim();
               if (rawText) {
                 try {
-                  const parsed = JSON.parse(rawText) as { isNsfw?: boolean; artStyle?: string };
+                  const parsed = JSON.parse(rawText) as { isNsfw?: boolean; artStyle?: string | null; seedreamPrompt?: string | null };
                   if (parsed.isNsfw === false) {
                     // Not NSFW — cache this result so we don't classify again
                     await db.insert(imageCache).values({
@@ -2682,7 +2684,8 @@ export const appRouter = router({
                     return { imageUrl: null, fromCache: false, generating: false, notNsfw: true };
                   }
                   if (parsed.artStyle) detectedArtStyle = parsed.artStyle;
-                } catch { /* JSON parse failed — proceed without style */ }
+                  if (parsed.seedreamPrompt) grokSeedreamPrompt = parsed.seedreamPrompt;
+                } catch { /* JSON parse failed — proceed without enhancements */ }
               }
             }
           } catch { /* non-fatal — proceed with generation if classification fails */ }
@@ -2763,19 +2766,20 @@ export const appRouter = router({
           }
 
           // Step 4: Build the Seedream prompt.
-          // Case A: user action panel — use the action text directly as the edit instruction
-          // Case B: natural panel — Grok already returned artStyle; use a simple scene description
-          // In both cases, strip ~~Name tokens and replace with just the name (no verbose appearance)
+          // Priority: Grok-enhanced prompt > user action text > stripped scene description
           let seedreamPrompt: string;
-          if (input.actionText) {
-            // Case A: user's own words are the best edit instruction
+          if (grokSeedreamPrompt) {
+            // Best: Grok rewrote the source into an explicit, detailed image prompt
+            seedreamPrompt = grokSeedreamPrompt;
+          } else if (input.actionText) {
+            // Fallback: user's own words (Grok call may have failed)
             seedreamPrompt = input.actionText;
           } else {
-            // Case B: strip ~~Name tokens, keep the scene description clean
+            // Last resort: strip ~~Name tokens, keep the scene description clean
             seedreamPrompt = input.prompt.replace(/~~([\w-]+)/g, (_, name: string) => name.replace(/-/g, ' '));
           }
 
-          // Add art style context from Grok
+          // Add art style context from Grok (prepend so Seedream respects the style)
           if (detectedArtStyle) {
             seedreamPrompt = `[${detectedArtStyle}] ${seedreamPrompt}`;
           }
