@@ -2768,26 +2768,22 @@ export const appRouter = router({
           }
 
           // Step 4: DeepSeek V4 Flash — explicit prompt enhancement with character appearances
-          // Now that appearanceMap is populated, pass character descriptions to DeepSeek
+          // DeepSeek rewrites the source into an explicit action/scene prompt.
+          // Character appearance is NOT included — Seedream receives headshot images as visual references.
+          // DeepSeek only needs to describe WHAT the characters are doing, not what they look like.
           if (atlasLlmKey) {
             try {
               const sourcePrompt = input.actionText || input.prompt.replace(/~~([\w-]+)/g, (_, n: string) => n.replace(/-/g, ' '));
-              const charDescriptions = Object.entries(appearanceMap)
-                .map(([name, desc]) => `- ${name}: ${desc}`)
-                .join('\n');
-              const charContext = charDescriptions
-                ? `Character descriptions (use these EXACTLY, do not invent or change):\n${charDescriptions}\n\n`
-                : '';
               const enhanceResp = await fetch('https://api.atlascloud.ai/v1/chat/completions', {
                 method: 'POST',
                 headers: { 'Authorization': `Bearer ${atlasLlmKey}`, 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                   model: 'deepseek-ai/deepseek-v4-flash',
                   messages: [
-                    { role: 'system', content: 'You are an adult image prompt writer. Write explicit, detailed image generation prompts for adult AI image models. Always respond with valid JSON only, no markdown. Always use the provided character descriptions exactly as given.' },
-                    { role: 'user', content: `${charContext}Rewrite this as an explicit, detailed image generation prompt for an adult AI image model. Use the character descriptions above for appearance details. Include anatomical detail, sexual positioning, and scene context. Keep it under 150 words. Respond with JSON: {"prompt": ".."}\n\nSource: "${sourcePrompt}"` },
+                    { role: 'system', content: 'You are an adult image prompt writer for an AI image editor. The characters\' appearances are already provided as reference images to the image model — do NOT describe what the characters look like. Focus only on the action, sexual positioning, and scene context. Always respond with valid JSON only, no markdown.' },
+                    { role: 'user', content: `Rewrite this as an explicit, detailed image generation prompt. Focus on the sexual action, positioning, and scene context. Do NOT describe character appearances — those are handled by reference images. Keep it under 100 words. Respond with JSON: {"prompt": ".."}\n\nSource: "${sourcePrompt}"` },
                   ],
-                  max_tokens: 300,
+                  max_tokens: 200,
                   temperature: 0.7,
                 }),
               });
