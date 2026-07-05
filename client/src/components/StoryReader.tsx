@@ -953,10 +953,39 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
     }
     // Reset choice input on every panel change — no buffer for choice panels
     setChoiceInput('');
-    // Reset NSFW image state on panel change
-    setNsfwImageUrl(null);
+    // Reset NSFW generation badge state on panel change
     setIsGeneratingNsfwImage(false);
     nsfwGeneratingPanelRef.current = null;
+    // Pre-render NSFW cache check: if we already have a cached replacement for this panel's
+    // Freeroam image URL, set it immediately so the Freeroam image is never shown.
+    // Only fall back to null (show Freeroam image) if no cache hit.
+    if (unrestrictedImagesEnabled) {
+      const img = currentPanel.panel_content?.images?.[0];
+      const panelId = currentPanel.panel_id;
+      const freeroamImageUrl = img?.url ?? undefined;
+      if (img?.prompt && freeroamImageUrl) {
+        // Fire async but set null immediately as a provisional value only if needed
+        // We optimistically keep the previous nsfwImageUrl until we know the answer
+        // to avoid a flash of the Freeroam image on the new panel.
+        // We'll reset to null only if the cache misses.
+        (async () => {
+          try {
+            const cached = await utils.voice.checkImageReady.fetch({ panelId, freeroamImageUrl });
+            if (cached.status === 'ready' && cached.imageUrl) {
+              setNsfwImageUrl(cached.imageUrl);
+            } else {
+              setNsfwImageUrl(null);
+            }
+          } catch {
+            setNsfwImageUrl(null);
+          }
+        })();
+      } else {
+        setNsfwImageUrl(null);
+      }
+    } else {
+      setNsfwImageUrl(null);
+    }
     // Fire TTS in background (non-blocking)
     triggerTTS(currentPanel);
   // eslint-disable-next-line react-hooks/exhaustive-deps
