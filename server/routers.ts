@@ -2850,9 +2850,16 @@ export const appRouter = router({
             seedreamPrompt = `[${detectedArtStyle}] ${seedreamPrompt}`;
           }
 
-          // Reference images: only headshots of characters actually in the prompt, max 2
-          // (Seedream works best with 1-2 clear reference images, not a flood)
-          const referenceImageUrls = Object.values(headshotMap).slice(0, 2);
+          // Reference images: prefer headshots of characters matched via ~~token lookup.
+          // If token matching yielded nothing (no tokens in prompt, or Freeroam hallucinated last names),
+          // fall back to all characterReferences that have a headshot_url — they are already panel-scoped.
+          let referenceImageUrls = Object.values(headshotMap).slice(0, 2);
+          if (referenceImageUrls.length === 0) {
+            referenceImageUrls = Object.values(charRefs)
+              .filter((ref) => (ref as { headshot_url: string | null }).headshot_url)
+              .map((ref) => (ref as { headshot_url: string }).headshot_url)
+              .slice(0, 2);
+          }
 
           // Limit reference images to 2 max
           const images = referenceImageUrls;
