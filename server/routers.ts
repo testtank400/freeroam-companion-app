@@ -2822,8 +2822,10 @@ export const appRouter = router({
                 body: JSON.stringify({
                   model: 'deepseek-ai/deepseek-v4-flash',
                   messages: [
-                    { role: 'system', content: 'You are an adult image edit prompt writer. You are editing an existing image, not generating a new one. Write the prompt as a directive: "have [descriptor] doing X". NEVER use character names — replace them with sex+species only (e.g. "the succubus woman", "the human man"). Do NOT describe appearance, clothing, hair, or body details — the reference image already shows all of that. Focus only on the sexual action, positioning, and scene context. Use the story context for mood and setting. Always respond with valid JSON only, no markdown.' },
-                    { role: 'user', content: `${charDescriptorBlock}${sceneContext}Rewrite this as an explicit image edit instruction. Use "have [descriptor] doing X" phrasing. Replace all character names with sex+species descriptors from the character list above. Do NOT describe appearance. Focus on the action and positioning. Keep it under 80 words. Respond with JSON: {"prompt": ".."}\n\nUser intent: "${sourcePrompt}"` },
+                    { role: 'system', content: '你是一名成人图像编辑提示词写手。你正在编辑现有图像，而不是生成新图像。用指令式写法："让[描述词]做X"。绝对不要使用角色名字——用性别+种族替代（例如："魅魔女性"、"人类男性"）。不要描述外貌、服装、发型或身体细节——参考图像已经展示了这些。只关注性行为、体位和场景背景。用故事背景理解情绪和环境。只用简体中文回答，输出有效JSON，不要markdown。' },
+                    { role: 'user', content: `${charDescriptorBlock}${sceneContext}将以下内容改写为明确的图像编辑指令。使用"让[描述词]做X"的表达方式。将所有角色名字替换为上方角色列表中的性别+种族描述词。不要描述外貌。专注于动作和体位。控制在80字以内。用简体中文回答，输出JSON格式：{"prompt": ".."}
+
+用户意图："${sourcePrompt}"` },
                   ],
                   max_tokens: 200,
                   temperature: 0.7,
