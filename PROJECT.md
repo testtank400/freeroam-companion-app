@@ -342,6 +342,7 @@ The Grok call is **non-fatal** — if it fails for any reason, TTS proceeds with
 | `character_voices` | ElevenLabs voice assignments per character — voiceId, stability, similarityBoost, style, languageCode |
 | `tts_cache` | Cached TTS audio URLs. `status` column: `'generating'` or `'ready'`. Keyed by `(panelId, worldId, characterId)`. |
 | `app_settings` | Key-value store for global settings (narrator voice, auto-play, auto-advance, etc.) |
+| `image_cache` | Cached NSFW image replacements. `status`: `'generating'` or `'ready'`. Keyed by `panelId`; also indexed by `freeroamImageUrl` for cross-panel reuse. |
 
 ---
 
@@ -372,6 +373,66 @@ The narrator voice is stored in `app_settings` under the key `narrator_voice_id`
 | `auto_advance_min_delay` | Minimum delay in seconds before auto-advance fires |
 | `show_choice_ideas_by_default` | `'true'` / `'false'` — whether the IDEAS panel is open by default on choice panels |
 | `debug_mode` | `'true'` / `'false'` — shows the real-time state debug overlay in the reader |
+| `unrestricted_images` | `'true'` / `'false'` — enables NSFW image replacement pipeline |
+
+---
+
+## NSFW Image Replacement Pipeline
+
+When **Unrestricted Images** is enabled (Preferences → Images), the app replaces Freeroam's censored panel images with AI-generated explicit ones using a three-stage pipeline.
+
+### Pipeline Stages
+
+1. **Grok classification + art style detection** — `grok-4.3` via `https://api.x.ai/v1/responses` with `GROK_API_KEY`. Receives the panel image URL and prompt. Returns: `isNsfw` (bool), `artStyle` (e.g. `'anime'`, `'realistic'`), and `shot` type. If `isNsfw` is false, the pipeline exits immediately — no generation.
+
+2. **DeepSeek V4 Flash prompt enhancement** — `deepseek-v4-flash` via Atlas Cloud (`https://api.atlas.miitcloud.com/v1/chat/completions`) with `ATLAS_CLOUD_API_KEY`. Receives the user's short action text (e.g. `'Kenji fucks Luve hard'`) plus story text from the previous, current, and next panels as scene context. Returns a detailed explicit image generation prompt describing anatomy, positioning, scene, and mood. DeepSeek handles adult content without restrictions.
+
+3. **Seedream v4.5 Edit image generation** — via Atlas Cloud (`https://api.atlas.miitcloud.com/api/v1/model/generateImage`). Receives the enhanced prompt plus character headshot reference images. Output size: **1600×2400** (2:3 portrait, 3,840,000 pixels). The original Freeroam image is passed as the edit source.
+
+### Caching and Cross-Panel Reuse
+
+Results are cached in the `image_cache` table. The cache stores both `panelId` and `freeroamImageUrl` (the original Freeroam image URL). This enables **cross-panel reuse**: if two panels share the same Freeroam source image URL (common in long stories), the second panel gets the cached NSFW replacement instantly without re-generating.
+
+Cache lookup order in `checkImageReady`:
+1. Exact `panelId` match
+2. `freeroamImageUrl` match (cross-panel reuse)
+
+The `generateNsfwImage` procedure also checks the cache in the same order before starting generation. A `'generating'` placeholder row is inserted before any API calls to prevent duplicate generation if the user navigates away and back.
+
+### Flash Prevention
+
+**The critical implementation detail:** The cache check must happen *before* the panel image is rendered, not in a separate `useEffect` that fires after render. The fix lives in the panel-change effect in `StoryReader.tsx`:
+
+- On every panel change, instead of immediately resetting `nsfwImageUrl` to `null`, an async IIFE fires `checkImageReady` with the new panel's `freeroamImageUrl`.
+- If the cache returns `ready` + an image URL, `setNsfwImageUrl(cached.imageUrl)` is called before the component re-renders — the Freeroam image is never shown.
+- Only on a cache miss does it fall back to `null`, letting the NSFW generation effect handle new generation.
+- The previous `nsfwImageUrl` value is held until the lookup resolves, so there is no intermediate flash of the Freeroam image.
+
+### Action Text Handling
+
+- The user's action text comes from `panel_content.action` on the current panel, or from the previous panel's action (result panels follow action panels).
+- The prefix `'Change the image to '` is stripped before sending to DeepSeek — it is a UI instruction, not an image description.
+- If no action text is available, DeepSeek uses the scene context alone.
+
+### Character References
+
+Character headshot images from `character_references` on the panel are passed to Seedream as reference images. DeepSeek does **not** receive character appearance descriptions — this prevents it from inventing wrong descriptions. Appearance is handled entirely by the headshot reference images.
+
+### Badge Indicators
+
+- **IMG badge** (amber `#f59e0b`) — shown in the reader top bar while a cached image is being looked up or displayed.
+- **GEN badge** (amber) — shown during active Seedream generation. Appears after an 800ms delay so fast responses (cache hits, `not_nsfw` results) never show the badge.
+
+### Cache Management
+
+The **Clear Image Cache** button in Voice Settings (Preferences tab) deletes all `image_cache` rows. Use this when old entries lack `freeroamImageUrl` (entries generated before the cross-panel reuse feature was added). After clearing, the next generation will populate `freeroamImageUrl` correctly.
+
+### Environment Variables
+
+| Variable | Purpose |
+|---|---|
+| `GROK_API_KEY` | Grok API key for classification and TTS tag inference |
+| `ATLAS_CLOUD_API_KEY` | Atlas Cloud API key for DeepSeek prompt enhancement and Seedream image generation |
 
 ---
 
