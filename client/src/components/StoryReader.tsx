@@ -996,7 +996,8 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
     nsfwGeneratingPanelRef.current = panelId;
     (async () => {
       try {
-        const cached = await utils.voice.checkImageReady.fetch({ panelId });
+        const freeroamImageUrl = img.url ?? undefined;
+        const cached = await utils.voice.checkImageReady.fetch({ panelId, freeroamImageUrl });
         if (cached.status === 'ready' && cached.imageUrl) {
           setNsfwImageUrl(cached.imageUrl);
           return;
@@ -1006,7 +1007,7 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
           // Poll until ready
           for (let i = 0; i < 60; i++) {
             await new Promise(r => setTimeout(r, 2000));
-            const poll = await utils.voice.checkImageReady.fetch({ panelId });
+            const poll = await utils.voice.checkImageReady.fetch({ panelId, freeroamImageUrl });
             if (poll.status === 'ready' && poll.imageUrl) {
               setNsfwImageUrl(poll.imageUrl);
               setIsGeneratingNsfwImage(false);

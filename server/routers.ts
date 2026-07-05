@@ -2924,16 +2924,28 @@ export const appRouter = router({
 
     /** Check if an NSFW image is ready in the cache */
     checkImageReady: publicProcedure
-      .input(z.object({ panelId: z.string() }))
+      .input(z.object({ panelId: z.string(), freeroamImageUrl: z.string().optional() }))
       .query(async ({ input }) => {
         const { getDb } = await import('./db');
         const { imageCache } = await import('../drizzle/schema');
         const { eq } = await import('drizzle-orm');
         const db = await getDb();
         if (!db) return { status: 'not_found', imageUrl: null };
+        // Check by panelId first
         const rows = await db.select().from(imageCache).where(eq(imageCache.panelId, input.panelId)).limit(1);
-        if (!rows.length) return { status: 'not_found', imageUrl: null };
-        return { status: rows[0].status, imageUrl: rows[0].imageUrl || null };
+        if (rows.length) {
+          return { status: rows[0].status, imageUrl: rows[0].imageUrl || null };
+        }
+        // Check by freeroamImageUrl — reuse cached image from another panel with same source
+        if (input.freeroamImageUrl) {
+          const urlRows = await db.select().from(imageCache)
+            .where(eq(imageCache.freeroamImageUrl, input.freeroamImageUrl))
+            .limit(1);
+          if (urlRows.length && urlRows[0].status === 'ready' && urlRows[0].imageUrl) {
+            return { status: 'ready', imageUrl: urlRows[0].imageUrl };
+          }
+        }
+        return { status: 'not_found', imageUrl: null };
       }),
 
     /** Set an app setting */
