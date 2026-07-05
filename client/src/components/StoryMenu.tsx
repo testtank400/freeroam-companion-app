@@ -435,10 +435,13 @@ function VoiceSettings() {
   const { data: voices } = trpc.voice.listVoices.useQuery();
   const setSettingMutation = trpc.voice.setSetting.useMutation();
   const clearCacheMutation = trpc.voice.clearVoiceCache.useMutation();
+  const clearImageCacheMutation = trpc.voice.clearImageCache.useMutation();
   const [showNarratorPicker, setShowNarratorPicker] = useState(false);
   const [narratorSearch, setNarratorSearch] = useState('');
   const [isClearing, setIsClearing] = useState(false);
   const [confirmClear, setConfirmClear] = useState(false);
+  const [isClearingImages, setIsClearingImages] = useState(false);
+  const [confirmClearImages, setConfirmClearImages] = useState(false);
 
   const voiceEnabled = voiceEnabledData !== 'false';
   const autoPlayEnabled = autoPlayData !== 'false';
@@ -471,6 +474,20 @@ function VoiceSettings() {
     } finally {
       setIsClearing(false);
       setConfirmClear(false);
+    }
+  };
+
+  const handleClearImageCache = async () => {
+    if (!confirmClearImages) { setConfirmClearImages(true); return; }
+    setIsClearingImages(true);
+    try {
+      await clearImageCacheMutation.mutateAsync();
+      toast.success('Image cache cleared.');
+    } catch {
+      toast.error('Failed to clear image cache.');
+    } finally {
+      setIsClearingImages(false);
+      setConfirmClearImages(false);
     }
   };
 
@@ -644,6 +661,22 @@ function VoiceSettings() {
           style={{ fontFamily: LORA, fontSize: '12px', fontWeight: 600, color: confirmClear ? '#fff' : '#f87171', background: confirmClear ? '#ef4444' : 'rgba(248,113,113,0.1)', border: `1px solid ${confirmClear ? '#ef4444' : 'rgba(248,113,113,0.2)'}`, cursor: 'pointer' }}
         >
           {isClearing ? 'Clearing...' : confirmClear ? 'Confirm Clear' : 'Clear Cache'}
+        </button>
+      </div>
+
+      {/* Clear image cache */}
+      <div className="flex items-center justify-between rounded-xl px-4 py-3" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
+        <div>
+          <p style={{ fontFamily: LORA, fontSize: '14px', color: '#fff', marginBottom: '2px' }}>Clear Image Cache</p>
+          <p style={{ fontFamily: LORA, fontSize: '12px', color: 'rgba(255,255,255,0.45)' }}>Delete all generated NSFW images — useful after prompt changes</p>
+        </div>
+        <button
+          onClick={handleClearImageCache}
+          disabled={isClearingImages}
+          className="flex-shrink-0 rounded-full px-3 py-1.5 transition-all hover:brightness-125 disabled:opacity-50"
+          style={{ fontFamily: LORA, fontSize: '12px', fontWeight: 600, color: confirmClearImages ? '#fff' : '#f87171', background: confirmClearImages ? '#ef4444' : 'rgba(248,113,113,0.1)', border: `1px solid ${confirmClearImages ? '#ef4444' : 'rgba(248,113,113,0.2)'}`, cursor: 'pointer' }}
+        >
+          {isClearingImages ? 'Clearing...' : confirmClearImages ? 'Confirm Clear' : 'Clear Cache'}
         </button>
       </div>
     </div>

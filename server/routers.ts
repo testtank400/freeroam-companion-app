@@ -2528,6 +2528,17 @@ export const appRouter = router({
         return { ok: true };
       }),
 
+    /** Clear all generated NSFW image cache entries */
+    clearImageCache: publicProcedure
+      .mutation(async () => {
+        const { getDb } = await import('./db');
+        const { imageCache } = await import('../drizzle/schema');
+        const db = await getDb();
+        if (!db) throw new Error('Database not available');
+        await db.delete(imageCache);
+        return { ok: true };
+      }),
+
     /** Test a voice with given settings — generates TTS for a short phrase, no caching */
     testVoice: publicProcedure
       .input(z.object({
