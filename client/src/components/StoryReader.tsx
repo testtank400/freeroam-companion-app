@@ -1036,12 +1036,30 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
         // the timer fires and the badge never shows. Slow responses (actual generation) show the badge.
         const badgeTimer = setTimeout(() => setIsGeneratingNsfwImage(true), 800);
         try {
+          // Extract story text from surrounding panels for scene context
+          const extractPanelText = (p: typeof currentPanel | undefined) => {
+            if (!p?.panel_content?.speech_bubbles) return null;
+            return (p.panel_content.speech_bubbles as Array<{text?: string; style?: string}>)
+              .filter(b => b.style !== 'action')
+              .map(b => b.text)
+              .filter(Boolean)
+              .join(' ') || null;
+          };
+          const prevPanel = currentPanel.prev_panel_id ? panelCache.current.get(currentPanel.prev_panel_id) : undefined;
+          const nextPanelData = currentPanel.next_panel_id ? panelCache.current.get(currentPanel.next_panel_id) : undefined;
+          const prevPanelText = extractPanelText(prevPanel);
+          const currentPanelText = extractPanelText(currentPanel);
+          const nextPanelText = extractPanelText(nextPanelData);
+
           const result = await generateNsfwImageMutation.mutateAsync({
             panelId,
             worldId: world.external_id,
             prompt,
             imageUrl: img.url ?? null,
             actionText,
+            prevPanelText,
+            currentPanelText,
+            nextPanelText,
             shot: img.shot ?? null,
             characterReferences: charRefs,
           });

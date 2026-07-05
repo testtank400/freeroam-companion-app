@@ -2604,8 +2604,14 @@ export const appRouter = router({
         prompt: z.string(),
         /** URL of the original Freeroam panel image (used for art style detection) */
         imageUrl: z.string().nullable(),
-        /** User's action text if this is an action panel (e.g. 'Blake fucking Starlight') — used as edit instruction directly */
+        /** User's action text if this is an action panel — the user's explicit intent */
         actionText: z.string().nullable(),
+        /** Story text from the previous panel (narration + dialogue) for scene context */
+        prevPanelText: z.string().nullable(),
+        /** Story text from the current panel (narration + dialogue) for scene context */
+        currentPanelText: z.string().nullable(),
+        /** Story text from the next panel (narration + dialogue) for scene context */
+        nextPanelText: z.string().nullable(),
         /** Shot type from Freeroam: 'Close-Up', 'Full', etc. */
         shot: z.string().nullable(),
         /** Character references from panel_content.character_references */
@@ -2791,14 +2797,22 @@ export const appRouter = router({
           if (atlasLlmKey) {
             try {
               const sourcePrompt = input.actionText || input.prompt.replace(/~~([\w-]+)/g, (_, n: string) => n.replace(/-/g, ' '));
+              // Build scene context from surrounding panel story text
+              const sceneLines: string[] = [];
+              if (input.prevPanelText) sceneLines.push(`Previous: ${input.prevPanelText}`);
+              if (input.currentPanelText) sceneLines.push(`Current: ${input.currentPanelText}`);
+              if (input.nextPanelText) sceneLines.push(`Next: ${input.nextPanelText}`);
+              const sceneContext = sceneLines.length > 0
+                ? `Story context (use to understand the mood, setting, and what is happening):\n${sceneLines.join('\n')}\n\n`
+                : '';
               const enhanceResp = await fetch('https://api.atlascloud.ai/v1/chat/completions', {
                 method: 'POST',
                 headers: { 'Authorization': `Bearer ${atlasLlmKey}`, 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                   model: 'deepseek-ai/deepseek-v4-flash',
                   messages: [
-                    { role: 'system', content: 'You are an adult image prompt writer for an AI image editor. The characters\' appearances are already provided as reference images to the image model — do NOT describe what the characters look like. Focus only on the action, sexual positioning, and scene context. Always respond with valid JSON only, no markdown.' },
-                    { role: 'user', content: `Rewrite this as an explicit, detailed image generation prompt. Focus on the sexual action, positioning, and scene context. Do NOT describe character appearances — those are handled by reference images. Keep it under 100 words. Respond with JSON: {"prompt": ".."}\n\nSource: "${sourcePrompt}"` },
+                    { role: 'system', content: 'You are an adult image prompt writer for an AI image editor. The characters\' appearances are already provided as reference images — do NOT describe what they look like. Use the story context to understand the scene mood and setting. Focus only on the action, sexual positioning, and scene context. Always respond with valid JSON only, no markdown.' },
+                    { role: 'user', content: `${sceneContext}Rewrite this as an explicit, detailed image generation prompt. Use the story context above for scene mood and setting. Focus on the sexual action and positioning. Do NOT describe character appearances — those are handled by reference images. Keep it under 100 words. Respond with JSON: {"prompt": ".."}\n\nUser intent: "${sourcePrompt}"` },
                   ],
                   max_tokens: 200,
                   temperature: 0.7,
