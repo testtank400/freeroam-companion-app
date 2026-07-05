@@ -225,6 +225,8 @@ export const imageCache = mysqlTable("image_cache", {
   status: varchar("status", { length: 16 }).notNull().default('ready'),
   /** S3 URL of the generated image (empty string while generating) */
   imageUrl: text("imageUrl").notNull().default(''),
+  /** Original Freeroam image URL — used to reuse generated images across panels with the same source image */
+  freeroamImageUrl: text("freeroamImageUrl"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 

@@ -2613,30 +2613,41 @@ export const appRouter = router({
         const db = await getDb();
         if (!db) throw new Error('Database not available');
 
-        // Check cache first
-        const cached = await db.select().from(imageCache).where(eq(imageCache.panelId, input.panelId)).limit(1);
-        if (cached.length > 0) {
-          if (cached[0].status === 'ready' && cached[0].imageUrl) {
-            return { imageUrl: cached[0].imageUrl, fromCache: true, generating: false };
+        const { or } = await import('drizzle-orm');
+
+        // Check cache: first by panelId (exact match), then by freeroamImageUrl (reuse across panels)
+        // Only cache 'ready' and 'generating' entries — no SFW caching (not worth it)
+        const cachedByPanel = await db.select().from(imageCache).where(eq(imageCache.panelId, input.panelId)).limit(1);
+        if (cachedByPanel.length > 0) {
+          if (cachedByPanel[0].status === 'ready' && cachedByPanel[0].imageUrl) {
+            return { imageUrl: cachedByPanel[0].imageUrl, fromCache: true, generating: false };
           }
-          if (cached[0].status === 'not_nsfw') {
-            return { imageUrl: null, fromCache: false, generating: false, notNsfw: true };
-          }
-          if (cached[0].status === 'generating') {
+          if (cachedByPanel[0].status === 'generating') {
             return { imageUrl: null, fromCache: false, generating: true };
           }
         }
 
-        // If character_references is empty, the panel image hasn't changed from a previous panel.
-        // Freeroam is reusing the same image. Without character data we can't generate a better image,
-        // so skip generation and cache as not_nsfw to avoid repeated useless calls.
+        // Check by freeroamImageUrl — reuse generated image across panels sharing the same source image
+        if (input.imageUrl) {
+          const cachedByUrl = await db.select().from(imageCache)
+            .where(eq(imageCache.freeroamImageUrl, input.imageUrl))
+            .limit(1);
+          if (cachedByUrl.length > 0 && cachedByUrl[0].status === 'ready' && cachedByUrl[0].imageUrl) {
+            // Store a panelId reference so future lookups for this panel are instant
+            await db.insert(imageCache).values({
+              panelId: input.panelId,
+              worldId: input.worldId,
+              status: 'ready',
+              imageUrl: cachedByUrl[0].imageUrl,
+              freeroamImageUrl: input.imageUrl,
+            }).catch(() => {});
+            return { imageUrl: cachedByUrl[0].imageUrl, fromCache: true, generating: false };
+          }
+        }
+
+        // If character_references is empty, Freeroam is reusing the same image — skip generation
         const hasCharacterRefs = Object.keys(input.characterReferences).length > 0;
         if (!hasCharacterRefs) {
-          await db.insert(imageCache).values({
-            panelId: input.panelId,
-            worldId: input.worldId,
-            status: 'not_nsfw',
-          }).catch(() => {}); // non-fatal if already exists
           return { imageUrl: null, fromCache: false, generating: false, notNsfw: true };
         }
 
@@ -2676,12 +2687,7 @@ export const appRouter = router({
                 try {
                   const parsed = JSON.parse(rawText) as { isNsfw?: boolean; artStyle?: string | null };
                   if (parsed.isNsfw === false) {
-                    // Not NSFW — cache this result so we don't classify again
-                    await db.insert(imageCache).values({
-                      panelId: input.panelId,
-                      worldId: input.worldId,
-                      status: 'not_nsfw',
-                    }).catch(() => {}); // non-fatal if already exists
+                    // Not NSFW — skip generation, no caching needed
                     return { imageUrl: null, fromCache: false, generating: false, notNsfw: true };
                   }
                   if (parsed.artStyle) detectedArtStyle = parsed.artStyle;
@@ -2876,8 +2882,12 @@ export const appRouter = router({
           const { storagePut } = await import('./storage');
           const { url: s3Url } = await storagePut(`nsfw-images/${input.panelId}.webp`, imgBuffer, 'image/webp');
 
-          // Update cache to ready
-          await db.update(imageCache).set({ status: 'ready', imageUrl: s3Url }).where(eq(imageCache.panelId, input.panelId));
+          // Update cache to ready, storing the freeroamImageUrl for cross-panel reuse
+          await db.update(imageCache).set({
+            status: 'ready',
+            imageUrl: s3Url,
+            freeroamImageUrl: input.imageUrl ?? null,
+          }).where(eq(imageCache.panelId, input.panelId));
 
           return { imageUrl: s3Url, fromCache: false, generating: false };
         } catch (err) {
