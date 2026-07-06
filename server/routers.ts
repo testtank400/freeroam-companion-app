@@ -2675,10 +2675,13 @@ export const appRouter = router({
         const atlasLlmKey = process.env.ATLAS_CLOUD_API_KEY;
 
         // Step A: Grok — NSFW classification + art style detection (vision call)
+        // IMPORTANT: Only proceed to generation if Grok EXPLICITLY returns isNsfw: true.
+        // If Grok fails, errors, or is ambiguous, skip generation (safe default = no generation).
+        let grokConfirmedNsfw = false;
         if (grokKey) {
           try {
             const userContent: Array<{ type: string; text?: string; image_url?: { url: string } }> = [
-              { type: 'text', text: `Analyze this image prompt and return a JSON object with two fields:\n1. "isNsfw": true if the content describes sexual or adult content, false otherwise\n2. "artStyle": a short description of the art style visible in the image (e.g. "anime illustration, cel-shaded", "semi-realistic digital painting"). Be concise, max 10 words. If no image provided, return null.\n\nPrompt: "${input.prompt}"` },
+              { type: 'text', text: `Analyze this image prompt and return a JSON object with two fields:\n1. "isNsfw": true ONLY if the content explicitly describes sexual acts or genitalia, false for everything else including romance, violence, or suggestive content\n2. "artStyle": a short description of the art style visible in the image (e.g. "anime illustration, cel-shaded", "semi-realistic digital painting"). Be concise, max 10 words. If no image provided, return null.\n\nPrompt: "${input.prompt}"` },
             ];
             if (input.imageUrl) {
               userContent.push({ type: 'image_url', image_url: { url: input.imageUrl } });
@@ -2702,16 +2705,23 @@ export const appRouter = router({
               const rawText = msgItem?.content?.find((c: { type: string }) => c.type === 'output_text')?.text?.trim();
               if (rawText) {
                 try {
-                  const parsed = JSON.parse(rawText) as { isNsfw?: boolean; artStyle?: string | null };
-                  if (parsed.isNsfw === false) {
-                    // Not NSFW — skip generation, no caching needed
-                    return { imageUrl: null, fromCache: false, generating: false, notNsfw: true };
+                  // Strip markdown fences if present
+                  const cleaned = rawText.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
+                  const parsed = JSON.parse(cleaned) as { isNsfw?: boolean; artStyle?: string | null };
+                  if (parsed.isNsfw === true) {
+                    grokConfirmedNsfw = true;
+                    if (parsed.artStyle) detectedArtStyle = parsed.artStyle;
                   }
-                  if (parsed.artStyle) detectedArtStyle = parsed.artStyle;
-                } catch { /* JSON parse failed — proceed */ }
+                  // isNsfw === false or anything else — do not generate
+                } catch { /* JSON parse failed — do not generate */ }
               }
             }
-          } catch { /* non-fatal */ }
+          } catch { /* Grok call failed — do not generate */ }
+        }
+
+        // Only proceed if Grok explicitly confirmed NSFW content
+        if (!grokConfirmedNsfw) {
+          return { imageUrl: null, fromCache: false, generating: false, notNsfw: true };
         }
 
         // Insert placeholder to prevent duplicate generation

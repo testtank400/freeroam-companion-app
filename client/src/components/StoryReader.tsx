@@ -1462,7 +1462,8 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
   const originalImageUrl = image?.url ?? null;
 
   // The image URL to display — NSFW replacement takes priority over original
-  const imageUrl = nsfwImageUrl ?? originalImageUrl;
+  // Only use NSFW replacement when unrestricted images is enabled
+  const imageUrl = (unrestrictedImagesEnabled && nsfwImageUrl) ? nsfwImageUrl : originalImageUrl;
   const speechBubble = content?.speech_bubbles?.[0] ?? null;
   const narration = content?.narration ?? null;
   const choice = content?.choice ?? null;
