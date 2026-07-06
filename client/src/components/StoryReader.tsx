@@ -1814,8 +1814,6 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
                   <div>nav: <span style={{ color: isNavigating ? '#f59e0b' : '#4ade80' }}>{isNavigating ? 'true' : 'false'}</span></div>
                   <div>fwd: <span style={{ color: canGoForward ? '#4ade80' : '#f87171' }}>{canGoForward ? 'true' : 'false'}</span></div>
                   <div>act: {panel.is_action ? 'Y' : 'N'} | req: {panel.requires_action ? 'Y' : 'N'}</div>
-                  <div>img: <span style={{ color: panel.panel_content?.images?.[0]?.url ? '#4ade80' : '#f87171' }}>{panel.panel_content?.images?.[0]?.url ? 'url✓' : 'no-url'}</span> <span style={{ color: panel.panel_content?.images?.[0]?.prompt ? '#4ade80' : '#f87171' }}>{panel.panel_content?.images?.[0]?.prompt ? 'prompt✓' : 'no-prompt'}</span></div>
-                  <div>nsfw: <span style={{ color: nsfwImageUrl ? '#4ade80' : nsfwGeneratingPanelRef.current === panel.panel_id ? '#f59e0b' : '#f87171' }}>{nsfwImageUrl ? 'ready' : nsfwGeneratingPanelRef.current === panel.panel_id ? 'running' : 'idle'}</span></div>
                 </div>
               )}
               {/* Debug: flashes amber while ElevenLabs is generating (cache miss) */}
