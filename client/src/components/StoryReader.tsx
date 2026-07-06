@@ -1022,6 +1022,7 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
     // Guard against duplicate calls for the same panel
     const panelId = currentPanel.panel_id;
     if (nsfwGeneratingPanelRef.current === panelId) return;
+    if (generateNsfwImageMutation.isPending) return; // mutation already in-flight
     nsfwGeneratingPanelRef.current = panelId;
     (async () => {
       try {
@@ -1120,7 +1121,7 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
       }
     })();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentPanel?.panel_id, unrestrictedImagesEnabled]);
+  }, [currentPanel?.panel_id]);
 
   // Auto-advance timer: fires when panel changes and auto-advance is enabled.
   // Voice-based advance is handled in triggerTTS audio.onended (playAudioClip helper).
