@@ -2662,12 +2662,6 @@ export const appRouter = router({
           }
         }
 
-        // If character_references is empty, Freeroam is reusing the same image — skip generation
-        const hasCharacterRefs = Object.keys(input.characterReferences).length > 0;
-        if (!hasCharacterRefs) {
-          return { imageUrl: null, fromCache: false, generating: false, notNsfw: true };
-        }
-
         // Grok NSFW classification — classify NSFW, detect art style, AND generate an enhanced Seedream prompt
         let detectedArtStyle: string | null = null;
         let enhancedSeedreamPrompt: string | null = null;
