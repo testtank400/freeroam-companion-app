@@ -2678,60 +2678,51 @@ export const appRouter = router({
           console.log('[NSFW DEBUG] CharacterRefs:', Object.keys(input.characterReferences).length, 'entries:', Object.values(input.characterReferences).map((r: {name: string; headshot_url: string | null}) => `${r.name}(headshot:${!!r.headshot_url})`).join(', '));
         }
 
-        // Step A: Grok — NSFW classification + art style detection (vision call)
-        // IMPORTANT: Only proceed to generation if Grok EXPLICITLY returns isNsfw: true.
-        // If Grok fails, errors, or is ambiguous, skip generation (safe default = no generation).
-        let grokConfirmedNsfw = false;
-        if (grokKey) {
+        // Step A: DeepSeek — NSFW classification + art style detection
+        // DeepSeek handles adult content without restrictions, unlike Grok which is overly conservative.
+        // IMPORTANT: Only proceed to generation if DeepSeek EXPLICITLY returns isNsfw: true.
+        // If the call fails or is ambiguous, skip generation (safe default = no generation).
+        let classifyConfirmedNsfw = false;
+        if (atlasLlmKey) {
           try {
-            // Build classification text: combine image prompt + user action text for full context
             const actionContext = input.actionText ? `\nUser action: "${input.actionText}"` : '';
-            const userContent: Array<{ type: string; text?: string; image_url?: { url: string } }> = [
-              { type: 'text', text: `Analyze the image prompt and optional user action below. Return a JSON object with two fields:\n1. "isNsfw": true if ANY of the following apply: (a) the image prompt describes nudity, revealing/barely-clothed characters, sexual tension, or intimate scenes, (b) the user action describes sexual acts, undressing, or explicit content. Return false only for clearly non-sexual scenes (action, adventure, dialogue with no sexual context).\n2. "artStyle": a short description of the art style visible in the image (e.g. "anime illustration, cel-shaded", "semi-realistic digital painting"). Be concise, max 10 words. If no image provided, return null.\n\nImage prompt: "${input.prompt}"${actionContext}` },
-            ];
-            if (input.imageUrl) {
-              userContent.push({ type: 'image_url', image_url: { url: input.imageUrl } });
-            }
-            const classifyResp = await fetch('https://api.x.ai/v1/responses', {
+            const classifyResp = await fetch('https://api.atlascloud.ai/v1/chat/completions', {
               method: 'POST',
-              headers: { 'Authorization': `Bearer ${grokKey}`, 'Content-Type': 'application/json' },
+              headers: { 'Authorization': `Bearer ${atlasLlmKey}`, 'Content-Type': 'application/json' },
               body: JSON.stringify({
-                model: 'grok-4.3',
-                store: false,
-                input: [
-                  { role: 'system', content: 'You are a content and style analyzer. Always respond with valid JSON only, no markdown.' },
-                  { role: 'user', content: userContent },
+                model: 'deepseek-ai/deepseek-v4-flash',
+                messages: [
+                  { role: 'system', content: 'You are a content and art style analyzer. Always respond with valid JSON only, no markdown.' },
+                  { role: 'user', content: `Analyze the image prompt and optional user action below. Return a JSON object with two fields:\n1. "isNsfw": true if ANY of the following apply: (a) the image prompt describes nudity, bare skin, revealing/barely-clothed characters, sexual tension, or intimate scenes, (b) the user action describes sexual acts, undressing, or explicit content. Return false only for clearly non-sexual scenes (action, adventure, fully-clothed dialogue).\n2. "artStyle": a short description of the art style (e.g. "anime illustration, cel-shaded", "semi-realistic digital painting"). Be concise, max 10 words.\n\nImage prompt: "${input.prompt}"${actionContext}` },
                 ],
-                max_output_tokens: 100,
+                max_tokens: 100,
+                temperature: 0,
               }),
             });
             if (classifyResp.ok) {
               const classifyData = await classifyResp.json();
-              const msgItem = classifyData?.output?.find((o: { type: string }) => o.type === 'message');
-              const rawText = msgItem?.content?.find((c: { type: string }) => c.type === 'output_text')?.text?.trim();
+              const rawText = classifyData?.choices?.[0]?.message?.content?.trim();
               if (rawText) {
                 try {
-                  // Strip markdown fences if present
                   const cleaned = rawText.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
                   const parsed = JSON.parse(cleaned) as { isNsfw?: boolean; artStyle?: string | null };
                   if (parsed.isNsfw === true) {
-                    grokConfirmedNsfw = true;
+                    classifyConfirmedNsfw = true;
                     if (parsed.artStyle) detectedArtStyle = parsed.artStyle;
                   }
-                  // isNsfw === false or anything else — do not generate
                 } catch { /* JSON parse failed — do not generate */ }
               }
             }
-          } catch { /* Grok call failed — do not generate */ }
+          } catch { /* DeepSeek call failed — do not generate */ }
         }
 
         if (input.debug) {
-          console.log('[NSFW DEBUG] Grok result: grokConfirmedNsfw=', grokConfirmedNsfw, 'artStyle=', detectedArtStyle);
+          console.log('[NSFW DEBUG] DeepSeek classify result: confirmed=', classifyConfirmedNsfw, 'artStyle=', detectedArtStyle);
         }
 
-        // Only proceed if Grok explicitly confirmed NSFW content
-        if (!grokConfirmedNsfw) {
-          if (input.debug) console.log('[NSFW DEBUG] Grok returned not-NSFW — skipping generation');
+        // Only proceed if DeepSeek explicitly confirmed NSFW content
+        if (!classifyConfirmedNsfw) {
+          if (input.debug) console.log('[NSFW DEBUG] DeepSeek returned not-NSFW — skipping generation');
           return { imageUrl: null, fromCache: false, generating: false, notNsfw: true };
         }
 
