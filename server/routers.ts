@@ -35,7 +35,7 @@ function getFreeroamCookie(ctx: { req: { headers: Record<string, string | string
   if (userCookie && typeof userCookie === 'string' && userCookie.trim()) {
     return userCookie.trim();
   }
-  return process.env.cookie ?? '';
+  return process.env.FREEROAM_TEST_COOKIE ?? process.env.cookie ?? '';
 }
 
 /**
