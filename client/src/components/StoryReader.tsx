@@ -1524,7 +1524,7 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
       <div
         className="absolute inset-0"
         style={{
-          background: 'linear-gradient(rgba(0,0,0,0.55) 0px, rgba(0,0,0,0.12) 18%, rgba(0,0,0,0) 42%, rgba(0,0,0,0) 56%, rgba(0,0,0,0.42) 86%, rgba(0,0,0,0.72))',
+          background: 'linear-gradient(rgba(0,0,0,0.3) 0px, rgba(0,0,0,0) 20%, rgba(0,0,0,0) 56%, rgba(0,0,0,0.42) 86%, rgba(0,0,0,0.72))',
         }}
       />
 
@@ -1782,7 +1782,7 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
           {/* Top bar — z-40 so buttons sit above the trigger zone */}
           <div
             className="absolute top-0 left-0 right-0 z-40 flex items-center justify-between px-4 pt-3 pb-2 pointer-events-none"
-            style={{ background: 'linear-gradient(to bottom, rgba(0,0,0,0.5) 0%, transparent 100%)' }}
+            style={{ background: 'none' }}
           >
             <a
               href="https://getfreeroam.com"
