@@ -2622,6 +2622,8 @@ export const appRouter = router({
           headshot_url: z.string().nullable(),
           is_main_character: z.boolean(),
         })).default({}),
+        /** When true (debug mode on), log pipeline details to server console */
+        debug: z.boolean().optional().default(false),
       }))
       .mutation(async ({ input, ctx }) => {
         const { getDb } = await import('./db');
@@ -2667,6 +2669,14 @@ export const appRouter = router({
         let enhancedSeedreamPrompt: string | null = null;
         const grokKey = process.env.GROK_API_KEY;
         const atlasLlmKey = process.env.ATLAS_CLOUD_API_KEY;
+
+        if (input.debug) {
+          console.log('[NSFW DEBUG] Panel:', input.panelId);
+          console.log('[NSFW DEBUG] Prompt:', input.prompt?.slice(0, 200));
+          console.log('[NSFW DEBUG] ImageUrl:', input.imageUrl);
+          console.log('[NSFW DEBUG] ActionText:', input.actionText);
+          console.log('[NSFW DEBUG] CharacterRefs:', Object.keys(input.characterReferences).length, 'entries:', Object.values(input.characterReferences).map((r: {name: string; headshot_url: string | null}) => `${r.name}(headshot:${!!r.headshot_url})`).join(', '));
+        }
 
         // Step A: Grok — NSFW classification + art style detection (vision call)
         // IMPORTANT: Only proceed to generation if Grok EXPLICITLY returns isNsfw: true.
@@ -2715,8 +2725,13 @@ export const appRouter = router({
           } catch { /* Grok call failed — do not generate */ }
         }
 
+        if (input.debug) {
+          console.log('[NSFW DEBUG] Grok result: grokConfirmedNsfw=', grokConfirmedNsfw, 'artStyle=', detectedArtStyle);
+        }
+
         // Only proceed if Grok explicitly confirmed NSFW content
         if (!grokConfirmedNsfw) {
+          if (input.debug) console.log('[NSFW DEBUG] Grok returned not-NSFW — skipping generation');
           return { imageUrl: null, fromCache: false, generating: false, notNsfw: true };
         }
 
@@ -2889,6 +2904,11 @@ User intent: "${sourcePrompt}"` },
 
           // Limit reference images to 2 max
           const images = referenceImageUrls;
+
+          if (input.debug) {
+            console.log('[NSFW DEBUG] Final Seedream prompt:', seedreamPrompt?.slice(0, 300));
+            console.log('[NSFW DEBUG] Reference images:', referenceImageUrls);
+          }
 
           // Call Atlas Cloud Seedream v4.5 Edit
           const generateResp = await fetch('https://api.atlascloud.ai/api/v1/model/generateImage', {

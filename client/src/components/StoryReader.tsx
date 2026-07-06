@@ -1092,6 +1092,7 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
             nextPanelText,
             shot: img.shot ?? null,
             characterReferences: charRefs,
+            debug: debugMode,
           });
           clearTimeout(badgeTimer);
           if (result.generating) {
