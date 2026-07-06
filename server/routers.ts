@@ -2680,8 +2680,10 @@ export const appRouter = router({
         let grokConfirmedNsfw = false;
         if (grokKey) {
           try {
+            // Build classification text: combine image prompt + user action text for full context
+            const actionContext = input.actionText ? `\nUser action: "${input.actionText}"` : '';
             const userContent: Array<{ type: string; text?: string; image_url?: { url: string } }> = [
-              { type: 'text', text: `Analyze this image prompt and return a JSON object with two fields:\n1. "isNsfw": true ONLY if the content explicitly describes sexual acts or genitalia, false for everything else including romance, violence, or suggestive content\n2. "artStyle": a short description of the art style visible in the image (e.g. "anime illustration, cel-shaded", "semi-realistic digital painting"). Be concise, max 10 words. If no image provided, return null.\n\nPrompt: "${input.prompt}"` },
+              { type: 'text', text: `Analyze the image prompt and optional user action below. Return a JSON object with two fields:\n1. "isNsfw": true if ANY of the following apply: (a) the image prompt describes nudity, revealing/barely-clothed characters, sexual tension, or intimate scenes, (b) the user action describes sexual acts, undressing, or explicit content. Return false only for clearly non-sexual scenes (action, adventure, dialogue with no sexual context).\n2. "artStyle": a short description of the art style visible in the image (e.g. "anime illustration, cel-shaded", "semi-realistic digital painting"). Be concise, max 10 words. If no image provided, return null.\n\nImage prompt: "${input.prompt}"${actionContext}` },
             ];
             if (input.imageUrl) {
               userContent.push({ type: 'image_url', image_url: { url: input.imageUrl } });
