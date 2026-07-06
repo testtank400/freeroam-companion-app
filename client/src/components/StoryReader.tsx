@@ -420,7 +420,7 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
   // NSFW image replacement state
   const [nsfwImageUrl, setNsfwImageUrl] = useState<string | null>(null);
   const [isGeneratingNsfwImage, setIsGeneratingNsfwImage] = useState(false);
-  const nsfwGeneratingPanelRef = useRef<string | null>(null); // tracks which panel is currently being processed
+  const nsfwProcessedPanelsRef = useRef<Set<string>>(new Set()); // tracks all panel IDs that have been processed — never cleared during session
   const generateNsfwImageMutation = trpc.voice.generateNsfwImage.useMutation();
   const { data: unrestrictedImagesSettingData } = trpc.voice.getSetting.useQuery({ key: 'unrestricted_images' });
   const unrestrictedImagesEnabled = unrestrictedImagesSettingData === 'true';
@@ -955,7 +955,8 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
     setChoiceInput('');
     // Reset NSFW generation badge state on panel change
     setIsGeneratingNsfwImage(false);
-    nsfwGeneratingPanelRef.current = null;
+    // Note: nsfwProcessedPanelsRef is intentionally NOT cleared on panel change
+    // to prevent re-processing panels when currentPanel object reference changes for the same panel ID
     // Pre-render NSFW cache check: if we already have a cached replacement for this panel's
     // Freeroam image URL, set it immediately so the Freeroam image is never shown.
     // Only fall back to null (show Freeroam image) if no cache hit.
@@ -1021,9 +1022,8 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
     // Always call server — Grok classification happens server-side
     // Guard against duplicate calls for the same panel
     const panelId = currentPanel.panel_id;
-    if (nsfwGeneratingPanelRef.current === panelId) return;
-    if (generateNsfwImageMutation.isPending) return; // mutation already in-flight
-    nsfwGeneratingPanelRef.current = panelId;
+    if (nsfwProcessedPanelsRef.current.has(panelId)) return; // already processed or processing
+    nsfwProcessedPanelsRef.current.add(panelId);
     (async () => {
       try {
         const freeroamImageUrl = img.url ?? undefined;
@@ -1833,6 +1833,26 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
                 >
                   IMG
                 </span>
+              )}
+              {/* Regenerate NSFW image button — shown when unrestricted images is on and a NSFW image is displayed or was attempted */}
+              {unrestrictedImagesEnabled && nsfwImageUrl && (
+                <button
+                  onClick={() => {
+                    if (!currentPanel) return;
+                    const panelId = currentPanel.panel_id;
+                    // Remove from processed set so the effect can re-fire
+                    nsfwProcessedPanelsRef.current.delete(panelId);
+                    // Clear cached image and delete from DB cache
+                    setNsfwImageUrl(null);
+                    // Trigger re-generation by invalidating the cache entry
+                    utils.voice.checkImageReady.invalidate({ panelId });
+                  }}
+                  className="flex items-center justify-center rounded-full transition-all hover:bg-white/20"
+                  style={{ width: '28px', height: '28px', background: 'rgba(255,255,255,0.12)', color: 'rgba(255,255,255,0.75)' }}
+                  title="Regenerate image"
+                >
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>
+                </button>
               )}
               {/* Audio controls — shown when audio is available */}
               {currentAudioUrl && (
