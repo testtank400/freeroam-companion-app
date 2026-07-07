@@ -1928,13 +1928,37 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
                 className="absolute inset-0 pointer-events-none"
                 style={{ background: 'linear-gradient(rgba(0,0,0,0), rgba(0,0,0,0.18) 45%, rgba(0,0,0,0.4) 74%, rgba(0,0,0,0.58))' }}
               />
+              {/* storyVnDialogue: flex column with ::before spacer pushing content to 67dvh anchor */}
               <div
-                className="absolute bottom-0 left-0 right-0 z-10 px-5 overflow-hidden"
-                style={{ paddingBottom: 'calc(112px + env(safe-area-inset-bottom, 0px))' }}
+                className="absolute inset-0 z-10 pointer-events-none"
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  paddingBottom: 'calc(96px + env(safe-area-inset-bottom, 0px))',
+                  boxSizing: 'border-box',
+                }}
               >
+                {/* ::before spacer — pushes content down to 67dvh */}
+                <div style={{ flex: '0 1 67dvh', minHeight: 0 }} />
+                {/* storyVnDialogue__stack */}
+                <div
+                  className="pointer-events-auto"
+                  style={{
+                    flex: '0 0 auto',
+                    width: '100%',
+                    maxWidth: '720px',
+                    margin: '0 auto',
+                    padding: '0 22px',
+                    boxSizing: 'border-box',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '14px',
+                    overflow: 'hidden',
+                  }}
+                >
                 {/* Character name label (spoken dialogue only) — storyVnLine__name exact CSS */}
                 {speakerName && accentColor && (
-                  <div style={{ display: 'block', margin: '0 0 4px', paddingLeft: '26px' }}>
+                  <div style={{ display: 'block', margin: '0 0 4px', paddingLeft: '15px' }}>
                     <p
                       style={{
                         fontFamily: 'Outfit-SemiBold, Outfit, sans-serif',
@@ -1962,7 +1986,6 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
                       opacity: 0.7,
                       filter: 'drop-shadow(0 1px 2px rgba(0,0,0,.45))',
                       marginTop: '4px',
-                      marginLeft: '-15px',
                     }}>
                       {/* ::before dot */}
                       <span style={{
@@ -2066,6 +2089,7 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
                     {speechBubble.text}
                   </p>
                 )}
+                </div>
               </div>
             </>
           )}
