@@ -1951,7 +1951,7 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
                     >
                       {speakerName}
                     </p>
-                    {/* storyVnLine__rule: exact Freeroam CSS — wider, with dot at left end */}
+                    {/* storyVnLine__rule: extends left of the name to create a visual divider anchored to the left edge */}
                     <div style={{
                       position: 'relative',
                       display: 'block',
@@ -1963,6 +1963,7 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
                       opacity: 0.7,
                       filter: 'drop-shadow(0 1px 2px rgba(0,0,0,.45))',
                       marginTop: '4px',
+                      marginLeft: '-26px',
                     }}>
                       {/* ::before dot */}
                       <span style={{
