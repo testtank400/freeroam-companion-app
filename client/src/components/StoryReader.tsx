@@ -1930,8 +1930,8 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
                 style={{ background: 'linear-gradient(rgba(0,0,0,0), rgba(0,0,0,0.18) 45%, rgba(0,0,0,0.4) 74%, rgba(0,0,0,0.58))' }}
               />
               <div
-                className="absolute top-0 left-0 right-0 bottom-0 z-10 px-5 overflow-hidden"
-                style={{ paddingTop: '60px', paddingBottom: 'calc(112px + env(safe-area-inset-bottom, 0px))', display: 'flex', flexDirection: 'column', justifyContent: 'flex-start' }}
+                className="absolute bottom-0 left-0 right-0 z-10 px-5 overflow-hidden"
+                style={{ maxHeight: '55%', paddingBottom: 'calc(112px + env(safe-area-inset-bottom, 0px))' }}
               >
                 {/* Character name label (spoken dialogue only) — storyVnLine__name exact CSS */}
                 {speakerName && accentColor && (
