@@ -1930,7 +1930,7 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
               />
               <div
                 className="absolute bottom-0 left-0 right-0 z-10 px-5 overflow-hidden"
-                style={{ maxHeight: '55%', paddingBottom: 'calc(112px + env(safe-area-inset-bottom, 0px))' }}
+                style={{ paddingBottom: 'calc(112px + env(safe-area-inset-bottom, 0px))' }}
               >
                 {/* Character name label (spoken dialogue only) — storyVnLine__name exact CSS */}
                 {speakerName && accentColor && (
