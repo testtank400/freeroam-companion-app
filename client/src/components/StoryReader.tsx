@@ -1935,7 +1935,7 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
               >
                 {/* Character name label (spoken dialogue only) — storyVnLine__name exact CSS */}
                 {speakerName && accentColor && (
-                  <div style={{ display: 'block', margin: '0 0 4px', paddingLeft: '15px' }}>
+                  <div style={{ display: 'block', margin: '0 0 4px', paddingLeft: '26px' }}>
                     <p
                       style={{
                         fontFamily: 'Outfit-SemiBold, Outfit, sans-serif',
