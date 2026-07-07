@@ -1022,7 +1022,6 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
     // Always call server — Grok classification happens server-side
     // Guard against duplicate calls for the same panel
     const panelId = currentPanel.panel_id;
-    console.log('[NSFW EFFECT] fired for panel:', panelId, 'already in set:', nsfwProcessedPanelsRef.current.has(panelId));
     if (nsfwProcessedPanelsRef.current.has(panelId)) return; // already processed or processing
     nsfwProcessedPanelsRef.current.add(panelId);
     (async () => {
