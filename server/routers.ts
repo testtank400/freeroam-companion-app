@@ -38,38 +38,6 @@ function getFreeroamCookie(ctx: { req: { headers: Record<string, string | string
   return process.env.FREEROAM_DEV_COOKIE ?? process.env.cookie ?? '';
 }
 
-/**
- * Fetch from Freeroam — in development mode, routes through the production proxy
- * to bypass IP-based blocking. In production, calls Freeroam directly.
- */
-async function freeroamFetch(url: string, options: RequestInit): Promise<Response> {
-  const isDev = process.env.NODE_ENV === 'development';
-  const proxySecret = process.env.FREEROAM_PROXY_SECRET;
-  const proxyUrl = process.env.FREEROAM_PROXY_URL; // e.g. https://charcards-cxwov3uv.manus.space/api/freeroam-proxy
-
-  if (isDev && proxySecret && proxyUrl) {
-    // Route through production proxy
-    const resp = await fetch(proxyUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-proxy-secret': proxySecret,
-      },
-      body: JSON.stringify({
-        url,
-        method: options.method || 'GET',
-        headers: options.headers instanceof Headers
-          ? Object.fromEntries(options.headers.entries())
-          : (options.headers as Record<string, string>) || {},
-        body: typeof options.body === 'string' ? options.body : undefined,
-      }),
-    });
-    return resp;
-  }
-
-  // Production: call Freeroam directly
-  return fetch(url, options);
-}
 
 /**
  * Returns true if the request has a user-provided cookie (not just the owner fallback).
@@ -78,7 +46,10 @@ async function freeroamFetch(url: string, options: RequestInit): Promise<Respons
  */
 function hasUserCookie(ctx: { req: { headers: Record<string, string | string[] | undefined> } }): boolean {
   const userCookie = ctx.req.headers['x-freeroam-cookie'];
-  return !!(userCookie && typeof userCookie === 'string' && userCookie.trim());
+  if (userCookie && typeof userCookie === 'string' && userCookie.trim()) return true;
+  // In dev mode, treat the env cookie as a valid user cookie
+  if (process.env.NODE_ENV === 'development' && process.env.FREEROAM_DEV_COOKIE) return true;
+  return false;
 }
 
 /**
@@ -177,7 +148,7 @@ export const appRouter = router({
         const encodedUsername = encodeURIComponent(input.username);
         const url = `https://getfreeroam.com/api/user/${encodedUsername}/characters?limit=${input.limit}&sort=${input.sort}&cursor=${input.cursor ?? ""}`;
 
-        const response = await freeroamFetch(url, {
+        const response = await fetch(url, {
           headers: {
             accept: "*/*",
             "accept-language": "en-US,en;q=0.9",
@@ -288,7 +259,7 @@ export const appRouter = router({
         const blob = new Blob([buffer], { type: input.mimeType });
         formData.append("file", blob, input.fileName);
 
-        const response = await freeroamFetch("https://getfreeroam.com/api/upload/headshot", {
+        const response = await fetch("https://getfreeroam.com/api/upload/headshot", {
           method: "POST",
           headers: {
             accept: "*/*",
@@ -359,7 +330,7 @@ export const appRouter = router({
         };
 
         const doUpdate = (bs: string | null, ap: string | null) =>
-          freeroamFetch(`https://getfreeroam.com/api/characters/${encodeURIComponent(input.characterId)}`, {
+          fetch(`https://getfreeroam.com/api/characters/${encodeURIComponent(input.characterId)}`, {
             method: "PUT",
             headers: FREEROAM_HEADERS,
             body: JSON.stringify(buildBody(bs, ap)),
@@ -467,7 +438,7 @@ export const appRouter = router({
         };
 
         const doCreate = (bs: string | null, ap: string | null) =>
-          freeroamFetch("https://getfreeroam.com/api/characters", {
+          fetch("https://getfreeroam.com/api/characters", {
             method: "POST",
             headers: FREEROAM_HEADERS,
             body: JSON.stringify(buildBody(bs, ap)),
@@ -621,7 +592,7 @@ export const appRouter = router({
 
         const url = `https://getfreeroam.com/api/characters/${encodeURIComponent(input.characterId)}`;
 
-        const response = await freeroamFetch(url, {
+        const response = await fetch(url, {
           headers: {
             accept: "*/*",
             "accept-language": "en-US,en;q=0.9",
@@ -811,7 +782,7 @@ export const appRouter = router({
         const encodedUsername = encodeURIComponent(input.username);
         const url = `https://getfreeroam.com/api/user/${encodedUsername}/worlds?limit=${input.limit}&sort=${input.sort}&cursor=${input.cursor ?? ""}`;
 
-        const response = await freeroamFetch(url, {
+        const response = await fetch(url, {
           headers: {
             accept: "*/*",
             "accept-language": "en-US,en;q=0.9",
@@ -896,7 +867,7 @@ export const appRouter = router({
             if (attempt > 0) {
               await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, attempt - 1)));
             }
-            response = await freeroamFetch(url, {
+            response = await fetch(url, {
               headers: {
                 accept: "*/*",
                 "accept-language": "en-US,en;q=0.9",
@@ -962,7 +933,7 @@ export const appRouter = router({
 
         const url = `https://getfreeroam.com/internal-world-story-json/${encodeURIComponent(input.worldId)}`;
 
-        const response = await freeroamFetch(url, {
+        const response = await fetch(url, {
           headers: {
             accept: "*/*",
             "accept-language": "en-US,en;q=0.9",
@@ -1059,7 +1030,7 @@ export const appRouter = router({
         if (!cookie) throw new Error("Cookie not configured in environment");
 
         const url = `https://getfreeroam.com/api/nav/panel?world_id=${encodeURIComponent(input.worldId)}&panel_id=${encodeURIComponent(input.panelId)}`;
-        const response = await freeroamFetch(url, {
+        const response = await fetch(url, {
           headers: {
             accept: "*/*",
             "accept-language": "en-US,en;q=0.9",
@@ -1187,7 +1158,7 @@ export const appRouter = router({
         const cookie = getFreeroamCookie(ctx);
         if (!cookie) throw new Error("Cookie not configured in environment");
 
-        const response = await freeroamFetch("https://getfreeroam.com/api/nav/view", {
+        const response = await fetch("https://getfreeroam.com/api/nav/view", {
           method: "POST",
           headers: {
             accept: "*/*",
@@ -1215,7 +1186,7 @@ export const appRouter = router({
         if (!cookie) throw new Error("Cookie not configured in environment");
 
         const url = `https://getfreeroam.com/api/nav/next-ready?panel_id=${encodeURIComponent(input.panelId)}`;
-        const response = await freeroamFetch(url, {
+        const response = await fetch(url, {
           headers: {
             accept: "*/*",
             "accept-language": "en-US,en;q=0.9",
@@ -1306,7 +1277,7 @@ export const appRouter = router({
         if (!cookie) throw new Error("Cookie not configured in environment");
 
         const url = `https://getfreeroam.com/api/world/${input.worldId}/characters/current?current_panel_external_id=${input.panelId}`;
-        const response = await freeroamFetch(url, {
+        const response = await fetch(url, {
           headers: {
             accept: "*/*",
             "accept-language": "en-US,en;q=0.9",
@@ -1376,7 +1347,7 @@ export const appRouter = router({
         const cookie = getFreeroamCookie(ctx);
         if (!cookie) throw new Error("Cookie not configured in environment");
 
-        const response = await freeroamFetch("https://getfreeroam.com/api/nav/action", {
+        const response = await fetch("https://getfreeroam.com/api/nav/action", {
           method: "POST",
           headers: {
             accept: "*/*",
@@ -1474,7 +1445,7 @@ export const appRouter = router({
       .mutation(async ({ input, ctx }) => {
         const cookie = getFreeroamCookie(ctx);
         if (!cookie) throw new Error("Cookie not configured in environment");
-        const response = await freeroamFetch("https://getfreeroam.com/api/nav/start-generation", {
+        const response = await fetch("https://getfreeroam.com/api/nav/start-generation", {
           method: "POST",
           headers: {
             accept: "*/*",
@@ -1501,7 +1472,7 @@ export const appRouter = router({
         const cookie = getFreeroamCookie(ctx);
         if (!cookie) throw new Error("Cookie not configured in environment");
 
-        const response = await freeroamFetch("https://getfreeroam.com/api/nav/restart", {
+        const response = await fetch("https://getfreeroam.com/api/nav/restart", {
           method: "POST",
           headers: {
             accept: "*/*",
@@ -1534,7 +1505,7 @@ export const appRouter = router({
         if (!cookie) throw new Error("Cookie not configured in environment");
 
         const url = `https://getfreeroam.com/api/world/${encodeURIComponent(input.worldId)}/panel-at-depth?from_panel_external_id=${encodeURIComponent(input.fromPanelId)}&target_depth=${input.targetDepth}`;
-        const response = await freeroamFetch(url, {
+        const response = await fetch(url, {
           headers: {
             accept: "*/*",
             "accept-language": "en-US,en;q=0.9",
@@ -1736,7 +1707,7 @@ export const appRouter = router({
         const encodedUsername = encodeURIComponent(input.username);
         const url = `https://getfreeroam.com/api/user/${encodedUsername}/collections`;
 
-        const response = await freeroamFetch(url, {
+        const response = await fetch(url, {
           headers: {
             accept: "*/*",
             "accept-language": "en-US,en;q=0.9",
@@ -1782,7 +1753,7 @@ export const appRouter = router({
 
         const url = `https://getfreeroam.com/api/collections/${encodeURIComponent(input.collectionId)}`;
 
-        const response = await freeroamFetch(url, {
+        const response = await fetch(url, {
           headers: {
             accept: "*/*",
             "accept-language": "en-US,en;q=0.9",
@@ -1852,7 +1823,7 @@ export const appRouter = router({
         const cookie = getFreeroamCookie(ctx);
         if (!cookie) throw new Error("Cookie not configured in environment");
 
-        const response = await freeroamFetch("https://getfreeroam.com/api/collections", {
+        const response = await fetch("https://getfreeroam.com/api/collections", {
           method: "POST",
           headers: {
             accept: "*/*",
@@ -2103,7 +2074,7 @@ export const appRouter = router({
       const cookie = (input.cookie && input.cookie.trim()) ? input.cookie.trim() : getFreeroamCookie(ctx);
       if (!cookie) throw new Error('No cookie provided');
 
-      const response = await freeroamFetch('https://getfreeroam.com/api/user/current', {
+      const response = await fetch('https://getfreeroam.com/api/user/current', {
         headers: {
           accept: '*/*',
           'accept-language': 'en-US,en;q=0.9',
@@ -2147,7 +2118,7 @@ export const appRouter = router({
         const cookie = getFreeroamCookie(ctx);
         if (!cookie) throw new Error("Cookie not configured in environment");
 
-        const response = await freeroamFetch("https://getfreeroam.com/api/profile/preferences", {
+        const response = await fetch("https://getfreeroam.com/api/profile/preferences", {
           headers: {
             accept: "*/*",
             "accept-language": "en-US,en;q=0.9",
@@ -2184,7 +2155,7 @@ export const appRouter = router({
         const cookie = getFreeroamCookie(ctx);
         if (!cookie) throw new Error("Cookie not configured in environment");
 
-        const response = await freeroamFetch("https://getfreeroam.com/api/profile/preferences", {
+        const response = await fetch("https://getfreeroam.com/api/profile/preferences", {
           method: "PUT",
           headers: {
             accept: "*/*",
