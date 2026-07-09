@@ -383,11 +383,11 @@ When **Unrestricted Images** is enabled (Preferences → Images), the app replac
 
 ### Pipeline Stages
 
-1. **Grok classification + art style detection** — `grok-4.3` via `https://api.x.ai/v1/responses` with `GROK_API_KEY`. Receives the panel image URL and prompt. Returns: `isNsfw` (bool), `artStyle` (e.g. `'anime'`, `'realistic'`), and `shot` type. If `isNsfw` is false, the pipeline exits immediately — no generation.
+1. **DeepSeek V4 Flash classification + art style detection** — `deepseek-ai/deepseek-v4-flash` via Atlas Cloud (`https://api.atlascloud.ai/v1/chat/completions`) with `ATLAS_CLOUD_API_KEY`. Receives the image prompt and optional user action text. Returns: `isNsfw` (bool) and `artStyle` (e.g. `'anime illustration, cel-shaded'`). DeepSeek is used instead of Grok because it correctly identifies nudity, revealing outfits, and intimate scenes without over-restriction. If `isNsfw` is false, the pipeline exits immediately — no generation. Classification considers both the Freeroam image prompt AND the user's action text.
 
-2. **DeepSeek V4 Flash prompt enhancement** — `deepseek-v4-flash` via Atlas Cloud (`https://api.atlas.miitcloud.com/v1/chat/completions`) with `ATLAS_CLOUD_API_KEY`. Receives the user's short action text (e.g. `'Kenji fucks Luve hard'`) plus story text from the previous, current, and next panels as scene context. Returns a detailed explicit image generation prompt describing anatomy, positioning, scene, and mood. DeepSeek handles adult content without restrictions.
+2. **DeepSeek V4 Flash prompt enhancement** — second DeepSeek call. Receives the user's action text plus story text from the previous, current, and next panels as scene context. Writes an anatomically detailed, explicit image generation prompt in present tense. Character names are replaced with sex-only descriptors (e.g. `'the woman'`, `'the man'`). Code appends `, both characters fully naked` if nudity is not already stated. DeepSeek handles adult content without restrictions.
 
-3. **Seedream v4.5 Edit image generation** — via Atlas Cloud (`https://api.atlas.miitcloud.com/api/v1/model/generateImage`). Receives the enhanced prompt plus character headshot reference images. Output size: **1600×2400** (2:3 portrait, 3,840,000 pixels). The original Freeroam image is passed as the edit source.
+3. **Seedream v4.5 Edit image generation** — via Atlas Cloud (`https://api.atlascloud.ai/api/v1/model/generateImage`). Receives the enhanced prompt plus character headshot reference images (up to 2). Output size: **1600×2400** (2:3 portrait, 3,840,000 pixels). The original Freeroam image is passed as the edit source. Art style from Step 1 is prepended to the prompt (e.g. `[anime illustration, cel-shaded]`).
 
 ### Caching and Cross-Panel Reuse
 
@@ -416,7 +416,19 @@ The `generateNsfwImage` procedure also checks the cache in the same order before
 
 ### Character References
 
-Character headshot images from `character_references` on the panel are passed to Seedream as reference images. DeepSeek does **not** receive character appearance descriptions — this prevents it from inventing wrong descriptions. Appearance is handled entirely by the headshot reference images.
+Character headshot images from `character_references` on the panel are passed to Seedream as reference images (up to 2). DeepSeek does **not** receive character appearance descriptions — this prevents it from inventing wrong descriptions. Appearance is handled entirely by the headshot reference images.
+
+**Headshot fallback:** The server first tries to match headshots by `~~Name` token in the Freeroam image prompt. If token matching yields no headshots (e.g. Freeroam hallucinated last names like `~~Kenji-Tanaka` when the character is just `Kenji`), it falls back to all `characterReferences` that have a `headshot_url`. If `characterReferences` is empty, the server fetches characters directly from Freeroam's `/api/world/{worldId}/characters/current` endpoint.
+
+### Loop Prevention
+
+The client uses a `Set<string>` (`nsfwProcessedPanelsRef`) to track all panel IDs that have been processed during the session. Once a panel ID is added to the set, the NSFW effect will not fire again for that panel — regardless of re-renders or state changes. The set is only cleared for a specific panel when the user clicks the **Regenerate** button.
+
+**Known issue:** A loop bug exists where multiple Seedream generations fire for the same panel. The `Set` guard should prevent this but something is bypassing it in production. The feature is currently shelved (Unrestricted Images disabled) pending a proper debugging session with production logs.
+
+### Regenerate Button
+
+When a NSFW image is showing, a circular refresh icon appears in the reader top bar. Clicking it removes the panel from the processed set, clears the cached image, and triggers a new generation. The button only appears when `unrestrictedImagesEnabled` is true and `nsfwImageUrl` is set.
 
 ### Badge Indicators
 
@@ -431,8 +443,8 @@ The **Clear Image Cache** button in Voice Settings (Preferences tab) deletes all
 
 | Variable | Purpose |
 |---|---|
-| `GROK_API_KEY` | Grok API key for classification and TTS tag inference |
-| `ATLAS_CLOUD_API_KEY` | Atlas Cloud API key for DeepSeek prompt enhancement and Seedream image generation |
+| `GROK_API_KEY` | Grok API key for TTS delivery tag inference (no longer used for NSFW classification) |
+| `ATLAS_CLOUD_API_KEY` | Atlas Cloud API key for DeepSeek classification, DeepSeek prompt enhancement, and Seedream image generation |
 
 ---
 
@@ -484,4 +496,17 @@ The choice panel is `absolute bottom-0` and uses `display: block` (not `flex fle
 - **Debug mode** — a debug overlay is available in preferences (Voice Settings → Debug Mode). Shows `forward_state`, `next_panel_id`, `isPolling`, `isNavigating`, `canGoForward`, `is_action`, `requires_action` in real time. Leave on when investigating navigation issues.
 - **Story text brightness** — deliberately kept at `rgba(255,255,255,0.85)` rather than full white. Freeroam uses full white which can wash out against bright panel images. Our softer value is intentional.
 - **Choice panel design** — uses `display: block` (not `flex flex-col`) on the outer container to prevent Tailwind's custom `.flex` from squishing button heights.
+- **NSFW loop bug** — multiple Seedream generations fire for the same panel in production. The `nsfwProcessedPanelsRef` Set guard should prevent this but is being bypassed. Feature shelved until production logs are accessible for debugging.
+- **Story reader text positioning** — text overlay uses Freeroam's exact CSS (`67dvh` flex spacer anchor) but visual alignment still differs slightly from Freeroam's app. Pending further comparison with Freeroam's DevTools CSS.
+
+---
+
+## Dev Environment
+
+The sandbox cannot make authenticated requests to Freeroam's API directly (IP-based blocking). The dev environment uses:
+
+- **`FREEROAM_DEV_COOKIE`** — full Freeroam session cookie (copied from browser DevTools) stored as a server env var. Must be the complete cookie string (not just the `session=` value). Used as fallback when no user cookie is in the `x-freeroam-cookie` header.
+- **`hasUserCookie` dev bypass** — in `NODE_ENV=development`, `hasUserCookie()` returns `true` when `FREEROAM_DEV_COOKIE` is set, so world/character endpoints don't gate on missing user cookie.
+- **Cookie expiry** — Freeroam session cookies expire. When the dev environment stops loading worlds (404 errors), update `FREEROAM_DEV_COOKIE` with a fresh cookie from DevTools and restart the dev server.
+- **Production logs** — the production server runs on separate Manus infrastructure. Server-side `console.log` output is not accessible from the sandbox. For production debugging, use the database log approach or Atlas Cloud dashboard to observe API calls.
 
