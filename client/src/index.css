@@ -67,6 +67,19 @@
   --ring: oklch(0.769 0.188 70.08 / 0.5);
 }
 
+/* StoryReader — match Freeroam: no text highlight/selection in the reader chrome */
+.story-reader-root {
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+/* Allow typing/selection only inside action/choice inputs */
+.story-reader-root input,
+.story-reader-root textarea {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
 /* StoryReader panel — full width on mobile, 9:16 portrait on desktop */
 .story-reader-panel {
   width: 100vw;

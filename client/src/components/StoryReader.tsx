@@ -1498,7 +1498,7 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
 
   return (
     <div
-      className="fixed inset-0 z-[100]"
+      className="story-reader-root fixed inset-0 z-[100]"
       style={{ opacity: visible ? 1 : 0, transition: 'opacity 0.2s ease', background: 'rgb(5,5,5)' }}
     >
       {/* Ambient blurred backdrop — storyAmbientLayer: exact Freeroam CSS with drift animation */}
@@ -1934,7 +1934,7 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
                 style={{
                   display: 'flex',
                   flexDirection: 'column',
-                  paddingBottom: 'calc(96px + env(safe-area-inset-bottom, 0px))',
+                  paddingBottom: 'calc(112px + env(safe-area-inset-bottom, 0px))',
                   boxSizing: 'border-box',
                 }}
               >
@@ -1952,13 +1952,15 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
                     boxSizing: 'border-box',
                     display: 'flex',
                     flexDirection: 'column',
-                    gap: '14px',
+                    // Match Freeroam: tight stack between speaker rule and dialogue (~8px, not 14px+)
+                    gap: '8px',
                     overflow: 'hidden',
                   }}
                 >
                 {/* Character name label (spoken dialogue only) — storyVnLine__name exact CSS */}
                 {speakerName && accentColor && (
-                  <div style={{ display: 'block', margin: '0 0 4px', paddingLeft: '15px' }}>
+                  <div style={{ display: 'block', margin: 0 }}>
+                    {/* Name aligned with dialogue text (paddingLeft 26px); rule stays inset at 15px */}
                     <p
                       style={{
                         fontFamily: 'Outfit-SemiBold, Outfit, sans-serif',
@@ -1969,12 +1971,13 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
                         lineHeight: 1.1,
                         textShadow: '0 0 1px rgba(0,0,0,.5), 0 1px 2px rgba(0,0,0,.7), 0 2px 10px rgba(0,0,0,.45)',
                         margin: 0,
+                        paddingLeft: '26px',
                         display: 'block',
                       }}
                     >
                       {speakerName}
                     </p>
-                    {/* storyVnLine__rule: extends left of the name to create a visual divider anchored to the left edge */}
+                    {/* storyVnLine__rule: left of the name block — do not align with dialogue text */}
                     <div style={{
                       position: 'relative',
                       display: 'block',
@@ -1986,6 +1989,7 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
                       opacity: 0.7,
                       filter: 'drop-shadow(0 1px 2px rgba(0,0,0,.45))',
                       marginTop: '4px',
+                      marginLeft: '15px',
                     }}>
                       {/* ::before dot */}
                       <span style={{
@@ -2100,7 +2104,7 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
               className="absolute z-20 flex flex-col items-center"
               style={{
                 right: '12px',
-                bottom: 'calc(96px + 20px)',
+                bottom: 'calc(112px + 20px)',
                 gap: '20px',
                 pointerEvents: 'none',
               }}
