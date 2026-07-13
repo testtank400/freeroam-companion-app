@@ -14,7 +14,7 @@ import { ApiWorld } from '@/components/WorldCard';
 import StoryMenu from '@/components/StoryMenu';
 import CharacterPanel from '@/components/CharacterPanel';
 import { Bookmark, ChevronLeft, ChevronRight, X, Loader2, ImageIcon, Home, ChevronDown, ChevronUp, Zap, Clapperboard, Users, Image as ImageLucide, Share2, RefreshCw } from 'lucide-react';
-import { useCallback, useEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
 import { toast } from 'sonner';
 
 interface StoryReaderProps {
@@ -1907,31 +1907,34 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
   // Bookmark state for current panel
   const isBookmarked = panel ? bookmarkedPanelIds.has(panel.panel_id) : false;
 
-  // Short-press vs long-press on panel art: long-press = Save Image (native); short-press = navigate
-  const panelImgPressRef = useRef<{ x: number; y: number; t: number } | null>(null);
+  // Touch long-press = Save Image (native); must not also fire advance.
+  // Desktop: left-click always advances (middle/right of art = next); right-click = browser Save Image.
+  const panelImgPressRef = useRef<{ x: number; y: number; t: number; pointerType: string } | null>(null);
 
-  /** Freeroam-style: tap left third of the art = back, rest = forward. Skips long-press/drag. */
-  const handlePanelImageNavigate = useCallback((e: ReactMouseEvent<HTMLImageElement> | ReactPointerEvent<HTMLImageElement>) => {
+  /** Freeroam desktop: click center of art advances; right-click saves. Mobile: short tap advances, long-press saves. */
+  const handlePanelImageNavigate = useCallback((e: ReactMouseEvent<HTMLImageElement>) => {
     if (isNavigating) return;
-    // Ignore non-primary mouse buttons (right-click is for Save Image)
-    if ('button' in e && e.button !== 0) return;
+    // Right-click / middle-click: let the browser handle (context menu for Save Image)
+    if (e.button !== 0) return;
 
     const start = panelImgPressRef.current;
     panelImgPressRef.current = null;
-    if (start) {
+    // Only suppress navigation after a long-press / drag for touch/pen — not mouse
+    // (a slow desktop click often exceeds 400ms and was incorrectly blocked).
+    if (start && (start.pointerType === 'touch' || start.pointerType === 'pen')) {
       const dt = Date.now() - start.t;
       const dist = Math.hypot(e.clientX - start.x, e.clientY - start.y);
-      // Long-press (save image) or drag — do not advance
       if (dt > 400 || dist > 14) return;
     }
 
     const rect = e.currentTarget.getBoundingClientRect();
     const x = e.clientX - rect.left;
+    // Freeroam-style: left strip = back; center + right = forward
     const leftZone = rect.width * 0.28;
     if (x < leftZone) {
       if (canGoBack) void handleNavigate('prev');
-    } else {
-      if (canGoForward && !isPolling && !isRegeneratePolling) void handleNavigate('next');
+    } else if (canGoForward && !isPolling && !isRegeneratePolling) {
+      void handleNavigate('next');
     }
   }, [isNavigating, canGoBack, canGoForward, isPolling, isRegeneratePolling, handleNavigate]);
 
@@ -2389,13 +2392,25 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
             <img
               src={imageUrl}
               alt=""
-              draggable
+              // Not draggable: HTML5 drag steals desktop clicks. Save via right-click / long-press.
+              draggable={false}
               className="story-reader-panel-image w-full h-full"
-              style={{ objectFit: 'cover', objectPosition: 'center top', zIndex: 0 }}
-              // Short-press left/right regions advance (center ≈ next). Long-press / right-click = Save Image.
+              style={{
+                objectFit: 'cover',
+                objectPosition: 'center top',
+                zIndex: 0,
+                cursor: canGoForward || canGoBack ? 'pointer' : 'default',
+              }}
+              // Left-click: navigate (center/right → next). Right-click: native Save Image.
+              // Touch long-press: Save Image; short tap: navigate (long-press suppressed in handler).
               onPointerDown={(e) => {
                 if (e.button !== 0) return;
-                panelImgPressRef.current = { x: e.clientX, y: e.clientY, t: Date.now() };
+                panelImgPressRef.current = {
+                  x: e.clientX,
+                  y: e.clientY,
+                  t: Date.now(),
+                  pointerType: e.pointerType || 'mouse',
+                };
               }}
               onPointerCancel={() => { panelImgPressRef.current = null; }}
               onClick={handlePanelImageNavigate}
