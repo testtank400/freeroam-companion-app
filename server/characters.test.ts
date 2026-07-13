@@ -1,6 +1,17 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { appRouter } from "./routers";
 import type { TrpcContext } from "./_core/context";
+
+// Avoid needing DATABASE_URL / a live MySQL for character create (saves extended fields to our DB)
+vi.mock("./db", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./db")>();
+  return {
+    ...actual,
+    upsertCharacterExtended: vi.fn().mockResolvedValue(undefined),
+  };
+});
+
+// Import after mocks so routers picks up mocked db helpers
+import { appRouter } from "./routers";
 
 // Mock fetch globally
 const mockFetch = vi.fn();

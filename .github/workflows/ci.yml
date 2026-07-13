@@ -6,6 +6,9 @@
 #   2. Typecheck (same as: pnpm check / tsc --noEmit)
 #   3. Unit tests (same as: pnpm test)
 #
+# Tests that need secrets from .env (e.g. ELEVEN_LABS_API_KEY) skip themselves when
+# those vars are unset. CI does not inject .env keys.
+#
 # It does NOT deploy. It only checks that the code is healthy.
 
 name: CI
