@@ -2435,7 +2435,10 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
                     'linear-gradient(to bottom, rgba(0,0,0,0) 0%, rgba(0,0,0,0) 52%, rgba(0,0,0,0.06) 64%, rgba(0,0,0,0.22) 78%, rgba(0,0,0,0.42) 92%, rgba(0,0,0,0.52) 100%)',
                 }}
               />
-              {/* storyVnDialogue: flex column with ::before spacer pushing content to 67dvh anchor */}
+              {/* storyVnDialogue: flex column with ::before spacer pushing content to 67dvh anchor.
+                  Entire dialogue layer is pointer-events-none (Freeroam-style): text is visual only,
+                  so taps/right-clicks pass through to the panel <img> for advance / Save Image.
+                  Interactive controls (choices, action bar) keep their own pointer-events. */}
               <div
                 className="absolute inset-0 z-10 pointer-events-none"
                 style={{
@@ -2447,9 +2450,8 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
               >
                 {/* ::before spacer — pushes content down to 67dvh */}
                 <div style={{ flex: '0 1 67dvh', minHeight: 0 }} />
-                {/* storyVnDialogue__stack */}
+                {/* storyVnDialogue__stack — NOT pointer-events-auto (that blocked center-tap over text) */}
                 <div
-                  className="pointer-events-auto"
                   style={{
                     flex: '0 0 auto',
                     width: '100%',
