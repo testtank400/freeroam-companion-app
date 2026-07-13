@@ -419,16 +419,156 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
 
   // NSFW image replacement state
   const [nsfwImageUrl, setNsfwImageUrl] = useState<string | null>(null);
-  const [isGeneratingNsfwImage, setIsGeneratingNsfwImage] = useState(false);
+  const [isGeneratingNsfwImage, setIsGeneratingNsfwImage] = useState(false); // Seedream / Atlas image job
+  const [isClassifyingNsfwImage, setIsClassifyingNsfwImage] = useState(false); // DeepSeek classify phase
   // Session guards: processed = finished decision for panel; inFlight = generate/poll currently running
   const nsfwProcessedPanelsRef = useRef<Set<string>>(new Set());
   const nsfwInFlightRef = useRef<Set<string>>(new Set());
+  // Session maps so navigating away and back restores the right NSFW art (not only "last sticky")
+  const nsfwByPanelIdRef = useRef<Map<string, string>>(new Map());
+  const nsfwByArtKeyRef = useRef<Map<string, string>>(new Map()); // Freeroam prompt|url → NSFW url
+  /**
+   * Freeroam only sends character_references on panels where the art was (re)generated.
+   * Later panels reuse the same art with empty refs. We remember refs by art key for the
+   * whole reader session so regenerate works on any same-art panel.
+   * Not cleared on regenerate (only NSFW image maps are).
+   */
+  const nsfwCharRefsByArtKeyRef = useRef<Map<string, Record<string, {
+    external_id: string;
+    name: string;
+    appearance: string | null;
+    headshot_url: string | null;
+    is_main_character: boolean;
+  }>>>(new Map());
   // Bump to force the NSFW effect to re-run for regenerate (same panel_id)
   const [nsfwRegenNonce, setNsfwRegenNonce] = useState(0);
+  // Set to panelId when user clicks regenerate — consumed once by the NSFW effect
+  const nsfwForceRegenPanelRef = useRef<string | null>(null);
+  // Monotonic run id so Strict Mode cleanup / panel change does not clear a newer run's badges
+  const nsfwRunIdRef = useRef(0);
   const generateNsfwImageMutation = trpc.voice.generateNsfwImage.useMutation();
   const clearImageCacheEntryMutation = trpc.voice.clearImageCacheEntry.useMutation();
   const { data: unrestrictedImagesSettingData } = trpc.voice.getSetting.useQuery({ key: 'unrestricted_images' });
   const unrestrictedImagesEnabled = unrestrictedImagesSettingData === 'true';
+
+  const freeroamArtKey = (prompt?: string | null, url?: string | null) =>
+    (prompt?.trim() || url || '').trim();
+
+  /** Local NSFW files reuse the same path per panel; strip query for map keys. */
+  const nsfwUrlBase = (url: string) => url.split('?')[0];
+  /**
+   * Cache-bust only after regenerate (same path overwritten). Do NOT bust on every panel
+   * visit — a new ?v= reloads ambient CSS backgroundImage and causes a visible flash.
+   */
+  const nsfwUrlForDisplay = (url: string, cacheBust: boolean) =>
+    cacheBust ? `${nsfwUrlBase(url)}?v=${Date.now()}` : nsfwUrlBase(url);
+
+  const rememberNsfwImage = (panelId: string, artKey: string, url: string, cacheBust = false) => {
+    const base = nsfwUrlBase(url);
+    nsfwByPanelIdRef.current.set(panelId, base);
+    if (artKey) nsfwByArtKeyRef.current.set(artKey, base);
+    // Only paint if user is still on this panel (avoid stale writes after navigation)
+    if (currentPanelIdRef.current === panelId) {
+      setNsfwImageUrl(nsfwUrlForDisplay(base, cacheBust));
+    }
+  };
+
+  const lookupSessionNsfw = (panelId: string, artKey: string): string | null =>
+    nsfwByPanelIdRef.current.get(panelId)
+    ?? (artKey ? nsfwByArtKeyRef.current.get(artKey) ?? null : null);
+
+  /** Always hit the server — React Query can cache an early not_found and never show a later ready. */
+  const fetchImageCacheFresh = (input: {
+    panelId: string;
+    freeroamImageUrl?: string;
+    freeroamImagePrompt?: string;
+  }) => utils.voice.checkImageReady.fetch(input, { staleTime: 0, gcTime: 0 });
+
+  type NsfwCharRef = {
+    external_id: string;
+    name: string;
+    appearance: string | null;
+    headshot_url: string | null;
+    is_main_character: boolean;
+  };
+
+  /** Freeroam only attaches character_references on panels where the image was (re)generated. */
+  const getPanelCharacterReferences = (panel: PanelData | null | undefined): Record<string, NsfwCharRef> =>
+    (panel as unknown as { character_references?: Record<string, NsfwCharRef> } | null)
+      ?.character_references ?? {};
+
+  /** Remember cast for this Freeroam art so later same-art panels / regenerate still have headshots. */
+  const rememberCharRefsForArt = (artKey: string | undefined, refs: Record<string, NsfwCharRef>) => {
+    if (!artKey || Object.keys(refs).length === 0) return;
+    nsfwCharRefsByArtKeyRef.current.set(artKey, refs);
+  };
+
+  /**
+   * Resolve cast for NSFW generate / regenerate:
+   * 1) this panel's character_references
+   * 2) session map by art key (seen earlier this reader session)
+   * 3) any panelCache entry with the same freeroam image URL or prompt that still has refs
+   */
+  const resolveCharacterReferencesForArt = (
+    panel: PanelData,
+    freeroamImageUrl?: string,
+    freeroamImagePrompt?: string,
+  ): Record<string, NsfwCharRef> => {
+    const artKey = freeroamArtKey(freeroamImagePrompt, freeroamImageUrl);
+
+    const own = getPanelCharacterReferences(panel);
+    if (Object.keys(own).length > 0) {
+      rememberCharRefsForArt(artKey, own);
+      return own;
+    }
+
+    if (artKey) {
+      const remembered = nsfwCharRefsByArtKeyRef.current.get(artKey);
+      if (remembered && Object.keys(remembered).length > 0) return remembered;
+    }
+
+    for (const p of panelCache.current.values()) {
+      const pImg = p.panel_content?.images?.[0];
+      if (!pImg) continue;
+      const sameUrl = !!(freeroamImageUrl && pImg.url === freeroamImageUrl);
+      const samePrompt = !!(freeroamImagePrompt && pImg.prompt === freeroamImagePrompt);
+      if (!sameUrl && !samePrompt) continue;
+      const refs = getPanelCharacterReferences(p);
+      if (Object.keys(refs).length > 0) {
+        rememberCharRefsForArt(artKey, refs);
+        return refs;
+      }
+    }
+    return {};
+  };
+
+  /** Story text (narration + non-action dialogue) for NSFW classify/enhance context. */
+  const extractPanelStoryText = (p: { panel_id?: string; panel_content?: PanelData['panel_content'] } | null | undefined) => {
+    if (!p?.panel_content) return null;
+    const parts: string[] = [];
+    if (p.panel_content.narration) parts.push(p.panel_content.narration);
+    const bubbles = (p.panel_content.speech_bubbles as Array<{ text?: string; style?: string }> | undefined)
+      ?.filter(b => b.style !== 'action')
+      .map(b => b.text)
+      .filter(Boolean) as string[] | undefined;
+    if (bubbles?.length) parts.push(...bubbles);
+    return parts.join(' ').trim() || null;
+  };
+
+  // panelId → story text seen this session (prev panel is often missing from API; only next is embedded)
+  const panelStoryTextRef = useRef<Map<string, string>>(new Map());
+
+  const rememberPanelStoryText = (panel: PanelData | null | undefined) => {
+    if (!panel?.panel_id) return;
+    const text = extractPanelStoryText(panel);
+    if (text) panelStoryTextRef.current.set(panel.panel_id, text);
+    // Also remember embedded next panel text when Freeroam sends it
+    const next = panel.next_panel as PanelData | null | undefined;
+    if (next?.panel_id) {
+      const nextText = extractPanelStoryText(next);
+      if (nextText) panelStoryTextRef.current.set(next.panel_id, nextText);
+    }
+  };
   const likeMutation = trpc.worlds.like.useMutation();
   const unlikeMutation = trpc.worlds.unlike.useMutation();
 
@@ -958,32 +1098,60 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
     }
     // Reset choice input on every panel change — no buffer for choice panels
     setChoiceInput('');
-    // Reset NSFW generation badge state on panel change
+    // Reset NSFW badge state on panel change
     setIsGeneratingNsfwImage(false);
+    setIsClassifyingNsfwImage(false);
+    // Keep story text for prev/current/next NSFW context (prev is not embedded on the API payload)
+    rememberPanelStoryText(currentPanel);
+    // Remember character_references whenever Freeroam sends them (first art panel), so later
+    // same-art panels and regenerate can still resolve headshots without that panel in cache.
+    {
+      const img = currentPanel.panel_content?.images?.[0];
+      const artKey = freeroamArtKey(img?.prompt, img?.url);
+      const ownRefs = getPanelCharacterReferences(currentPanel);
+      if (Object.keys(ownRefs).length > 0) rememberCharRefsForArt(artKey, ownRefs);
+      const next = currentPanel.next_panel as PanelData | null | undefined;
+      if (next) {
+        const nImg = next.panel_content?.images?.[0];
+        const nRefs = getPanelCharacterReferences(next);
+        if (Object.keys(nRefs).length > 0) {
+          rememberCharRefsForArt(freeroamArtKey(nImg?.prompt, nImg?.url), nRefs);
+        }
+      }
+    }
     // Note: nsfwProcessedPanelsRef is intentionally NOT cleared on panel change
     // to prevent re-processing panels when currentPanel object reference changes for the same panel ID
-    // Pre-render NSFW cache check: if we already have a cached replacement for this panel's
-    // Freeroam image URL, set it immediately so the Freeroam image is never shown.
-    // Only fall back to null (show Freeroam image) if no cache hit.
+    // Restore NSFW art for this panel (session map → fresh server cache). Never leave a
+    // previously generated panel on Freeroam art just because we navigated away and back.
     if (unrestrictedImagesEnabled) {
       const img = currentPanel.panel_content?.images?.[0];
       const panelId = currentPanel.panel_id;
       const freeroamImageUrl = img?.url ?? undefined;
-      if (img?.prompt && freeroamImageUrl) {
-        // Fire async but set null immediately as a provisional value only if needed
-        // We optimistically keep the previous nsfwImageUrl until we know the answer
-        // to avoid a flash of the Freeroam image on the new panel.
-        // We'll reset to null only if the cache misses.
+      const freeroamImagePrompt = img?.prompt ?? undefined;
+      const artKey = freeroamArtKey(freeroamImagePrompt, freeroamImageUrl);
+      const sessionHit = lookupSessionNsfw(panelId, artKey);
+      if (sessionHit) {
+        // Stable URL (no cache-bust) so ambient/main don't flash on every nav
+        setNsfwImageUrl(nsfwUrlBase(sessionHit));
+        nsfwProcessedPanelsRef.current.add(panelId);
+      } else if (img?.prompt && freeroamImageUrl) {
+        // Clear previous panel's NSFW immediately so ambient doesn't show wrong art,
+        // then restore if server has ready for this panel/art.
+        setNsfwImageUrl(null);
         (async () => {
           try {
-            const cached = await utils.voice.checkImageReady.fetch({ panelId, freeroamImageUrl });
+            const cached = await fetchImageCacheFresh({
+              panelId,
+              freeroamImageUrl,
+              freeroamImagePrompt,
+            });
+            if (currentPanelIdRef.current !== panelId) return;
             if (cached.status === 'ready' && cached.imageUrl) {
-              setNsfwImageUrl(cached.imageUrl);
-            } else {
-              setNsfwImageUrl(null);
+              rememberNsfwImage(panelId, artKey, cached.imageUrl, false);
+              nsfwProcessedPanelsRef.current.add(panelId);
             }
           } catch {
-            setNsfwImageUrl(null);
+            // leave Freeroam art
           }
         })();
       } else {
@@ -1024,41 +1192,111 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
     if (!img?.prompt) return;
     const prompt = img.prompt;
     const panelId = currentPanel.panel_id;
+    const freeroamImageUrl = img.url ?? undefined;
+    const freeroamImagePrompt = img.prompt ?? undefined;
+    const artKey = freeroamArtKey(freeroamImagePrompt, freeroamImageUrl);
+    // Forced re-run (regenerate button). Keep the flag until generate actually starts so
+    // React Strict Mode double-invoke still sees forceRegen=true on the second run.
+    const forceRegen = nsfwForceRegenPanelRef.current === panelId;
 
-    // Already finished this panel this session (ready / skipped / failed decision)
-    if (nsfwProcessedPanelsRef.current.has(panelId)) return;
+    // Session hit for this panel or same Freeroam art — restore, never re-generate
+    // (unless user just hit regenerate — maps were cleared)
+    const sessionHit = lookupSessionNsfw(panelId, artKey);
+    if (sessionHit && !forceRegen) {
+      rememberNsfwImage(panelId, artKey, sessionHit);
+      nsfwProcessedPanelsRef.current.add(panelId);
+      return;
+    }
+
+    // On force regen, clear any stale locks so we always start a new job
+    if (forceRegen) {
+      nsfwInFlightRef.current.delete(panelId);
+      nsfwProcessedPanelsRef.current.delete(panelId);
+    }
+
+    // Already decided this panel this session — restore from server if ready.
+    // If still classifying/generating (user left mid-job), unstick and re-poll with badges.
+    // If cache was cleared (not_found), drop the session mark so classify can re-run.
+    if (nsfwProcessedPanelsRef.current.has(panelId) && !forceRegen) {
+      (async () => {
+        try {
+          const cached = await fetchImageCacheFresh({ panelId, freeroamImageUrl, freeroamImagePrompt });
+          if (cached.status === 'ready' && cached.imageUrl) {
+            rememberNsfwImage(panelId, artKey, cached.imageUrl);
+            return;
+          }
+          if (cached.status === 'skipped') {
+            return; // stay on Freeroam art
+          }
+          if (cached.status === 'classifying' || cached.status === 'generating') {
+            // Job still running on server after we navigated away — re-attach badges + poll
+            nsfwProcessedPanelsRef.current.delete(panelId);
+            nsfwInFlightRef.current.delete(panelId);
+            setNsfwRegenNonce(n => n + 1);
+            return;
+          }
+          if (cached.status === 'not_found') {
+            nsfwProcessedPanelsRef.current.delete(panelId);
+            nsfwInFlightRef.current.delete(panelId);
+            setNsfwRegenNonce(n => n + 1);
+          }
+        } catch { /* non-fatal */ }
+      })();
+      return;
+    }
+
     // Already running generate/poll for this panel (covers Strict Mode + fast re-entry)
     if (nsfwInFlightRef.current.has(panelId)) return;
     nsfwInFlightRef.current.add(panelId);
 
+    const runId = ++nsfwRunIdRef.current;
     let cancelled = false;
+    const isActiveRun = () => !cancelled && nsfwRunIdRef.current === runId;
+
     (async () => {
       try {
-        const freeroamImageUrl = img.url ?? undefined;
-        const cached = await utils.voice.checkImageReady.fetch({ panelId, freeroamImageUrl });
-        if (cancelled) return;
+        const cached = await fetchImageCacheFresh({
+          panelId,
+          freeroamImageUrl,
+          freeroamImagePrompt,
+        });
+        if (!isActiveRun()) return;
 
-        if (cached.status === 'ready' && cached.imageUrl) {
-          setNsfwImageUrl(cached.imageUrl);
+        // After regenerate we clear cache — still allow reuse only when NOT forcing
+        if (cached.status === 'ready' && cached.imageUrl && !forceRegen) {
+          rememberNsfwImage(panelId, artKey, cached.imageUrl);
           nsfwProcessedPanelsRef.current.add(panelId);
           return;
         }
-        // Classified SFW earlier — do not call Seedream again
-        if (cached.status === 'skipped') {
+        // Classified SFW earlier (this panel or same art) — do not call Seedream again
+        // (unless regenerate forced a cache clear; skipped row should be gone)
+        if (cached.status === 'skipped' && !forceRegen) {
           nsfwProcessedPanelsRef.current.add(panelId);
           return;
         }
 
-        // Poll helper: IMG badge ONLY while status === 'generating' (Seedream phase).
-        // 'classifying' is DeepSeek-only — no badge.
-        const pollUntilSettled = async (showBadgeWhenGenerating: boolean) => {
+        // Sync badges from cache status: CHECK = classifying, IMG = Seedream generating
+        const applyStatusBadges = (status: string) => {
+          if (!isActiveRun()) return;
+          setIsClassifyingNsfwImage(status === 'classifying');
+          setIsGeneratingNsfwImage(status === 'generating');
+        };
+        const clearNsfwBadges = () => {
+          if (nsfwRunIdRef.current !== runId) return; // newer run owns badges
+          setIsClassifyingNsfwImage(false);
+          setIsGeneratingNsfwImage(false);
+        };
+
+        const pollUntilSettled = async () => {
           for (let i = 0; i < 90; i++) {
-            if (cancelled) return null;
+            if (!isActiveRun()) return null;
             await new Promise(r => setTimeout(r, 1500));
-            const poll = await utils.voice.checkImageReady.fetch({ panelId, freeroamImageUrl });
-            if (showBadgeWhenGenerating) {
-              if (!cancelled) setIsGeneratingNsfwImage(poll.status === 'generating');
-            }
+            const poll = await fetchImageCacheFresh({
+              panelId,
+              freeroamImageUrl,
+              freeroamImagePrompt,
+            });
+            applyStatusBadges(poll.status);
             if (poll.status === 'ready' && poll.imageUrl) return poll;
             if (poll.status === 'skipped') return poll;
             if (poll.status === 'not_found') return poll;
@@ -1066,34 +1304,78 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
           return null;
         };
 
+        const adoptReady = (url: string) => {
+          // Always store in session maps even if this React run was cancelled (Strict Mode),
+          // so a remount / sibling run can restore immediately.
+          // Cache-bust only on force regenerate (same file path overwritten on disk).
+          rememberNsfwImage(panelId, artKey, url, forceRegen);
+          nsfwProcessedPanelsRef.current.add(panelId);
+        };
+
         // Seedream already running (or another tab) — show IMG and wait
-        if (cached.status === 'generating') {
-          setIsGeneratingNsfwImage(true);
-          const poll = await pollUntilSettled(true);
-          if (!cancelled) setIsGeneratingNsfwImage(false);
+        if (cached.status === 'generating' && !forceRegen) {
+          applyStatusBadges('generating');
+          const poll = await pollUntilSettled();
+          clearNsfwBadges();
           if (poll?.status === 'ready' && poll.imageUrl) {
-            if (!cancelled) setNsfwImageUrl(poll.imageUrl);
-            nsfwProcessedPanelsRef.current.add(panelId);
-          } else if (poll?.status === 'skipped') {
-            nsfwProcessedPanelsRef.current.add(panelId);
+            adoptReady(poll.imageUrl);
+            return;
           }
+          if (poll?.status === 'skipped') {
+            nsfwProcessedPanelsRef.current.add(panelId);
+            return;
+          }
+          // Stale claim released (not_found) — fall through and start our own job
+        }
+
+        // DeepSeek in progress elsewhere — show CHECK until classify finishes or Seedream starts
+        if (cached.status === 'classifying' && !forceRegen) {
+          applyStatusBadges('classifying');
+          const poll = await pollUntilSettled();
+          clearNsfwBadges();
+          if (poll?.status === 'ready' && poll.imageUrl) {
+            adoptReady(poll.imageUrl);
+            return;
+          }
+          if (poll?.status === 'skipped') {
+            nsfwProcessedPanelsRef.current.add(panelId);
+            return;
+          }
+          // Stale claim released (not_found) — fall through and start our own job
+        }
+
+        // character_references usually only exist on the Freeroam panel that first got this art.
+        // Full generate requires a non-empty cast (this panel or borrowed from same-art cache).
+        // Without refs: keep Freeroam art; do not classify/Seedream (empty headshots = bad swaps).
+        const charRefs = resolveCharacterReferencesForArt(currentPanel, freeroamImageUrl, freeroamImagePrompt);
+        if (Object.keys(charRefs).length === 0) {
+          console.warn('[NSFW] Skipping generate — no character_references for this art yet', {
+            panelId,
+            freeroamImageUrl,
+            artKey,
+            forceRegen,
+          });
+          if (forceRegen) {
+            nsfwForceRegenPanelRef.current = null;
+            setIsClassifyingNsfwImage(false);
+            toast.error('Cannot regenerate: no character references on this panel yet');
+          }
+          // Do not mark processed: later visit may hit session/cache after the first art panel generates,
+          // or we may navigate to a panel that still has refs.
           return;
         }
 
-        // DeepSeek in progress elsewhere — wait quietly (no IMG) until classify finishes or Seedream starts
-        if (cached.status === 'classifying') {
-          const poll = await pollUntilSettled(true);
-          if (!cancelled) setIsGeneratingNsfwImage(false);
-          if (poll?.status === 'ready' && poll.imageUrl) {
-            if (!cancelled) setNsfwImageUrl(poll.imageUrl);
-            nsfwProcessedPanelsRef.current.add(panelId);
-          } else if (poll?.status === 'skipped') {
-            nsfwProcessedPanelsRef.current.add(panelId);
-          }
-          return;
+        // Consume force flag only once we are committed to a real generate
+        if (forceRegen && nsfwForceRegenPanelRef.current === panelId) {
+          nsfwForceRegenPanelRef.current = null;
         }
 
-        const charRefs = (currentPanel as unknown as { character_references?: Record<string, { external_id: string; name: string; appearance: string | null; headshot_url: string | null; is_main_character: boolean }> }).character_references ?? {};
+        // Show CHECK immediately so regenerate is never a silent no-op
+        if (isActiveRun()) {
+          setIsClassifyingNsfwImage(true);
+          setIsGeneratingNsfwImage(false);
+        }
+
         let actionText = ((currentPanel.panel_content as unknown as { action?: string | null })?.action ?? null) as string | null;
         if (!actionText && currentPanel.prev_panel_id) {
           const prevPanel = panelCache.current.get(currentPanel.prev_panel_id);
@@ -1106,27 +1388,46 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
         }
 
         try {
-          const extractPanelText = (p: typeof currentPanel | undefined) => {
-            if (!p?.panel_content?.speech_bubbles) return null;
-            return (p.panel_content.speech_bubbles as Array<{text?: string; style?: string}>)
-              .filter(b => b.style !== 'action')
-              .map(b => b.text)
-              .filter(Boolean)
-              .join(' ') || null;
-          };
+          // Freeroam embeds next_panel; prev is only available if visited / remembered this session.
           const prevPanel = currentPanel.prev_panel_id ? panelCache.current.get(currentPanel.prev_panel_id) : undefined;
-          const nextPanelData = currentPanel.next_panel_id ? panelCache.current.get(currentPanel.next_panel_id) : undefined;
+          const nextPanelData =
+            (currentPanel.next_panel as PanelData | null | undefined) ??
+            (currentPanel.next_panel_id ? panelCache.current.get(currentPanel.next_panel_id) : undefined);
 
-          // While mutateAsync runs (classify → maybe Seedream), poll status for the IMG badge.
-          // Badge turns on only when server promotes claim to status 'generating' (Seedream phase).
+          rememberPanelStoryText(currentPanel);
+          const prevPanelText =
+            extractPanelStoryText(prevPanel)
+            ?? (currentPanel.prev_panel_id ? panelStoryTextRef.current.get(currentPanel.prev_panel_id) ?? null : null);
+          const currentPanelText =
+            extractPanelStoryText(currentPanel)
+            ?? panelStoryTextRef.current.get(panelId)
+            ?? null;
+          const nextPanelText =
+            extractPanelStoryText(nextPanelData)
+            ?? (currentPanel.next_panel_id ? panelStoryTextRef.current.get(currentPanel.next_panel_id) ?? null : null);
+
+          console.log('[NSFW] Starting classify/generate', {
+            panelId,
+            forceRegen,
+            hasPrev: !!prevPanelText,
+            hasCurrent: !!currentPanelText,
+            hasNext: !!nextPanelText,
+            refCount: Object.keys(charRefs).length,
+          });
+
+          // While mutateAsync runs (classify → maybe Seedream), poll for CHECK / IMG badges.
           let stopBadgePoll = false;
           const badgePoll = (async () => {
-            while (!stopBadgePoll && !cancelled) {
-              await new Promise(r => setTimeout(r, 800));
-              if (stopBadgePoll || cancelled) break;
+            while (!stopBadgePoll && isActiveRun()) {
+              await new Promise(r => setTimeout(r, 500));
+              if (stopBadgePoll || !isActiveRun()) break;
               try {
-                const s = await utils.voice.checkImageReady.fetch({ panelId, freeroamImageUrl });
-                if (!cancelled) setIsGeneratingNsfwImage(s.status === 'generating');
+                const s = await fetchImageCacheFresh({
+                  panelId,
+                  freeroamImageUrl,
+                  freeroamImagePrompt,
+                });
+                applyStatusBadges(s.status);
                 if (s.status === 'ready' || s.status === 'skipped' || s.status === 'not_found') break;
               } catch {
                 // ignore poll errors
@@ -1140,45 +1441,61 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
             prompt,
             imageUrl: img.url ?? null,
             actionText,
-            prevPanelText: extractPanelText(prevPanel),
-            currentPanelText: extractPanelText(currentPanel),
-            nextPanelText: extractPanelText(nextPanelData),
+            prevPanelText,
+            currentPanelText,
+            nextPanelText,
             shot: img.shot ?? null,
             characterReferences: charRefs,
-            debug: debugMode,
+            debug: true, // always log server Seedream prompt for now
           });
           stopBadgePoll = true;
           await badgePoll.catch(() => {});
-          if (cancelled) return;
 
+          // Adopt successful results even if this React effect was cancelled (navigated away /
+          // Strict Mode) — store in session maps so coming back restores the image.
+          // Do NOT mark "processed" if we only left mid-job; return visit must re-show CHECK/IMG.
           if (result.generating || (result as { classifying?: boolean }).classifying) {
-            // Another worker owns the job — poll; badge only while Seedream status is generating
-            if (result.generating && !cancelled) setIsGeneratingNsfwImage(true);
-            const poll = await pollUntilSettled(true);
-            if (poll?.status === 'ready' && poll.imageUrl && !cancelled) {
-              setNsfwImageUrl(poll.imageUrl);
+            if (isActiveRun()) {
+              applyStatusBadges(result.generating ? 'generating' : 'classifying');
             }
+            const poll = await pollUntilSettled();
+            if (poll?.status === 'ready' && poll.imageUrl) {
+              adoptReady(poll.imageUrl);
+            } else if (poll?.status === 'skipped') {
+              nsfwProcessedPanelsRef.current.add(panelId);
+            }
+            // poll null (cancelled / navigated away) or still in progress: leave unprocessed
           } else if (result.imageUrl) {
-            setNsfwImageUrl(result.imageUrl);
+            adoptReady(result.imageUrl);
+          } else if (isActiveRun()) {
+            // notNsfw / no image — only mark processed if this run still owns the panel
+            nsfwProcessedPanelsRef.current.add(panelId);
+            if (forceRegen && currentPanelIdRef.current === panelId) {
+              console.warn('[NSFW] Regenerate finished without image (notNsfw or empty)', result);
+            }
           }
-          // Mark done for ready, notNsfw, or finished generate attempt
-          nsfwProcessedPanelsRef.current.add(panelId);
-        } catch {
+        } catch (err) {
+          console.error('[NSFW] client generate failed', err);
+          if (forceRegen && currentPanelIdRef.current === panelId) {
+            toast.error('Image regenerate failed — see console');
+          }
           // Leave unprocessed so a later visit can retry after server released the claim
+          nsfwProcessedPanelsRef.current.delete(panelId);
         } finally {
-          if (!cancelled) setIsGeneratingNsfwImage(false);
+          clearNsfwBadges();
         }
       } catch {
         // Outer catch — non-fatal
       } finally {
+        // Always free this panel's client lock when our async ends (even if a newer run
+        // incremented runId — that run has its own add). Safe if already deleted.
         nsfwInFlightRef.current.delete(panelId);
       }
     })();
 
     return () => {
       cancelled = true;
-      // Free the session lock so Strict Mode remount / panel re-entry can proceed.
-      // Server unique(panelId) claim still prevents duplicate Seedream jobs.
+      // Leaving the panel: free lock so coming back can re-attach to a still-running server job
       nsfwInFlightRef.current.delete(panelId);
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1527,6 +1844,36 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
   // The image URL to display — NSFW replacement takes priority over original
   // Only use NSFW replacement when unrestricted images is enabled
   const imageUrl = (unrestrictedImagesEnabled && nsfwImageUrl) ? nsfwImageUrl : originalImageUrl;
+
+  // Ambient: keep previous background until the next image is decoded, so panel changes
+  // don't flash black / freeroam while a (local) NSFW URL loads. Freeroam CDN is usually
+  // warm-cached; local /api/nsfw-images was reloading every visit because of ?v= busting.
+  const [ambientUrl, setAmbientUrl] = useState<string | null>(null);
+  const ambientUrlRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!imageUrl) {
+      setAmbientUrl(null);
+      ambientUrlRef.current = null;
+      return;
+    }
+    if (imageUrl === ambientUrlRef.current) return;
+    let cancelled = false;
+    const pre = new window.Image();
+    pre.onload = () => {
+      if (cancelled) return;
+      ambientUrlRef.current = imageUrl;
+      setAmbientUrl(imageUrl);
+    };
+    pre.onerror = () => {
+      if (cancelled) return;
+      ambientUrlRef.current = imageUrl;
+      setAmbientUrl(imageUrl);
+    };
+    pre.src = imageUrl;
+    return () => { cancelled = true; };
+  }, [imageUrl]);
+  const ambientBg = ambientUrl ?? imageUrl;
+
   const speechBubble = content?.speech_bubbles?.[0] ?? null;
   const narration = content?.narration ?? null;
   const choice = content?.choice ?? null;
@@ -1562,12 +1909,13 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
       className="story-reader-root fixed inset-0 z-[100]"
       style={{ opacity: visible ? 1 : 0, transition: 'opacity 0.2s ease', background: 'rgb(5,5,5)' }}
     >
-      {/* Ambient blurred backdrop — storyAmbientLayer: exact Freeroam CSS with drift animation */}
+      {/* Ambient blurred backdrop — storyAmbientLayer: exact Freeroam CSS with drift animation.
+          Uses ambientBg (preloaded) so NSFW panel swaps don't flash while the image loads. */}
       <div
         style={{
           position: 'absolute',
           inset: '-12%',
-          backgroundImage: imageUrl ? `url(${imageUrl})` : 'none',
+          backgroundImage: ambientBg ? `url(${ambientBg})` : 'none',
           backgroundSize: 'cover',
           backgroundPosition: '50% 50%',
           backgroundRepeat: 'no-repeat',
@@ -1887,34 +2235,60 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
                   GEN
                 </span>
               )}
+              {isClassifyingNsfwImage && (
+                <span
+                  className="animate-pulse"
+                  style={{ fontSize: '10px', fontFamily: 'Outfit-Medium, Outfit, sans-serif', fontWeight: 600, color: '#38bdf8', background: 'rgba(56,189,248,0.15)', border: '1px solid rgba(56,189,248,0.4)', borderRadius: '6px', padding: '2px 6px', letterSpacing: '0.05em' }}
+                  title="Checking if scene needs unrestricted image"
+                >
+                  CHECK
+                </span>
+              )}
               {isGeneratingNsfwImage && (
                 <span
                   className="animate-pulse"
                   style={{ fontSize: '10px', fontFamily: 'Outfit-Medium, Outfit, sans-serif', fontWeight: 600, color: '#f59e0b', background: 'rgba(245,158,11,0.15)', border: '1px solid rgba(245,158,11,0.4)', borderRadius: '6px', padding: '2px 6px', letterSpacing: '0.05em' }}
+                  title="Generating unrestricted image via Seedream"
                 >
                   IMG
                 </span>
               )}
-              {/* Regenerate NSFW image button — shown when unrestricted images is on and a NSFW image is displayed or was attempted */}
-              {unrestrictedImagesEnabled && nsfwImageUrl && (
+              {/* Regenerate NSFW only when THIS panel has Freeroam character_references.
+                  Same-art later panels often lack refs; regenerating there is flaky (leave/return
+                  loses badges, cast only via session borrow). Generate still runs automatically
+                  when refs can be resolved; manual regen is limited to the source art panel. */}
+              {unrestrictedImagesEnabled && !!image?.prompt && currentPanel && Object.keys(getPanelCharacterReferences(currentPanel)).length > 0 && (
                 <button
                   onClick={async () => {
                     if (!currentPanel) return;
                     const panelId = currentPanel.panel_id;
                     nsfwProcessedPanelsRef.current.delete(panelId);
                     nsfwInFlightRef.current.delete(panelId);
+                    nsfwByPanelIdRef.current.delete(panelId);
+                    const img0 = currentPanel.panel_content?.images?.[0];
+                    const artKey = freeroamArtKey(img0?.prompt, img0?.url);
+                    if (artKey) nsfwByArtKeyRef.current.delete(artKey);
                     setNsfwImageUrl(null);
+                    // Show CHECK immediately so regenerate is never a silent Freeroam revert
+                    setIsClassifyingNsfwImage(true);
+                    setIsGeneratingNsfwImage(false);
+                    nsfwForceRegenPanelRef.current = panelId;
                     try {
-                      await clearImageCacheEntryMutation.mutateAsync({ panelId });
+                      await clearImageCacheEntryMutation.mutateAsync({
+                        panelId,
+                        freeroamImageUrl: img0?.url ?? undefined,
+                        freeroamImagePrompt: img0?.prompt ?? undefined,
+                      });
                     } catch {
                       // Still attempt client re-run even if cache clear fails
                     }
                     // Force NSFW effect to re-run for the same panel_id
                     setNsfwRegenNonce(n => n + 1);
                   }}
-                  className="flex items-center justify-center rounded-full transition-all hover:bg-white/20"
+                  disabled={isClassifyingNsfwImage || isGeneratingNsfwImage}
+                  className="flex items-center justify-center rounded-full transition-all hover:bg-white/20 disabled:opacity-40"
                   style={{ width: '28px', height: '28px', background: 'rgba(255,255,255,0.12)', color: 'rgba(255,255,255,0.75)' }}
-                  title="Regenerate image"
+                  title="Regenerate unrestricted image (this panel has character references)"
                 >
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>
                 </button>
@@ -1975,13 +2349,19 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
 
           {/* No center loading overlay — right halo spinner is the only indicator */}
 
-          {/* Panel image */}
+          {/* Panel image — fall back to Freeroam art if NSFW URL is broken (e.g. expired Atlas CDN) */}
           {imageUrl && (
             <img
               src={imageUrl}
               alt=""
               className="w-full h-full"
               style={{ objectFit: 'cover', objectPosition: 'center top' }}
+              onError={() => {
+                if (nsfwImageUrl && imageUrl === nsfwImageUrl) {
+                  console.warn('[NSFW] Failed to load replacement image, reverting to Freeroam art', nsfwImageUrl);
+                  setNsfwImageUrl(null);
+                }
+              }}
             />
           )}
 

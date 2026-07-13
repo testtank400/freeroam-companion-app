@@ -101,6 +101,9 @@ jspm_packages/
 tmp/
 temp/
 
+# Local NSFW image cache (dev fallback when Manus Forge storage is unavailable)
+data/
+
 # Database
 *.db
 *.sqlite

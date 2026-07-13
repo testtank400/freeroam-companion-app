@@ -383,19 +383,22 @@ When **Unrestricted Images** is enabled (Preferences → Images), the app replac
 
 ### Pipeline Stages
 
-1. **DeepSeek V4 Flash classification + art style detection** — `deepseek-ai/deepseek-v4-flash` via Atlas Cloud (`https://api.atlascloud.ai/v1/chat/completions`) with `ATLAS_CLOUD_API_KEY`. Receives the image prompt and optional user action text. Returns: `isNsfw` (bool) and `artStyle` (e.g. `'anime illustration, cel-shaded'`). DeepSeek is used instead of Grok because it correctly identifies nudity, revealing outfits, and intimate scenes without over-restriction. If `isNsfw` is false, the pipeline exits immediately — no generation. Classification considers both the Freeroam image prompt AND the user's action text.
+1. **DeepSeek V4 Flash classification + art style detection** — `deepseek-ai/deepseek-v4-flash` via Atlas Cloud (`https://api.atlascloud.ai/v1/chat/completions`) with `ATLAS_CLOUD_API_KEY`. Receives: (1) Freeroam image prompt, (2) optional user action / image instruction, (3) story text from previous + current + next panels (narration/dialogue). Returns: `isNsfw` (bool) and `artStyle`. Does **not** use vision on the panel image or Freeroam's `is_nsfw` flag. Classifier is **inclusive**: erotic tension, pinning, grinding, arousal, lustful dialogue, pre-sex initiation, **climax euphemisms** ("every last drop", "give you everything", body shaking face-to-face), and intimate framing count as NSFW even without clinical anatomy words; mild image prompts do not override erotic story context. When unsure, prefer `true`. If `isNsfw` is not explicitly `true`, the pipeline exits — no Seedream.
 
-2. **DeepSeek V4 Flash prompt enhancement** — second DeepSeek call. Receives the user's action text plus story text from the previous, current, and next panels as scene context. Writes an anatomically detailed, explicit image generation prompt in present tense. Character names are replaced with sex-only descriptors (e.g. `'the woman'`, `'the man'`). Code appends `, both characters fully naked` if nudity is not already stated. DeepSeek handles adult content without restrictions.
+2. **DeepSeek V4 Flash prompt enhancement** — second DeepSeek call. Receives action text plus prev/current/next story text. Writes an image-edit prompt. **Cast** from `character_references` (who is in the image): sex labels derived from each ref’s appearance (woman / man / futanari woman / person) — **never invent a male partner** for woman/futa pairs; no forced hetero pairing. Solo = one person. **Clothing:** only if story or Freeroam image prompt explicitly states outfit/undress/nude; otherwise **same clothing as the reference image**. Headshot refs capped to cast size (max 2).
 
-3. **Seedream v4.5 Edit image generation** — via Atlas Cloud (`https://api.atlascloud.ai/api/v1/model/generateImage`). Receives the enhanced prompt plus character headshot reference images (up to 2). Output size: **1600×2400** (2:3 portrait, 3,840,000 pixels). The original Freeroam image is passed as the edit source. Art style from Step 1 is prepended to the prompt (e.g. `[anime illustration, cel-shaded]`).
+3. **Seedream v4.5 Edit image generation** — via Atlas Cloud (`https://api.atlascloud.ai/api/v1/model/generateImage`). Receives the enhanced prompt plus character **reference images** from `headshot_url` (up to 2). Note: Freeroam “headshots” may be **face or full-body** art. Output size: **1600×2400** (2:3 portrait). We do **not** pass Freeroam panel images as Seedream refs (only `headshot_url`). Classify may return an `artStyle` phrase, but we **do not** prepend it when reference images exist — Seedream should take style/species from the refs. A global tag like `[anime furry…]` can incorrectly furry-ize non-furry cast. Art-style prepend is only a fallback if there are **zero** reference images.
 
 ### Caching and Cross-Panel Reuse
 
-Results are cached in the `image_cache` table. The cache stores both `panelId` and `freeroamImageUrl` (the original Freeroam image URL). This enables **cross-panel reuse**: if two panels share the same Freeroam source image URL (common in long stories), the second panel gets the cached NSFW replacement instantly without re-generating.
+Results are cached in the `image_cache` table. The cache stores `panelId`, `freeroamImageUrl`, and `freeroamImagePrompt`. Freeroam often advances the story while keeping the **same art**; we only generate a new NSFW replacement when the Freeroam **image prompt** (or source image URL) changes.
 
-Cache lookup order in `checkImageReady`:
+Cache lookup order in `checkImageReady` / `generateNsfwImage`:
 1. Exact `panelId` match
-2. `freeroamImageUrl` match (cross-panel reuse)
+2. `freeroamImageUrl` match (same source file)
+3. `freeroamImagePrompt` match (same art / prompt across panels)
+
+Client also keeps a **sticky** NSFW URL keyed by image prompt so navigating panels with unchanged Freeroam art does not flash or re-run the pipeline.
 
 The `generateNsfwImage` procedure also checks the cache in the same order before starting generation. A `'generating'` placeholder row is inserted before any API calls to prevent duplicate generation if the user navigates away and back.
 
@@ -414,11 +417,79 @@ The `generateNsfwImage` procedure also checks the cache in the same order before
 - The prefix `'Change the image to '` is stripped before sending to DeepSeek — it is a UI instruction, not an image description.
 - If no action text is available, DeepSeek uses the scene context alone.
 
+### When NSFW generation runs
+
+Triggered client-side in `StoryReader` when **all** of:
+
+1. **Unrestricted Images** is enabled  
+2. Current panel has `images[0].prompt`  
+3. No session hit for this panel / art key, and no `ready` / `skipped` cache for this panel, freeroam image URL, or freeroam image prompt  
+4. Panel not already processed this session  
+5. **Non-empty `character_references`** after resolve (this panel **or** borrowed from a cached panel with the same freeroam image URL/prompt). **No refs → no classify/Seedream** (keep Freeroam art). Prevents mid-stretch generates with empty cast/headshots.
+
+**Reuse (no new Seedream):** same Freeroam **image prompt** or **image URL** as a previous `ready` generation (server cache + client sticky maps). Story can advance across many panels with the **same** Freeroam art — we keep the same NSFW replacement until Freeroam’s image prompt/URL changes.
+
+**Important Freeroam quirk:** `character_references` is typically present only on the panel where Freeroam **first generated/changed** that image. Later panels that reuse the same art often have **empty** `character_references`. Client resolves refs by searching `panelCache` for another panel with the same freeroam image URL or prompt that still has refs (usually the first panel that had that art). If neither has refs, generation is skipped until a panel with refs is loaded (or cache already has `ready` for that art).
+
 ### Character References
 
-Character headshot images from `character_references` on the panel are passed to Seedream as reference images (up to 2). DeepSeek does **not** receive character appearance descriptions — this prevents it from inventing wrong descriptions. Appearance is handled entirely by the headshot reference images.
+Source: Freeroam `panel_content.character_references`, mapped on `worlds.getPanel` to a top-level `character_references` object on the panel payload (not re-embedded inside `panel_content` after extract).
 
-**Headshot fallback:** The server first tries to match headshots by `~~Name` token in the Freeroam image prompt. If token matching yields no headshots (e.g. Freeroam hallucinated last names like `~~Kenji-Tanaka` when the character is just `Kenji`), it falls back to all `characterReferences` that have a `headshot_url`. If `characterReferences` is empty, the server fetches characters directly from Freeroam's `/api/world/{worldId}/characters/current` endpoint.
+**Semantics (confirmed product knowledge — keep this in mind):**  
+`character_references` lists **only characters that are in the image** for that panel. Keys are character IDs. Values include name, appearance, headshot, etc. It is **not** “extra world cast” beyond the shot.
+
+**Lifecycle:** Usually populated when Freeroam generates/updates the panel image; **subsequent story panels that keep the same image often omit `character_references`**. Do not assume every NSFW-eligible panel has refs — reuse art-key cache or borrow refs from the panel that first carried this art.
+
+Shape: `Record<characterId, { external_id, name, appearance, headshot_url, is_main_character }>`.
+
+Related field: `images[].visible_characters` is a lighter map (`name`, `external_id` only). Prefer `character_references` when you need headshots / IDs for NSFW.
+
+#### What Freeroam means by “headshot” (important)
+
+Freeroam’s field is named `headshot_url`, but **it is not always a face crop**. In Freeroam UI/API language, a “headshot” can be:
+
+- a true **portrait / head crop**, or  
+- a **full-body** character reference image  
+
+Many users (including this project’s author) store **full-body** art under `headshot_url`. Treat `headshot_url` as **“character reference image for likeness”**, not “face only.”
+
+**Implications for NSFW Seedream:**
+
+- Reference images often show **clothing and full pose** — Seedream will copy outfits unless the written prompt explicitly requires nude/bare skin for sexual scenes.  
+- Do **not** assume refs are neutral face plates that won’t influence wardrobe or body framing.  
+- We still use **only** `headshot_url` (never Freeroam panel images) as Seedream `images[]` refs.
+
+#### Why we do **not** smash character profile appearance into the Seedream prompt
+
+**Do not “rediscover” this the hard way — this is intentional.**
+
+We **used to** pull rich appearance text from the character profile (and/or dump `appearance` from refs into the generation prompt) and merge it with the scene. That caused bad results: wrong body descriptions fighting the Freeroam art, over-specified prompts, and Seedream ignoring or mangling likeness.
+
+**Settled approach:**
+
+1. **Written image prompt** (DeepSeek enhance + story context) drives pose/action/clothing.  
+2. **`headshot_url` refs** from `character_references` as Seedream reference images for character likeness (face **and/or** full body — see above). We do **not** pass Freeroam panel images as Seedream refs.  
+3. **Do not** paste full character profile appearance into the prompt as if it were ground truth for the frame.
+
+DeepSeek enhance may still use light sex/species descriptors from ref appearance when present; likeness is meant to come from **headshot_url reference images**, not a profile essay.
+
+#### Why we still parse `~~Name` tokens in the Freeroam image prompt
+
+Freeroam’s image prompts tag people as `~~Character-Name` (e.g. `~~Tama-Guthrie`). That string is what Freeroam’s own generator was told.
+
+We use `~~` tokens to:
+
+1. **Align headshots to names as written in the prompt** (matching can fail when Freeroam hallucinates surnames like `~~Kenji-Tanaka` vs ref `Kenji` — then fall back to refs / world characters).  
+2. **Drive cast language in the enhance step** (solo vs multi, avoid “both characters” when the prompt only tags one person).  
+3. **Cap headshot count** (max 2, and not more than people implied by tokens when tokens are present).
+
+**Note:** If `character_references` is the authoritative “who is in the image,” cast **count** can also come from `Object.keys(character_references).length`. Token parsing remains useful for **name alignment** and for cases where prompt tags and refs disagree. Prefer checking a real panel dump before changing match rules again.
+
+#### Edge case: in the scene / art but missing from the image prompt tags
+
+Freeroam has occasionally had someone relevant who is **not** tagged with `~~Name` in `images[].prompt` (incomplete tagging, POV “you,” etc.). Pure token matching can under-count headshots.
+
+**What we do today:** if token matching yields **no** headshots, fall back to `character_references` (who are in the image) / world characters, still capped.
 
 ### Loop Prevention
 
@@ -440,8 +511,11 @@ When a NSFW image is showing, a circular refresh icon appears in the reader top 
 
 ### Badge Indicators
 
-- **IMG badge** (amber `#f59e0b`) — only while `image_cache.status === 'generating'` (Seedream / Atlas image job). Not shown during DeepSeek classification, cache hits, or SFW/`skipped` panels.
+- **CHECK badge** (sky blue) — `image_cache.status === 'classifying'` (DeepSeek scene check).
+- **IMG badge** (amber `#f59e0b`) — only while `status === 'generating'` (Seedream / Atlas image job).
 - **GEN badge** (amber) — ElevenLabs TTS generation (unrelated to images).
+
+Local dev without Manus Forge storage falls back to the Atlas CDN output URL so generated images still display.
 
 ### Cache Management
 

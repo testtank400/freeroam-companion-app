@@ -227,6 +227,12 @@ export const imageCache = mysqlTable("image_cache", {
   imageUrl: text("imageUrl").notNull().default(''),
   /** Original Freeroam image URL — used to reuse generated images across panels with the same source image */
   freeroamImageUrl: text("freeroamImageUrl"),
+  /**
+   * Freeroam image prompt — primary cross-panel reuse key.
+   * Freeroam often keeps the same art (and prompt) across multiple story panels;
+   * we only generate a new NSFW replacement when this prompt changes.
+   */
+  freeroamImagePrompt: text("freeroamImagePrompt"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 

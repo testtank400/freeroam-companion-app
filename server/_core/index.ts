@@ -6,6 +6,7 @@ import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { registerOAuthRoutes } from "./oauth";
 import { registerStorageProxy } from "./storageProxy";
 import { registerExportRoute } from "../exportRoute";
+import { registerNsfwImageRoutes } from "../nsfwLocalStorage";
 
 import { appRouter } from "../routers";
 import { createContext } from "./context";
@@ -39,6 +40,7 @@ async function startServer() {
   registerStorageProxy(app);
   registerOAuthRoutes(app);
   registerExportRoute(app);
+  registerNsfwImageRoutes(app);
 
   // tRPC API
   app.use(

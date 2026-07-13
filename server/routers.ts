@@ -5,6 +5,7 @@ import { publicProcedure, router } from "./_core/trpc";
 import { z } from "zod";
 import { ENV } from "./_core/env";
 import { storagePut } from "./storage";
+import { saveNsfwImageLocally } from "./nsfwLocalStorage";
 import {
   addCharacterToCollection,
   addWorldToCollectionLocal,
@@ -1087,6 +1088,24 @@ export const appRouter = router({
           };
         };
 
+        // character_references live on panel_content in Freeroam; we lift them to top-level
+        // for the client. Also attach on next_panel so embedded navigation still has cast.
+        const extractCharacterReferences = (content: Record<string, unknown> | null | undefined) => {
+          if (!content?.character_references) return {};
+          return Object.fromEntries(
+            Object.entries(content.character_references as Record<string, Record<string, unknown>>).map(([id, ref]) => [
+              id,
+              {
+                external_id: ref.external_id as string,
+                name: ref.name as string,
+                appearance: ref.appearance as string | null,
+                headshot_url: ref.headshot_url as string | null,
+                is_main_character: ref.is_main_character as boolean,
+              },
+            ])
+          );
+        };
+
         return {
           panel_id: raw.panel_id as string,
           world_id: raw.world_id as string,
@@ -1109,20 +1128,7 @@ export const appRouter = router({
           panel_content: extractPanelContent(pc),
           // character_references: map of characterId -> { external_id, name, appearance, headshot_url, is_main_character }
           // Used for NSFW image generation — provides appearance descriptions and headshot URLs
-          character_references: pc?.character_references
-            ? Object.fromEntries(
-                Object.entries(pc.character_references as Record<string, Record<string, unknown>>).map(([id, ref]) => [
-                  id,
-                  {
-                    external_id: ref.external_id as string,
-                    name: ref.name as string,
-                    appearance: ref.appearance as string | null,
-                    headshot_url: ref.headshot_url as string | null,
-                    is_main_character: ref.is_main_character as boolean,
-                  },
-                ])
-              )
-            : {},
+          character_references: extractCharacterReferences(pc),
           next_panel: np ? {
             panel_id: np.panel_id as string,
             world_id: np.world_id as string ?? raw.world_id as string,
@@ -1143,6 +1149,7 @@ export const appRouter = router({
             phone_unread_count: 0,
             phone: { total: 0, by_app: {}, recent: [], version: null, seen_at_by_app: {} },
             panel_content: extractPanelContent(npPc),
+            character_references: extractCharacterReferences(npPc),
             next_panel: null,
           } : null,
         };
@@ -2640,12 +2647,33 @@ export const appRouter = router({
         // IMPORTANT: claim the panelId row BEFORE any slow LLM/image work.
         // The old code classified first, then deleted+inserted `generating` —
         // concurrent requests both saw empty cache, both classified, both hit Seedream.
+        const STALE_CLASSIFYING_MS = 90_000;  // DeepSeek should finish well under this
+        const STALE_GENERATING_MS = 120_000; // Seedream + upload; also recovers from mid-job server restarts
+
         const readPanelCache = async () => {
           const rows = await db.select().from(imageCache).where(eq(imageCache.panelId, input.panelId)).limit(1);
           return rows[0] ?? null;
         };
 
-        const existing = await readPanelCache();
+        /** Drop abandoned claims so regenerate / remount is not stuck on CHECK forever. */
+        const releaseIfStale = async (row: { status: string; createdAt: Date | string }) => {
+          if (row.status !== 'classifying' && row.status !== 'generating') return false;
+          const age = Date.now() - new Date(row.createdAt).getTime();
+          const limit = row.status === 'classifying' ? STALE_CLASSIFYING_MS : STALE_GENERATING_MS;
+          if (age <= limit) return false;
+          console.warn(`[NSFW] Releasing stale ${row.status} claim for panel ${input.panelId} (age ${Math.round(age / 1000)}s)`);
+          await db.delete(imageCache).where(eq(imageCache.panelId, input.panelId));
+          return true;
+        };
+
+        /** After long work, ensure we still own the claim (regenerate may have deleted/replaced it). */
+        const stillOwnClaim = async (expectedStatus: 'classifying' | 'generating') => {
+          const row = await readPanelCache();
+          return !!row && row.status === expectedStatus;
+        };
+
+        let existing = await readPanelCache();
+        if (existing && (await releaseIfStale(existing))) existing = null;
         if (existing) {
           if (existing.status === 'ready' && existing.imageUrl) {
             return { imageUrl: existing.imageUrl, fromCache: true, generating: false };
@@ -2663,32 +2691,81 @@ export const appRouter = router({
           }
         }
 
-        // Cross-panel reuse by Freeroam source image URL
+        // Cross-panel reuse: same Freeroam image URL OR same image prompt → same NSFW art.
+        // Freeroam often advances story panels without changing the art; prompt is the reliable "image changed" signal.
+        const tryReuseReady = async (row: { status: string; imageUrl: string | null; freeroamImageUrl?: string | null }) => {
+          if (row.status !== 'ready' || !row.imageUrl) return null;
+          await db.insert(imageCache).values({
+            panelId: input.panelId,
+            worldId: input.worldId,
+            status: 'ready',
+            imageUrl: row.imageUrl,
+            freeroamImageUrl: input.imageUrl ?? row.freeroamImageUrl ?? null,
+            freeroamImagePrompt: input.prompt || null,
+          }).catch(() => {});
+          const after = await readPanelCache();
+          if (after?.status === 'ready' && after.imageUrl) {
+            return { imageUrl: after.imageUrl, fromCache: true as const, generating: false as const };
+          }
+          return { imageUrl: row.imageUrl, fromCache: true as const, generating: false as const };
+        };
+
         if (input.imageUrl) {
           const cachedByUrl = await db.select().from(imageCache)
             .where(eq(imageCache.freeroamImageUrl, input.imageUrl))
             .limit(1);
-          if (cachedByUrl.length > 0 && cachedByUrl[0].status === 'ready' && cachedByUrl[0].imageUrl) {
-            await db.insert(imageCache).values({
-              panelId: input.panelId,
-              worldId: input.worldId,
-              status: 'ready',
-              imageUrl: cachedByUrl[0].imageUrl,
-              freeroamImageUrl: input.imageUrl,
-            }).catch(async () => {
-              // Race: another request claimed this panelId — prefer whatever they wrote
-            });
-            const after = await readPanelCache();
-            if (after?.status === 'ready' && after.imageUrl) {
-              return { imageUrl: after.imageUrl, fromCache: true, generating: false };
+          if (cachedByUrl.length > 0) {
+            if (cachedByUrl[0].status === 'ready' && cachedByUrl[0].imageUrl) {
+              const reused = await tryReuseReady(cachedByUrl[0]);
+              if (reused) return reused;
             }
-            if (after?.status === 'generating') {
+            if (cachedByUrl[0].status === 'generating') {
               return { imageUrl: null, fromCache: false, generating: true };
             }
-            if (after?.status === 'classifying') {
+            if (cachedByUrl[0].status === 'classifying') {
               return { imageUrl: null, fromCache: false, generating: false, classifying: true };
             }
-            return { imageUrl: cachedByUrl[0].imageUrl, fromCache: true, generating: false };
+            // skipped for this freeroam image — do not re-generate for other panels with same source
+            if (cachedByUrl[0].status === 'skipped') {
+              await db.insert(imageCache).values({
+                panelId: input.panelId,
+                worldId: input.worldId,
+                status: 'skipped',
+                imageUrl: '',
+                freeroamImageUrl: input.imageUrl,
+                freeroamImagePrompt: input.prompt || null,
+              }).catch(() => {});
+              return { imageUrl: null, fromCache: true, generating: false, notNsfw: true };
+            }
+          }
+        }
+
+        if (input.prompt) {
+          const cachedByPrompt = await db.select().from(imageCache)
+            .where(eq(imageCache.freeroamImagePrompt, input.prompt))
+            .limit(1);
+          if (cachedByPrompt.length > 0) {
+            if (cachedByPrompt[0].status === 'ready' && cachedByPrompt[0].imageUrl) {
+              const reused = await tryReuseReady(cachedByPrompt[0]);
+              if (reused) return reused;
+            }
+            if (cachedByPrompt[0].status === 'generating') {
+              return { imageUrl: null, fromCache: false, generating: true };
+            }
+            if (cachedByPrompt[0].status === 'classifying') {
+              return { imageUrl: null, fromCache: false, generating: false, classifying: true };
+            }
+            if (cachedByPrompt[0].status === 'skipped') {
+              await db.insert(imageCache).values({
+                panelId: input.panelId,
+                worldId: input.worldId,
+                status: 'skipped',
+                imageUrl: '',
+                freeroamImageUrl: input.imageUrl ?? null,
+                freeroamImagePrompt: input.prompt,
+              }).catch(() => {});
+              return { imageUrl: null, fromCache: true, generating: false, notNsfw: true };
+            }
           }
         }
 
@@ -2701,6 +2778,7 @@ export const appRouter = router({
             status: 'classifying',
             imageUrl: '',
             freeroamImageUrl: input.imageUrl ?? null,
+            freeroamImagePrompt: input.prompt || null,
           });
           claimed = true;
         } catch {
@@ -2737,38 +2815,128 @@ export const appRouter = router({
 
         // Step A: DeepSeek — NSFW classification + art style detection
         // IMPORTANT: Only proceed if DeepSeek EXPLICITLY returns isNsfw: true.
+        // Scene text (prev/current/next panel) is included so sexual scenes still flag when the
+        // Freeroam image prompt is a mild close-up (hand, wall, object) or otherwise SFW-worded.
+        // We do NOT use vision on the panel image or Freeroam's is_nsfw flag.
         let classifyConfirmedNsfw = false;
         if (atlasLlmKey) {
           try {
-            const actionContext = input.actionText ? `\nUser action: "${input.actionText}"` : '';
+            const actionContext = input.actionText ? `\nUser action / image instruction: "${input.actionText}"` : '';
+            const sceneLines: string[] = [];
+            if (input.prevPanelText) sceneLines.push(`Previous panel: ${input.prevPanelText}`);
+            if (input.currentPanelText) sceneLines.push(`Current panel: ${input.currentPanelText}`);
+            if (input.nextPanelText) sceneLines.push(`Next panel: ${input.nextPanelText}`);
+            // Always log scene text that made it into classify (not just booleans)
+            console.log('[NSFW] Classify scene context:', {
+              panelId: input.panelId,
+              prev: input.prevPanelText ? input.prevPanelText.slice(0, 120) : null,
+              current: input.currentPanelText ? input.currentPanelText.slice(0, 120) : null,
+              next: input.nextPanelText ? input.nextPanelText.slice(0, 120) : null,
+              lineCount: sceneLines.length,
+            });
+            const sceneContext = sceneLines.length > 0
+              ? `\nStory context (narration/dialogue around this panel — use this to judge if the SCENE is sexual even when the image prompt is mild):\n${sceneLines.join('\n')}`
+              : '';
+
+            /** DeepSeek V4 Flash often puts chain-of-thought in reasoning_content and JSON in content.
+             *  With a low max_tokens budget, content can be empty and finish_reason=length — we must
+             *  give enough tokens AND recover JSON from content or reasoning_content. */
+            const extractJsonObject = (text: string): Record<string, unknown> | null => {
+              if (!text) return null;
+              const cleaned = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/m, '').trim();
+              try {
+                return JSON.parse(cleaned) as Record<string, unknown>;
+              } catch { /* fall through */ }
+              // Find last {...} block (answer often after reasoning prose)
+              const start = cleaned.lastIndexOf('{');
+              const end = cleaned.lastIndexOf('}');
+              if (start >= 0 && end > start) {
+                try {
+                  return JSON.parse(cleaned.slice(start, end + 1)) as Record<string, unknown>;
+                } catch { /* ignore */ }
+              }
+              return null;
+            };
+
             const classifyResp = await fetch('https://api.atlascloud.ai/v1/chat/completions', {
               method: 'POST',
               headers: { 'Authorization': `Bearer ${atlasLlmKey}`, 'Content-Type': 'application/json' },
               body: JSON.stringify({
                 model: 'deepseek-ai/deepseek-v4-flash',
                 messages: [
-                  { role: 'system', content: 'You are a content and art style analyzer. Always respond with valid JSON only, no markdown.' },
-                  { role: 'user', content: `Analyze the image prompt and optional user action below. Return a JSON object with two fields:\n1. "isNsfw": true if ANY of the following apply: (a) the image prompt describes nudity, bare skin, revealing/barely-clothed characters, sexual tension, or intimate scenes, (b) the user action describes sexual acts, undressing, or explicit content. Return false only for clearly non-sexual scenes (action, adventure, fully-clothed dialogue).\n2. "artStyle": a short description of the art style (e.g. "anime illustration, cel-shaded", "semi-realistic digital painting"). Be concise, max 10 words.\n\nImage prompt: "${input.prompt}"${actionContext}` },
+                  { role: 'system', content: 'You are a content and art style analyzer for an adult interactive story app. Prefer isNsfw:true for erotic, sexual, or climax-coded scenes—not only clinical sex or nudity. Romantic sex euphemisms still count. End with a single JSON object only (no markdown).' },
+                  { role: 'user', content: `Analyze the image prompt, optional user action, and optional story context below. Return a JSON object with two fields:
+
+1. "isNsfw": boolean. Set true if ANY of the following apply (be inclusive; erotic implication and climax euphemism are enough):
+
+   (a) Image prompt: nudity, bare skin, revealing/lingerie/barely-clothed outfits, sexual poses, intimate framing (lips on ear/neck, faces pressed together, bodies close in lust).
+
+   (b) User action: sexual acts, undressing, explicit or erotic instructions.
+
+   (c) Story context (prev/current/next panel text): sexual acts, intercourse, oral/anal/etc., undressing, arousal, orgasm/climax, OR clear erotic intimacy—even without clinical sex words.
+
+   Examples that MUST be isNsfw:true (do not treat as mere romance):
+   - Pinning to a wall/door after locking it; grinding/pressing bodies; panting with desire; claws/hands scrabbling in lust
+   - "her body knows what it wants"; bedroom/door-slam seduction; making out that is sexual; dry-humping
+   - "so wet/tight/hard" style dialogue
+   - Body shaking while pressed forehead-to-forehead / face-to-face with erotic devotion
+   - "I'm gonna give you everything" / "every last drop" / finishing / cumming euphemisms during intimacy
+   - "love you" combined with physical sexual urgency (shaking, pressing, promising climax)
+   - Lips brushing ear/neck with hunger, tears of intensity, half-lidded eyes in a sexual context
+
+   (d) Mild image prompt (hand, face, bag, hallway, soft close-up) does NOT make the scene SFW if story context is erotic or climax-coded.
+
+   Set false ONLY for clearly non-sexual content: pure action/adventure/combat, plot exposition, fully-clothed non-romantic dialogue, light non-sexual affection (friendly hug) with no lust or climax coding.
+
+   When unsure between erotic intimacy vs pure romance/plot, choose true.
+
+2. "artStyle": short art style phrase (e.g. "anime illustration, cel-shaded"). Max 10 words.
+
+Image prompt: "${input.prompt}"${actionContext}${sceneContext}
+
+Respond with ONLY this JSON (no other text): {"isNsfw": true or false, "artStyle": "..."}` },
                 ],
-                max_tokens: 100,
+                // V4 Flash uses reasoning tokens first; 100 was entirely consumed by CoT with empty content.
+                max_tokens: 800,
                 temperature: 0,
               }),
             });
             if (classifyResp.ok) {
-              const classifyData = await classifyResp.json();
-              const rawText = classifyData?.choices?.[0]?.message?.content?.trim();
-              if (rawText) {
-                try {
-                  const cleaned = rawText.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
-                  const parsed = JSON.parse(cleaned) as { isNsfw?: boolean; artStyle?: string | null };
-                  if (parsed.isNsfw === true) {
-                    classifyConfirmedNsfw = true;
-                    if (parsed.artStyle) detectedArtStyle = parsed.artStyle;
-                  }
-                } catch { /* JSON parse failed — do not generate */ }
+              const classifyData = await classifyResp.json() as {
+                choices?: Array<{
+                  finish_reason?: string;
+                  message?: { content?: string; reasoning_content?: string };
+                }>;
+              };
+              const msg = classifyData?.choices?.[0]?.message;
+              const content = msg?.content?.trim() ?? '';
+              const reasoning = (msg as { reasoning_content?: string } | undefined)?.reasoning_content?.trim() ?? '';
+              const finishReason = classifyData?.choices?.[0]?.finish_reason;
+              console.log('[NSFW] DeepSeek classify raw:', {
+                finishReason,
+                contentLen: content.length,
+                reasoningLen: reasoning.length,
+                contentPreview: content.slice(0, 200) || null,
+              });
+              const parsed =
+                extractJsonObject(content) ??
+                extractJsonObject(reasoning);
+              if (parsed && parsed.isNsfw === true) {
+                classifyConfirmedNsfw = true;
+                if (typeof parsed.artStyle === 'string' && parsed.artStyle) {
+                  detectedArtStyle = parsed.artStyle;
+                }
+              } else if (parsed) {
+                console.log('[NSFW] DeepSeek classify parsed isNsfw=', parsed.isNsfw);
+              } else {
+                console.warn('[NSFW] DeepSeek classify: no JSON in content or reasoning_content');
               }
+            } else {
+              console.warn('[NSFW] DeepSeek classify HTTP', classifyResp.status);
             }
-          } catch { /* DeepSeek call failed — do not generate */ }
+          } catch (err) {
+            console.error('[NSFW] DeepSeek classify failed', err);
+          }
         }
 
         if (input.debug) {
@@ -2778,11 +2946,12 @@ export const appRouter = router({
         // Not NSFW: mark skipped so remounts / retries do not re-enter the pipeline
         if (!classifyConfirmedNsfw) {
           if (input.debug) console.log('[NSFW DEBUG] DeepSeek returned not-NSFW — skipping generation');
-          if (claimed) {
+          if (claimed && (await stillOwnClaim('classifying'))) {
             await db.update(imageCache).set({
               status: 'skipped',
               imageUrl: '',
               freeroamImageUrl: input.imageUrl ?? null,
+              freeroamImagePrompt: input.prompt || null,
             }).where(eq(imageCache.panelId, input.panelId));
           }
           return { imageUrl: null, fromCache: false, generating: false, notNsfw: true };
@@ -2791,14 +2960,23 @@ export const appRouter = router({
         const atlasKey = process.env.ATLAS_CLOUD_API_KEY;
         if (!atlasKey) {
           // Release claim so a later retry can run once the key is configured
-          await db.delete(imageCache).where(eq(imageCache.panelId, input.panelId));
+          if (await stillOwnClaim('classifying')) {
+            await db.delete(imageCache).where(eq(imageCache.panelId, input.panelId));
+          }
           throw new Error('ATLAS_CLOUD_API_KEY not configured');
+        }
+
+        // Regenerate may have wiped our claim while DeepSeek was running — do not continue
+        if (!(await stillOwnClaim('classifying'))) {
+          console.warn(`[NSFW] Lost classifying claim for ${input.panelId} after DeepSeek — aborting`);
+          return { imageUrl: null, fromCache: false, generating: false, aborted: true };
         }
 
         // Promote claim to Seedream phase — only now should clients show the IMG badge
         await db.update(imageCache).set({
           status: 'generating',
           freeroamImageUrl: input.imageUrl ?? null,
+          freeroamImagePrompt: input.prompt || null,
         }).where(eq(imageCache.panelId, input.panelId));
 
         try {
@@ -2861,103 +3039,229 @@ export const appRouter = router({
             } catch { /* non-fatal */ }
           }
 
-          // Step 4: DeepSeek V4 Flash — explicit prompt enhancement with character appearances
-          // DeepSeek rewrites the source into an explicit action/scene prompt.
-          // Character names are replaced with physical descriptors derived from their appearance text.
-          // Headshot images handle face/hair/colors — DeepSeek handles body type, species traits, proportions.
+          // Cast size: character_references = who is in the image (authoritative).
+          // ~~ tokens are for name/headshot alignment, not for inventing a larger cast.
+          const refCount = Object.keys(charRefs).length;
+          const characterCount = Math.max(1, refCount || promptedNames.size || Object.keys(headshotMap).length || 1);
+          const isSoloScene = characterCount === 1;
+
+          // Step 4: DeepSeek V4 Flash — explicit prompt enhancement
+          // Sex/gender must come from character_references, never invent "the man" for a woman/futa pair.
+          // Clothing from story/image prompt only; otherwise keep reference image outfits.
+          // CRITICAL: Freeroam image prompts are often mild close-ups while the STORY is explicit sex.
+          // Story dialogue/narration is the primary source of sexual action; image prompt is framing only.
+          const freeroamPromptPlain = input.prompt.replace(/~~([\w-]+)/g, (_, n: string) => n.replace(/-/g, ' '));
+          const sceneLines: string[] = [];
+          if (input.prevPanelText) sceneLines.push(`Previous: ${input.prevPanelText}`);
+          if (input.currentPanelText) sceneLines.push(`Current: ${input.currentPanelText}`);
+          if (input.nextPanelText) sceneLines.push(`Next: ${input.nextPanelText}`);
+          const storyBlob = sceneLines.join('\n');
+
           if (atlasLlmKey) {
             try {
-              const sourcePrompt = input.actionText || input.prompt.replace(/~~([\w-]+)/g, (_, n: string) => n.replace(/-/g, ' '));
-              // Build scene context from surrounding panel story text
-              const sceneLines: string[] = [];
-              if (input.prevPanelText) sceneLines.push(`Previous: ${input.prevPanelText}`);
-              if (input.currentPanelText) sceneLines.push(`Current: ${input.currentPanelText}`);
-              if (input.nextPanelText) sceneLines.push(`Next: ${input.nextPanelText}`);
               const sceneContext = sceneLines.length > 0
-                ? `Story context (use to understand the mood, setting, and what is happening):\n${sceneLines.join('\n')}\n\n`
+                ? `STORY CONTEXT (PRIMARY source of pose, sexual action, body state, and climax — trust this over a mild image prompt):\n${storyBlob}\n\n`
                 : '';
-              // Build character descriptor block — name -> "[sex] [species]" only
-              // Full character visuals are already in the reference images; we only need sex+species for the prompt
-              const charDescriptorLines: string[] = [];
-              for (const [, ref] of Object.entries(charRefs) as [string, { name: string; appearance: string | null }][]) {
-                if (ref.appearance) {
-                  charDescriptorLines.push(`${ref.name}: ${ref.appearance}`);
-                }
-              }
-              const charDescriptorBlock = charDescriptorLines.length > 0
-                ? `Characters (extract ONLY sex and species to use as name replacements, e.g. "succubus woman", "human man", "elf male" — nothing else):\n${charDescriptorLines.join('\n')}\n\n`
+
+              /** Map appearance text → sex label for the prompt (no clothing, no inventing). */
+              const sexLabelFromAppearance = (appearance: string | null | undefined): string => {
+                const a = (appearance || '').toLowerCase();
+                if (/futanari|\bfuta\b|hermaphrodite|dickgirl|newhalf/.test(a)) return 'futanari woman';
+                if (/\b(trans\s*man|ftm)\b/.test(a)) return 'man';
+                if (/\b(trans\s*woman|mtf)\b/.test(a)) return 'woman';
+                if (/\b(female|woman|girl|she\/her|she,| heroine)\b/.test(a)) return 'woman';
+                if (/\b(male|man|boy|he\/him|he,)\b/.test(a) && !/\b(female|woman|girl)\b/.test(a)) return 'man';
+                // Unknown — neutral; do NOT default to man
+                return 'person';
+              };
+
+              const castEntries = Object.values(charRefs) as Array<{
+                name: string;
+                appearance: string | null;
+                headshot_url: string | null;
+              }>;
+              const castLines = castEntries.map((ref, i) => {
+                const sex = sexLabelFromAppearance(ref.appearance);
+                return `${i + 1}. Use descriptor: "the ${sex}" (this is ${ref.name.replace(/-/g, ' ')} — do not change their sex/gender)`;
+              });
+              const castListBlock = castLines.length > 0
+                ? `FIXED CAST (use these sex descriptors only; headshot order matches this list):\n${castLines.join('\n')}\n\n`
                 : '';
+
+              const castRule = isSoloScene
+                ? `CAST RULE (critical): Exactly ONE named character from FIXED CAST is visible (they may be partial: hand, arm, torso). Do NOT invent a second face/body as a full second person. POV partner may be implied only as off-screen / cropped edge if the story requires contact — never invent a new character identity.`
+                : `CAST RULE (critical): Exactly ${characterCount} distinct people from FIXED CAST. Do NOT invent extra people. Do NOT change anyone's sex/gender. Do NOT invent a man if the cast is women and/or futanari. Do NOT force a heterosexual male/female pair. If two cast members are both "woman" or "futanari woman", keep both female-presenting (e.g. "the first woman" and "the second woman" / "the futanari woman").`;
+
+              // Detect clearly sexual story/action so clothing rules can hard-require nudity.
+              // Freeroam "headshot_url" refs are often FULL-BODY clothed art (not just face crops);
+              // without explicit nude language Seedream copies outfits from those refs.
+              const sexualStorySignal = [
+                input.actionText,
+                storyBlob,
+                freeroamPromptPlain,
+              ].filter(Boolean).join('\n').toLowerCase();
+              const isSexualScene = /(?:\bsex\b|intercourse|penetrat|thrust|fuck|fucking|cock|pussy|clit|cum|orgasm|climax|moan|wet for|so tight|so wet|blowjob|oral|anal|grind|hump|naked|nude|undress|bare skin|between (?:her|his|their) legs|inside (?:her|him|you)|mounts? you|rides? you)/i.test(sexualStorySignal);
+
+              const clothingRule = isSexualScene
+                ? `CLOTHING RULE (critical — SEXUAL SCENE):
+- Characters engaged in sex MUST be nude / bare skin. State this explicitly in the prompt (e.g. "nude", "bare skin", "no clothing", "naked").
+- Reference images (Freeroam headshot_url) are often clothed full-body art — IGNORE their outfits. Do NOT write "same clothing as the reference image".
+- Do NOT invent lingerie, dresses, shirts, pants, or partial cover-ups unless the story explicitly names that garment during the act.
+- Partial close-ups (hand, arm): still imply nude body; never add sleeves/gloves/outfit details that dress the scene.`
+                : `CLOTHING RULE (critical — non-sexual / unclear):
+- If story or Freeroam image prompt EXPLICITLY states clothing, partial undress, or nudity, match that.
+- If clothing/nudity is unspecified: write "same clothing as the reference image, do not change outfit".
+- Do NOT invent random outfits.`;
+
+              const framingNote =
+                `FRAMING (secondary): Freeroam image prompt describes camera/composition only (may be a mild close-up). Keep that framing when possible, but the ACTION must match the story.\nFreeroam framing: "${freeroamPromptPlain}"`;
+
+              const actionNote = input.actionText
+                ? `\nUser action / image instruction: "${input.actionText}"\n`
+                : '';
+
               const enhanceResp = await fetch('https://api.atlascloud.ai/v1/chat/completions', {
                 method: 'POST',
                 headers: { 'Authorization': `Bearer ${atlasLlmKey}`, 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                   model: 'deepseek-ai/deepseek-v4-flash',
                   messages: [
-                    { role: 'system', content: 'You are an adult image generation prompt writer. Write explicit, anatomically detailed prompts in the style of professional adult image generation. NEVER use character names or species — replace them with sex only (e.g. "the woman", "the man", "the female", "the male"). Do NOT describe face, hair, clothing, species, or visual appearance — the reference image handles that. ALWAYS state that all characters are fully naked/nude. Focus on: exact sexual positioning, anatomical detail (erect penis, vaginal penetration, etc.), body tension and physical states, and the emotional mood of the scene. Use active present-tense language. Be clinical and specific, not vague. Always respond with valid JSON only, no markdown.' },
-                    { role: 'user', content: `${charDescriptorBlock}${sceneContext}Rewrite the user intent below as a detailed explicit image generation prompt. Replace all character names with sex-only descriptors ("the woman", "the man" etc — no species, no names). Always include that all characters are fully naked. Describe the exact sexual position, anatomical contact, body states (tense, relaxed, etc.), and scene mood. Do NOT describe appearance or species. Write in present tense. Keep it under 120 words. Respond with JSON: {"prompt": ".."}
+                    {
+                      role: 'system',
+                      content:
+                        'You write erotic image-edit prompts for Seedream for an adult story app. When story context is sexual, the prompt MUST describe that sexual action explicitly and characters MUST be nude. Freeroam reference images (called headshots but often full-body) are for likeness only — ignore their clothing in sexual scenes. Never collapse sex to a mild SFW close-up. Use ONLY FIXED CAST sex descriptors. Present tense. End with a single JSON object only (no markdown).',
+                    },
+                    {
+                      role: 'user',
+                      content: `${castListBlock}${sceneContext}${castRule}
 
-User intent: "${sourcePrompt}"` },
+${clothingRule}
+
+${framingNote}
+${actionNote}
+Write a Seedream image-edit prompt:
+- PRIORITY 1: sexual action / body contact / climax from STORY CONTEXT (thrusting, penetration, wet, tight, kissing while pinned, claws in wall during sex, etc.)
+- PRIORITY 2: framing from Freeroam prompt (close-up hand, etc.) can remain if it still shows the sexual moment
+- ${isSexualScene ? 'PRIORITY 3: explicitly include nude / bare skin / no clothing (required)' : 'PRIORITY 3: clothing per CLOTHING RULE'}
+- NEVER output a SFW-only hand/wall description when the story is intercourse
+- NEVER output "same clothing as the reference image" when the story is sexual
+- Respect FIXED CAST and CAST RULE (no invented people)
+- Do NOT invent face, hair, or species
+- Keep under 140 words
+Respond with ONLY this JSON: {"prompt": "..."}`,
+                    },
                   ],
-                  max_tokens: 200,
-                  temperature: 0.7,
+                  // V4 Flash spends tokens on reasoning first; need headroom for the JSON answer
+                  max_tokens: 900,
+                  temperature: 0.4,
                 }),
               });
               if (enhanceResp.ok) {
-                const enhanceData = await enhanceResp.json();
-                const rawText = enhanceData?.choices?.[0]?.message?.content?.trim();
-                if (rawText) {
+                const enhanceData = await enhanceResp.json() as {
+                  choices?: Array<{ message?: { content?: string; reasoning_content?: string } }>;
+                };
+                const emsg = enhanceData?.choices?.[0]?.message;
+                const eContent = emsg?.content?.trim() ?? '';
+                const eReasoning = emsg?.reasoning_content?.trim() ?? '';
+                const extractPromptJson = (text: string): string | null => {
+                  if (!text) return null;
+                  const cleaned = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/m, '').trim();
                   try {
-                    // Strip markdown code fences if DeepSeek wrapped the JSON
-                    const cleaned = rawText.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
-                    const parsed = JSON.parse(cleaned) as { prompt?: string };
-                    if (parsed.prompt) enhancedSeedreamPrompt = parsed.prompt;
-                  } catch { /* JSON parse failed — proceed without enhancement */ }
+                    const p = JSON.parse(cleaned) as { prompt?: string };
+                    if (p.prompt) return p.prompt;
+                  } catch { /* fall through */ }
+                  const start = cleaned.lastIndexOf('{');
+                  const end = cleaned.lastIndexOf('}');
+                  if (start >= 0 && end > start) {
+                    try {
+                      const p = JSON.parse(cleaned.slice(start, end + 1)) as { prompt?: string };
+                      if (p.prompt) return p.prompt;
+                    } catch { /* ignore */ }
+                  }
+                  return null;
+                };
+                enhancedSeedreamPrompt =
+                  extractPromptJson(eContent) ??
+                  extractPromptJson(eReasoning);
+                console.log('[NSFW] DeepSeek enhance result:', {
+                  contentLen: eContent.length,
+                  reasoningLen: eReasoning.length,
+                  promptPreview: enhancedSeedreamPrompt?.slice(0, 220) ?? null,
+                });
+                if (!enhancedSeedreamPrompt) {
+                  console.warn('[NSFW] DeepSeek enhance: no prompt JSON');
                 }
               }
-            } catch { /* non-fatal */ }
+            } catch (err) {
+              console.error('[NSFW] DeepSeek enhance failed', err);
+            }
           }
 
           // Build final Seedream prompt
-          // Priority: DeepSeek-enhanced prompt > user action text > stripped scene description
+          // Priority: DeepSeek-enhanced > actionText+story blend > story+framing > freeroam prompt alone
           let seedreamPrompt: string;
           if (enhancedSeedreamPrompt) {
-            // Best: DeepSeek rewrote the source into an explicit, detailed image prompt
             seedreamPrompt = enhancedSeedreamPrompt;
-          } else if (input.actionText) {
-            // Fallback: user's own words (DeepSeek call may have failed)
-            seedreamPrompt = input.actionText;
+          } else if (input.actionText || storyBlob) {
+            // Fallback: do not silently send a mild Freeroam close-up when we have story sex text
+            const parts = [
+              input.actionText,
+              storyBlob ? `Scene: ${storyBlob}` : null,
+              freeroamPromptPlain ? `Framing: ${freeroamPromptPlain}` : null,
+            ].filter(Boolean);
+            seedreamPrompt = parts.join(' | ');
           } else {
-            // Last resort: strip ~~Name tokens, keep the scene description clean
-            seedreamPrompt = input.prompt.replace(/~~([\w-]+)/g, (_, name: string) => name.replace(/-/g, ' '));
+            seedreamPrompt = freeroamPromptPlain;
           }
 
-          // Always ensure nudity is stated — append if not already present
-          if (!/\bnaked\b|\bnude\b|\bundressed\b|\bfully\s+unclothed\b/i.test(seedreamPrompt)) {
-            seedreamPrompt = `${seedreamPrompt}, both characters fully naked`;
+          // Post-process clothing for sexual scenes: Freeroam headshot_url refs are often full-body
+          // clothed art; Seedream copies outfits unless the prompt forbids it.
+          const sexualForClothing = /(?:\bsex\b|intercourse|penetrat|thrust|fuck|fucking|cock|pussy|clit|cum|orgasm|climax|moan|wet for|so tight|so wet|blowjob|oral|anal|grind|hump|naked|nude|undress|between (?:her|his|their) legs|inside (?:her|him|you))/i
+            .test([seedreamPrompt, input.actionText, storyBlob].filter(Boolean).join('\n'));
+          if (sexualForClothing) {
+            seedreamPrompt = seedreamPrompt
+              .replace(/\bsame clothing as the reference image[^.]*\.?/gi, '')
+              .replace(/\bdo not change outfit\.?/gi, '')
+              .replace(/\bwears? the same clothing[^.]*\.?/gi, '')
+              .replace(/\s{2,}/g, ' ')
+              .trim();
+            if (!/\b(nude|naked|bare skin|no clothing|unclothed|fully bare)\b/i.test(seedreamPrompt)) {
+              seedreamPrompt = `${seedreamPrompt} Nude, bare skin, no clothing.`;
+            }
           }
 
-          // Add art style context from Grok (prepend so Seedream respects the style)
-          if (detectedArtStyle) {
-            seedreamPrompt = `[${detectedArtStyle}] ${seedreamPrompt}`;
-          }
-
-          // Reference images: prefer headshots of characters matched via ~~token lookup.
-          // If token matching yielded nothing (no tokens in prompt, or Freeroam hallucinated last names),
-          // fall back to all characterReferences that have a headshot_url — they are already panel-scoped.
-          let referenceImageUrls = Object.values(headshotMap).slice(0, 2);
-          if (referenceImageUrls.length === 0) {
-            referenceImageUrls = Object.values(charRefs)
+          // Reference images: character headshot_url ONLY (max 2).
+          // Freeroam "headshot" may be a face crop OR full-body character art — treat as likeness ref.
+          // Do NOT pass Freeroam panel images (mild SFW framing pulls composition the wrong way).
+          const maxHeadshots = Math.min(2, characterCount);
+          const referenceImageUrls: string[] = Object.values(headshotMap).slice(0, maxHeadshots);
+          if (referenceImageUrls.length < maxHeadshots) {
+            const fromRefs = Object.values(charRefs)
               .filter((ref) => (ref as { headshot_url: string | null }).headshot_url)
-              .map((ref) => (ref as { headshot_url: string }).headshot_url)
-              .slice(0, 2);
+              .map((ref) => (ref as { headshot_url: string }).headshot_url);
+            for (const url of fromRefs) {
+              if (referenceImageUrls.length >= maxHeadshots) break;
+              if (!referenceImageUrls.includes(url)) referenceImageUrls.push(url);
+            }
           }
 
-          // Limit reference images to 2 max
           const images = referenceImageUrls;
 
+          // Do NOT prepend classify artStyle (e.g. "[anime furry illustration]") when we have
+          // character reference images. Seedream should take line weight / species / style from
+          // the headshot_url refs (which may be full-body). A global "furry" tag can force
+          // non-furry cast members into furry form. Style tag only if we have zero refs.
+          if (detectedArtStyle && images.length === 0) {
+            seedreamPrompt = `[${detectedArtStyle}] ${seedreamPrompt}`;
+          } else if (detectedArtStyle) {
+            console.log('[NSFW] Skipping artStyle prepend (using ref images for style):', detectedArtStyle);
+          }
+
+          // Always log what Seedream actually receives (this is the main "why is the art mild?" debug line)
+          console.log('[NSFW] Final Seedream prompt:', seedreamPrompt?.slice(0, 400));
+          console.log('[NSFW] Seedream reference images (headshots only):', images.length, images.map(u => u.slice(0, 70)));
           if (input.debug) {
-            console.log('[NSFW DEBUG] Final Seedream prompt:', seedreamPrompt?.slice(0, 300));
-            console.log('[NSFW DEBUG] Reference images:', referenceImageUrls);
+            console.log('[NSFW DEBUG] Full Seedream prompt:', seedreamPrompt);
           }
 
           // Call Atlas Cloud Seedream v4.5 Edit
@@ -3003,65 +3307,147 @@ User intent: "${sourcePrompt}"` },
 
           if (!resultUrl) throw new Error('Atlas Cloud generation timed out');
 
-          // Upload to S3
+          // Always download the Atlas output. Aliyun OSS URLs often fail as <img src>
+          // in the browser (hotlink / short-lived). Re-host via Forge when available,
+          // otherwise save under data/nsfw-images and serve at /api/nsfw-images/*.
           const imgResp = await fetch(resultUrl);
-          if (!imgResp.ok) throw new Error('Failed to fetch generated image');
+          if (!imgResp.ok) throw new Error(`Failed to fetch generated image (${imgResp.status})`);
           const imgBuffer = Buffer.from(await imgResp.arrayBuffer());
-          const { storagePut } = await import('./storage');
-          const { url: s3Url } = await storagePut(`nsfw-images/${input.panelId}.webp`, imgBuffer, 'image/webp');
+          const contentType = imgResp.headers.get('content-type') || 'image/jpeg';
+          const ext = contentType.includes('png') ? 'png' : contentType.includes('webp') ? 'webp' : 'jpeg';
 
-          // Update cache to ready, storing the freeroamImageUrl for cross-panel reuse
+          let finalUrl: string;
+          const { ENV } = await import('./_core/env');
+          if (ENV.forgeApiUrl && ENV.forgeApiKey) {
+            try {
+              const { storagePut } = await import('./storage');
+              const { url: s3Url } = await storagePut(
+                `nsfw-images/${input.panelId}.${ext}`,
+                imgBuffer,
+                contentType
+              );
+              finalUrl = s3Url;
+            } catch (storageErr) {
+              console.error('[NSFW] Forge upload failed, using local disk fallback:', storageErr);
+              finalUrl = await saveNsfwImageLocally(input.panelId, imgBuffer, ext);
+            }
+          } else {
+            if (input.debug) console.log('[NSFW DEBUG] Forge not configured — saving image locally');
+            finalUrl = await saveNsfwImageLocally(input.panelId, imgBuffer, ext);
+          }
+
+          // Only write ready if we still own the generating claim (regenerate may have cleared it)
+          if (!(await stillOwnClaim('generating'))) {
+            console.warn(`[NSFW] Lost generating claim for ${input.panelId} after Seedream — not writing ready`);
+            return { imageUrl: finalUrl, fromCache: false, generating: false, aborted: true };
+          }
+
+          // Update cache to ready — freeroamImageUrl + freeroamImagePrompt enable cross-panel reuse
           await db.update(imageCache).set({
             status: 'ready',
-            imageUrl: s3Url,
+            imageUrl: finalUrl,
             freeroamImageUrl: input.imageUrl ?? null,
+            freeroamImagePrompt: input.prompt || null,
           }).where(eq(imageCache.panelId, input.panelId));
 
-          return { imageUrl: s3Url, fromCache: false, generating: false };
+          return { imageUrl: finalUrl, fromCache: false, generating: false };
         } catch (err) {
-          // Clean up placeholder on failure
-          await db.delete(imageCache).where(eq(imageCache.panelId, input.panelId));
+          console.error('[NSFW] generateNsfwImage failed for panel', input.panelId, err);
+          // Clean up only if we still own a claim for this panel
+          const row = await readPanelCache();
+          if (row && (row.status === 'classifying' || row.status === 'generating')) {
+            await db.delete(imageCache).where(eq(imageCache.panelId, input.panelId));
+          }
           throw err;
         }
       }),
 
     /** Check if an NSFW image is ready in the cache */
     checkImageReady: publicProcedure
-      .input(z.object({ panelId: z.string(), freeroamImageUrl: z.string().optional() }))
+      .input(z.object({
+        panelId: z.string(),
+        freeroamImageUrl: z.string().optional(),
+        /** Freeroam image prompt — preferred reuse key when Freeroam keeps the same art across panels */
+        freeroamImagePrompt: z.string().optional(),
+      }))
       .query(async ({ input }) => {
         const { getDb } = await import('./db');
         const { imageCache } = await import('../drizzle/schema');
         const { eq } = await import('drizzle-orm');
         const db = await getDb();
         if (!db) return { status: 'not_found', imageUrl: null };
+
+        const STALE_CLASSIFYING_MS = 90_000;
+        const STALE_GENERATING_MS = 120_000; // mid-job restart leaves orphan generating rows
+        const isStale = (row: { status: string; createdAt: Date | string }) => {
+          if (row.status !== 'classifying' && row.status !== 'generating') return false;
+          const age = Date.now() - new Date(row.createdAt).getTime();
+          const limit = row.status === 'classifying' ? STALE_CLASSIFYING_MS : STALE_GENERATING_MS;
+          return age > limit;
+        };
+
         // Check by panelId first
         const rows = await db.select().from(imageCache).where(eq(imageCache.panelId, input.panelId)).limit(1);
         if (rows.length) {
-          // status: ready | generating | skipped
+          if (isStale(rows[0])) {
+            await db.delete(imageCache).where(eq(imageCache.panelId, input.panelId));
+            return { status: 'not_found', imageUrl: null };
+          }
           return { status: rows[0].status, imageUrl: rows[0].imageUrl || null };
         }
-        // Check by freeroamImageUrl — reuse cached image from another panel with same source
+        // Same Freeroam source image URL
         if (input.freeroamImageUrl) {
           const urlRows = await db.select().from(imageCache)
             .where(eq(imageCache.freeroamImageUrl, input.freeroamImageUrl))
             .limit(1);
-          if (urlRows.length && urlRows[0].status === 'ready' && urlRows[0].imageUrl) {
-            return { status: 'ready', imageUrl: urlRows[0].imageUrl };
+          if (urlRows.length) {
+            if (urlRows[0].status === 'ready' && urlRows[0].imageUrl) {
+              return { status: 'ready', imageUrl: urlRows[0].imageUrl };
+            }
+            if (urlRows[0].status === 'generating' || urlRows[0].status === 'classifying' || urlRows[0].status === 'skipped') {
+              return { status: urlRows[0].status, imageUrl: urlRows[0].imageUrl || null };
+            }
+          }
+        }
+        // Same Freeroam image prompt (art unchanged across story panels)
+        if (input.freeroamImagePrompt) {
+          const promptRows = await db.select().from(imageCache)
+            .where(eq(imageCache.freeroamImagePrompt, input.freeroamImagePrompt))
+            .limit(1);
+          if (promptRows.length) {
+            if (promptRows[0].status === 'ready' && promptRows[0].imageUrl) {
+              return { status: 'ready', imageUrl: promptRows[0].imageUrl };
+            }
+            if (promptRows[0].status === 'generating' || promptRows[0].status === 'classifying' || promptRows[0].status === 'skipped') {
+              return { status: promptRows[0].status, imageUrl: promptRows[0].imageUrl || null };
+            }
           }
         }
         return { status: 'not_found', imageUrl: null };
       }),
 
-    /** Clear a panel's image_cache row so NSFW generation can run again (regenerate). */
+    /** Clear image_cache for a panel (and same Freeroam art key) so NSFW can regenerate. */
     clearImageCacheEntry: publicProcedure
-      .input(z.object({ panelId: z.string() }))
+      .input(z.object({
+        panelId: z.string(),
+        freeroamImageUrl: z.string().optional(),
+        freeroamImagePrompt: z.string().optional(),
+      }))
       .mutation(async ({ input }) => {
         const { getDb } = await import('./db');
         const { imageCache } = await import('../drizzle/schema');
         const { eq } = await import('drizzle-orm');
         const db = await getDb();
         if (!db) throw new Error('Database not available');
+        // Always clear this panel
         await db.delete(imageCache).where(eq(imageCache.panelId, input.panelId));
+        // Also clear siblings that share the same Freeroam art so regenerate is not short-circuited by reuse
+        if (input.freeroamImagePrompt) {
+          await db.delete(imageCache).where(eq(imageCache.freeroamImagePrompt, input.freeroamImagePrompt));
+        }
+        if (input.freeroamImageUrl) {
+          await db.delete(imageCache).where(eq(imageCache.freeroamImageUrl, input.freeroamImageUrl));
+        }
         return { ok: true };
       }),
 
