@@ -2652,7 +2652,8 @@ export const appRouter = router({
 
         const readPanelCache = async () => {
           const rows = await db.select().from(imageCache).where(eq(imageCache.panelId, input.panelId)).limit(1);
-          return rows[0] ?? null;
+          // rows[0] is typed as defined without noUncheckedIndexedAccess; use length for true null
+          return rows.length > 0 ? rows[0] : null;
         };
 
         /** Drop abandoned claims so regenerate / remount is not stuck on CHECK forever. */

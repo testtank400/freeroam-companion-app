@@ -527,7 +527,10 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
       if (remembered && Object.keys(remembered).length > 0) return remembered;
     }
 
-    for (const p of panelCache.current.values()) {
+    // Array.from avoids MapIterator downlevelIteration requirement under default tsc target
+    const cachedPanels = Array.from(panelCache.current.values());
+    for (let i = 0; i < cachedPanels.length; i++) {
+      const p = cachedPanels[i];
       const pImg = p.panel_content?.images?.[0];
       if (!pImg) continue;
       const sameUrl = !!(freeroamImageUrl && pImg.url === freeroamImageUrl);
