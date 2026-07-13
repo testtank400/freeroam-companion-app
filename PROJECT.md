@@ -425,9 +425,12 @@ Character headshot images from `character_references` on the panel are passed to
 **Server single-flight (source of truth):** `generateNsfwImage` claims a unique `image_cache` row with `status: 'generating'` **before** DeepSeek classification or Seedream. Concurrent callers hit the unique `panelId` constraint and return `generating` / `ready` / `skipped` instead of starting a second job. The old flow classified first, then `DELETE`+`INSERT` — that race let multiple Seedream runs fire for one panel.
 
 **Statuses:**
-- `generating` — claim held; other requests poll
+- `classifying` — DeepSeek NSFW check in progress (no Seedream yet; **no IMG badge**)
+- `generating` — Seedream / Atlas image job in progress (**IMG badge** only in this phase)
 - `ready` — image URL stored
 - `skipped` — classified not-NSFW; remounts must not re-enter generation
+
+Claim is inserted as `classifying`, then promoted to `generating` only after DeepSeek confirms NSFW.
 
 **Client session guards:** `nsfwInFlightRef` blocks overlapping effect runs; `nsfwProcessedPanelsRef` records finished decisions. Regenerate deletes the DB row (`clearImageCacheEntry`), clears both sets for that panel, and bumps `nsfwRegenNonce` so the effect re-runs.
 
@@ -437,8 +440,8 @@ When a NSFW image is showing, a circular refresh icon appears in the reader top 
 
 ### Badge Indicators
 
-- **IMG badge** (amber `#f59e0b`) — shown in the reader top bar while a cached image is being looked up or displayed.
-- **GEN badge** (amber) — shown during active Seedream generation. Appears after an 800ms delay so fast responses (cache hits, `not_nsfw` results) never show the badge.
+- **IMG badge** (amber `#f59e0b`) — only while `image_cache.status === 'generating'` (Seedream / Atlas image job). Not shown during DeepSeek classification, cache hits, or SFW/`skipped` panels.
+- **GEN badge** (amber) — ElevenLabs TTS generation (unrelated to images).
 
 ### Cache Management
 

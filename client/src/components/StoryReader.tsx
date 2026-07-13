@@ -1048,27 +1048,48 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
           nsfwProcessedPanelsRef.current.add(panelId);
           return;
         }
+
+        // Poll helper: IMG badge ONLY while status === 'generating' (Seedream phase).
+        // 'classifying' is DeepSeek-only — no badge.
+        const pollUntilSettled = async (showBadgeWhenGenerating: boolean) => {
+          for (let i = 0; i < 90; i++) {
+            if (cancelled) return null;
+            await new Promise(r => setTimeout(r, 1500));
+            const poll = await utils.voice.checkImageReady.fetch({ panelId, freeroamImageUrl });
+            if (showBadgeWhenGenerating) {
+              if (!cancelled) setIsGeneratingNsfwImage(poll.status === 'generating');
+            }
+            if (poll.status === 'ready' && poll.imageUrl) return poll;
+            if (poll.status === 'skipped') return poll;
+            if (poll.status === 'not_found') return poll;
+          }
+          return null;
+        };
+
+        // Seedream already running (or another tab) — show IMG and wait
         if (cached.status === 'generating') {
           setIsGeneratingNsfwImage(true);
-          for (let i = 0; i < 60; i++) {
-            if (cancelled) return;
-            await new Promise(r => setTimeout(r, 2000));
-            const poll = await utils.voice.checkImageReady.fetch({ panelId, freeroamImageUrl });
-            if (poll.status === 'ready' && poll.imageUrl) {
-              if (!cancelled) setNsfwImageUrl(poll.imageUrl);
-              nsfwProcessedPanelsRef.current.add(panelId);
-              setIsGeneratingNsfwImage(false);
-              return;
-            }
-            if (poll.status === 'skipped') {
-              nsfwProcessedPanelsRef.current.add(panelId);
-              setIsGeneratingNsfwImage(false);
-              return;
-            }
-            if (poll.status === 'not_found') break;
+          const poll = await pollUntilSettled(true);
+          if (!cancelled) setIsGeneratingNsfwImage(false);
+          if (poll?.status === 'ready' && poll.imageUrl) {
+            if (!cancelled) setNsfwImageUrl(poll.imageUrl);
+            nsfwProcessedPanelsRef.current.add(panelId);
+          } else if (poll?.status === 'skipped') {
+            nsfwProcessedPanelsRef.current.add(panelId);
           }
-          setIsGeneratingNsfwImage(false);
-          // Stale generating row or timeout — allow a later retry on remount
+          return;
+        }
+
+        // DeepSeek in progress elsewhere — wait quietly (no IMG) until classify finishes or Seedream starts
+        if (cached.status === 'classifying') {
+          const poll = await pollUntilSettled(true);
+          if (!cancelled) setIsGeneratingNsfwImage(false);
+          if (poll?.status === 'ready' && poll.imageUrl) {
+            if (!cancelled) setNsfwImageUrl(poll.imageUrl);
+            nsfwProcessedPanelsRef.current.add(panelId);
+          } else if (poll?.status === 'skipped') {
+            nsfwProcessedPanelsRef.current.add(panelId);
+          }
           return;
         }
 
@@ -1084,9 +1105,6 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
           if (!actionText) actionText = null;
         }
 
-        const badgeTimer = setTimeout(() => {
-          if (!cancelled) setIsGeneratingNsfwImage(true);
-        }, 800);
         try {
           const extractPanelText = (p: typeof currentPanel | undefined) => {
             if (!p?.panel_content?.speech_bubbles) return null;
@@ -1098,6 +1116,23 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
           };
           const prevPanel = currentPanel.prev_panel_id ? panelCache.current.get(currentPanel.prev_panel_id) : undefined;
           const nextPanelData = currentPanel.next_panel_id ? panelCache.current.get(currentPanel.next_panel_id) : undefined;
+
+          // While mutateAsync runs (classify → maybe Seedream), poll status for the IMG badge.
+          // Badge turns on only when server promotes claim to status 'generating' (Seedream phase).
+          let stopBadgePoll = false;
+          const badgePoll = (async () => {
+            while (!stopBadgePoll && !cancelled) {
+              await new Promise(r => setTimeout(r, 800));
+              if (stopBadgePoll || cancelled) break;
+              try {
+                const s = await utils.voice.checkImageReady.fetch({ panelId, freeroamImageUrl });
+                if (!cancelled) setIsGeneratingNsfwImage(s.status === 'generating');
+                if (s.status === 'ready' || s.status === 'skipped' || s.status === 'not_found') break;
+              } catch {
+                // ignore poll errors
+              }
+            }
+          })();
 
           const result = await generateNsfwImageMutation.mutateAsync({
             panelId,
@@ -1112,20 +1147,16 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
             characterReferences: charRefs,
             debug: debugMode,
           });
-          clearTimeout(badgeTimer);
+          stopBadgePoll = true;
+          await badgePoll.catch(() => {});
           if (cancelled) return;
 
-          if (result.generating) {
-            setIsGeneratingNsfwImage(true);
-            for (let i = 0; i < 60; i++) {
-              if (cancelled) return;
-              await new Promise(r => setTimeout(r, 2000));
-              const poll = await utils.voice.checkImageReady.fetch({ panelId });
-              if (poll.status === 'ready' && poll.imageUrl) {
-                setNsfwImageUrl(poll.imageUrl);
-                break;
-              }
-              if (poll.status === 'skipped' || poll.status === 'not_found') break;
+          if (result.generating || (result as { classifying?: boolean }).classifying) {
+            // Another worker owns the job — poll; badge only while Seedream status is generating
+            if (result.generating && !cancelled) setIsGeneratingNsfwImage(true);
+            const poll = await pollUntilSettled(true);
+            if (poll?.status === 'ready' && poll.imageUrl && !cancelled) {
+              setNsfwImageUrl(poll.imageUrl);
             }
           } else if (result.imageUrl) {
             setNsfwImageUrl(result.imageUrl);
@@ -1133,7 +1164,6 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
           // Mark done for ready, notNsfw, or finished generate attempt
           nsfwProcessedPanelsRef.current.add(panelId);
         } catch {
-          clearTimeout(badgeTimer);
           // Leave unprocessed so a later visit can retry after server released the claim
         } finally {
           if (!cancelled) setIsGeneratingNsfwImage(false);

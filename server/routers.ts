@@ -2650,8 +2650,13 @@ export const appRouter = router({
           if (existing.status === 'ready' && existing.imageUrl) {
             return { imageUrl: existing.imageUrl, fromCache: true, generating: false };
           }
+          // Seedream in progress — clients may show IMG badge
           if (existing.status === 'generating') {
             return { imageUrl: null, fromCache: false, generating: true };
+          }
+          // DeepSeek classify only — no Seedream yet; do not treat as image generation
+          if (existing.status === 'classifying') {
+            return { imageUrl: null, fromCache: false, generating: false, classifying: true };
           }
           if (existing.status === 'skipped') {
             return { imageUrl: null, fromCache: true, generating: false, notNsfw: true };
@@ -2680,17 +2685,20 @@ export const appRouter = router({
             if (after?.status === 'generating') {
               return { imageUrl: null, fromCache: false, generating: true };
             }
+            if (after?.status === 'classifying') {
+              return { imageUrl: null, fromCache: false, generating: false, classifying: true };
+            }
             return { imageUrl: cachedByUrl[0].imageUrl, fromCache: true, generating: false };
           }
         }
 
-        // Atomic claim: unique(panelId) ensures only one worker proceeds past this point
+        // Atomic claim as 'classifying' (not 'generating') — IMG badge only after Seedream starts
         let claimed = false;
         try {
           await db.insert(imageCache).values({
             panelId: input.panelId,
             worldId: input.worldId,
-            status: 'generating',
+            status: 'classifying',
             imageUrl: '',
             freeroamImageUrl: input.imageUrl ?? null,
           });
@@ -2703,6 +2711,9 @@ export const appRouter = router({
           }
           if (raced?.status === 'generating') {
             return { imageUrl: null, fromCache: false, generating: true };
+          }
+          if (raced?.status === 'classifying') {
+            return { imageUrl: null, fromCache: false, generating: false, classifying: true };
           }
           if (raced?.status === 'skipped') {
             return { imageUrl: null, fromCache: true, generating: false, notNsfw: true };
@@ -2783,6 +2794,12 @@ export const appRouter = router({
           await db.delete(imageCache).where(eq(imageCache.panelId, input.panelId));
           throw new Error('ATLAS_CLOUD_API_KEY not configured');
         }
+
+        // Promote claim to Seedream phase — only now should clients show the IMG badge
+        await db.update(imageCache).set({
+          status: 'generating',
+          freeroamImageUrl: input.imageUrl ?? null,
+        }).where(eq(imageCache.panelId, input.panelId));
 
         try {
           // Step 1: Extract which character names appear in the prompt (~~Name tokens)

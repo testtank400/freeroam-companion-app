@@ -221,7 +221,7 @@ export const imageCache = mysqlTable("image_cache", {
   panelId: varchar("panelId", { length: 128 }).notNull().unique(),
   /** Freeroam world external_id (UUID string) */
   worldId: varchar("worldId", { length: 128 }).notNull(),
-  /** Generation status: 'generating' = in progress, 'ready' = image available */
+  /** Status: classifying | generating | ready | skipped */
   status: varchar("status", { length: 16 }).notNull().default('ready'),
   /** S3 URL of the generated image (empty string while generating) */
   imageUrl: text("imageUrl").notNull().default(''),
