@@ -13,7 +13,7 @@ import { trpc } from '@/lib/trpc';
 import { ApiWorld } from '@/components/WorldCard';
 import StoryMenu from '@/components/StoryMenu';
 import CharacterPanel from '@/components/CharacterPanel';
-import { Bookmark, ChevronLeft, ChevronRight, X, Loader2, ImageIcon, Home, ChevronDown, ChevronUp, Zap, Clapperboard, Users, Image as ImageLucide, Share2 } from 'lucide-react';
+import { Bookmark, ChevronLeft, ChevronRight, X, Loader2, ImageIcon, Home, ChevronDown, ChevronUp, Zap, Clapperboard, Users, Image as ImageLucide, Share2, RefreshCw } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
@@ -1907,6 +1907,38 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
   // Bookmark state for current panel
   const isBookmarked = panel ? bookmarkedPanelIds.has(panel.panel_id) : false;
 
+  /** Unrestricted image regen is available only on panels with character_references (source art). */
+  const canRegenerateNsfwImage =
+    unrestrictedImagesEnabled
+    && !!image?.prompt
+    && !!currentPanel
+    && Object.keys(getPanelCharacterReferences(currentPanel)).length > 0;
+
+  const handleRegenerateNsfwImage = useCallback(async () => {
+    if (!currentPanel) return;
+    const panelId = currentPanel.panel_id;
+    nsfwProcessedPanelsRef.current.delete(panelId);
+    nsfwInFlightRef.current.delete(panelId);
+    nsfwByPanelIdRef.current.delete(panelId);
+    const img0 = currentPanel.panel_content?.images?.[0];
+    const artKey = freeroamArtKey(img0?.prompt, img0?.url);
+    if (artKey) nsfwByArtKeyRef.current.delete(artKey);
+    setNsfwImageUrl(null);
+    setIsClassifyingNsfwImage(true);
+    setIsGeneratingNsfwImage(false);
+    nsfwForceRegenPanelRef.current = panelId;
+    try {
+      await clearImageCacheEntryMutation.mutateAsync({
+        panelId,
+        freeroamImageUrl: img0?.url ?? undefined,
+        freeroamImagePrompt: img0?.prompt ?? undefined,
+      });
+    } catch {
+      // Still attempt client re-run even if cache clear fails
+    }
+    setNsfwRegenNonce(n => n + 1);
+  }, [currentPanel, clearImageCacheEntryMutation, freeroamArtKey]);
+
   return (
     <div
       className="story-reader-root fixed inset-0 z-[100]"
@@ -1942,19 +1974,28 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
         }}
       />
 
-      {/* Full-viewport invisible tap zones — match Freeroam's 25% width tap areas */}
+      {/* Edge tap zones for prev/next — only the gutters OUTSIDE the portrait panel.
+          Full-viewport overlays sat on top of the <img> and stole right-click / long-press
+          Save Image (Freeroam keeps the panel art interactive). On mobile the panel is full
+          width so gutters collapse to 0; use chevrons instead. */}
       {canGoBack && (
         <div
-          className="fixed left-0 top-0 bottom-0 z-15"
-          style={{ width: '25vw', cursor: 'pointer' }}
+          className="fixed left-0 top-0 bottom-0 z-[5]"
+          style={{
+            width: 'max(0px, calc((100vw - min(100vw, 100dvh * 9 / 16)) / 2))',
+            cursor: 'pointer',
+          }}
           onClick={() => handleNavigate('prev')}
           aria-label="Previous panel"
         />
       )}
       {(canGoForward || isPolling || isRegeneratePolling) && (
         <div
-          className="fixed right-0 top-0 bottom-0 z-15"
-          style={{ width: '60vw', cursor: 'pointer' }}
+          className="fixed right-0 top-0 bottom-0 z-[5]"
+          style={{
+            width: 'max(0px, calc((100vw - min(100vw, 100dvh * 9 / 16)) / 2))',
+            cursor: 'pointer',
+          }}
           onClick={() => handleNavigate('next')}
           aria-label="Next panel"
         />
@@ -2022,10 +2063,11 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
         </div>
       </button>
 
-      {/* Center panel */}
-      <div className="absolute inset-0 flex items-start justify-center">
+      {/* Center panel — z-20 so the <img> is above ambient/scrims/gutters and receives
+          right-click / long-press Save Image like Freeroam. Nav chevrons stay higher (z-25). */}
+      <div className="absolute inset-0 z-20 flex items-start justify-center pointer-events-none">
         <div
-          className="relative story-reader-panel"
+          className="relative story-reader-panel pointer-events-auto"
           style={{
             height: '100dvh',
             overflow: 'hidden',
@@ -2134,14 +2176,14 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
                   ...(cookie ? { 'x-freeroam-cookie': cookie } : {}),
                   ...(accountId ? { 'x-freeroam-account-id': accountId } : {}),
                 };
-                // Step 1: Regenerate starting scene
+                // Step 1: Regenerate starting scene (story — not panel image)
                 const regenRes = await fetch('/api/trpc/worlds.regenerateStartingScene?batch=1', {
                   method: 'POST',
                   credentials: 'include',
                   headers,
                   body: JSON.stringify({ '0': { json: { worldId: world.external_id } } }),
                 });
-                if (!regenRes.ok) { toast.error('Regenerate failed'); return; }
+                if (!regenRes.ok) { toast.error('Regenerate story failed'); return; }
                 // Step 2: Start generation
                 const startRes = await fetch('/api/trpc/worlds.startGeneration?batch=1', {
                   method: 'POST',
@@ -2256,69 +2298,23 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
                   IMG
                 </span>
               )}
-              {/* Regenerate NSFW only when THIS panel has Freeroam character_references.
-                  Same-art later panels often lack refs; regenerating there is flaky (leave/return
-                  loses badges, cast only via session borrow). Generate still runs automatically
-                  when refs can be resolved; manual regen is limited to the source art panel. */}
-              {unrestrictedImagesEnabled && !!image?.prompt && currentPanel && Object.keys(getPanelCharacterReferences(currentPanel)).length > 0 && (
+              {/* Regenerate unrestricted image — original top-bar placement (not story regenerate) */}
+              {canRegenerateNsfwImage && (
                 <button
-                  onClick={async () => {
-                    if (!currentPanel) return;
-                    const panelId = currentPanel.panel_id;
-                    nsfwProcessedPanelsRef.current.delete(panelId);
-                    nsfwInFlightRef.current.delete(panelId);
-                    nsfwByPanelIdRef.current.delete(panelId);
-                    const img0 = currentPanel.panel_content?.images?.[0];
-                    const artKey = freeroamArtKey(img0?.prompt, img0?.url);
-                    if (artKey) nsfwByArtKeyRef.current.delete(artKey);
-                    setNsfwImageUrl(null);
-                    // Show CHECK immediately so regenerate is never a silent Freeroam revert
-                    setIsClassifyingNsfwImage(true);
-                    setIsGeneratingNsfwImage(false);
-                    nsfwForceRegenPanelRef.current = panelId;
-                    try {
-                      await clearImageCacheEntryMutation.mutateAsync({
-                        panelId,
-                        freeroamImageUrl: img0?.url ?? undefined,
-                        freeroamImagePrompt: img0?.prompt ?? undefined,
-                      });
-                    } catch {
-                      // Still attempt client re-run even if cache clear fails
-                    }
-                    // Force NSFW effect to re-run for the same panel_id
-                    setNsfwRegenNonce(n => n + 1);
-                  }}
+                  onClick={() => { void handleRegenerateNsfwImage(); }}
                   disabled={isClassifyingNsfwImage || isGeneratingNsfwImage}
                   className="flex items-center justify-center rounded-full transition-all hover:bg-white/20 disabled:opacity-40"
                   style={{ width: '28px', height: '28px', background: 'rgba(255,255,255,0.12)', color: 'rgba(255,255,255,0.75)' }}
-                  title="Regenerate unrestricted image (this panel has character references)"
+                  title="Regenerate unrestricted image for this panel (not the story)"
                 >
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>
+                  <RefreshCw
+                    size={12}
+                    strokeWidth={2.5}
+                    className={isClassifyingNsfwImage || isGeneratingNsfwImage ? 'animate-spin' : undefined}
+                  />
                 </button>
               )}
-              {/* Audio controls — shown when audio is available */}
-              {currentAudioUrl && (
-                <button
-                  onClick={() => {
-                    if (isPlayingAudio) {
-                      audioRef.current?.pause();
-                      setIsPlayingAudio(false);
-                    } else {
-                      audioRef.current?.play().catch(() => {});
-                      setIsPlayingAudio(true);
-                    }
-                  }}
-                  className="flex items-center justify-center rounded-full transition-all hover:bg-white/20"
-                  style={{ width: '28px', height: '28px', background: 'rgba(255,255,255,0.12)', color: isPlayingAudio ? '#a78bfa' : 'rgba(255,255,255,0.75)' }}
-                  title={isPlayingAudio ? 'Pause voice' : 'Play voice'}
-                >
-                  {isPlayingAudio
-                    ? <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
-                    : <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="5,3 19,12 5,21"/></svg>
-                  }
-                </button>
-              )}
-              {/* X button — no circle */}
+              {/* Core controls — close + bookmark + page (save via right-click / long-press on the image) */}
               <button
                 onClick={onClose}
                 className="flex items-center justify-center transition-all"
@@ -2327,7 +2323,6 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
               >
                 <X size={16} strokeWidth={2} />
               </button>
-              {/* Bookmark toggle — no circle, after X */}
               <button
                 onClick={handleToggleBookmark}
                 disabled={isTogglingBookmark || !panel}
@@ -2341,7 +2336,6 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
                   fill={isBookmarked ? '#f5c440' : 'none'}
                 />
               </button>
-              {/* Page number — after bookmark */}
               {panel && (
                 <span style={{ fontFamily: 'Outfit-Medium, Outfit, sans-serif', fontSize: '13px', color: 'rgba(255,255,255,0.6)' }}>
                   Page {panel.depth}
@@ -2352,13 +2346,18 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
 
           {/* No center loading overlay — right halo spinner is the only indicator */}
 
-          {/* Panel image — fall back to Freeroam art if NSFW URL is broken (e.g. expired Atlas CDN) */}
+          {/* Panel image — fall back to Freeroam art if NSFW URL is broken (e.g. expired Atlas CDN).
+              Real <img> so the browser can Save Image / long-press download (Freeroam-style).
+              Text stays non-selectable via .story-reader-root; image callout is re-enabled in CSS. */}
           {imageUrl && (
             <img
               src={imageUrl}
               alt=""
-              className="w-full h-full"
-              style={{ objectFit: 'cover', objectPosition: 'center top' }}
+              draggable
+              className="story-reader-panel-image w-full h-full"
+              style={{ objectFit: 'cover', objectPosition: 'center top', zIndex: 0 }}
+              // Ensure browser native context menu (Save Image) is not blocked
+              onContextMenu={(e) => e.stopPropagation()}
               onError={() => {
                 if (nsfwImageUrl && imageUrl === nsfwImageUrl) {
                   console.warn('[NSFW] Failed to load replacement image, reverting to Freeroam art', nsfwImageUrl);

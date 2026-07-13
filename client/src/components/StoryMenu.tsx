@@ -104,6 +104,7 @@ interface StoryMenuProps {
   likeCount?: number;
   onToggleLike?: () => void;
   onRestart?: () => void;
+  /** Freeroam: rebuild starting scene / story branch (not the panel image) */
   onRegenerate?: () => void;
 }
 
@@ -1048,7 +1049,7 @@ export default function StoryMenu({
                     </button>
                   </div>
                 )}
-                {/* Regenerate — wired with confirmation */}
+                {/* Regenerate — Freeroam starting scene only (unrestricted panel art is top-bar only) */}
                 {!confirmRegenerate ? (
                   <button
                     onClick={() => setConfirmRegenerate(true)}

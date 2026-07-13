@@ -67,17 +67,28 @@
   --ring: oklch(0.769 0.188 70.08 / 0.5);
 }
 
-/* StoryReader — match Freeroam: no text highlight/selection in the reader chrome */
+/* StoryReader — match Freeroam: no text highlight/selection in the reader chrome.
+   Touch callout stays enabled on the panel image so long-press can Save Image (iOS/Android). */
 .story-reader-root {
   user-select: none;
   -webkit-user-select: none;
   -webkit-touch-callout: none;
+}
+/* Panel art: no blue highlight/selection, but allow browser Save Image / drag-to-download */
+.story-reader-root .story-reader-panel-image {
+  -webkit-touch-callout: default;
+  -webkit-user-drag: element;
+  user-select: none;
+  -webkit-user-select: none;
+  /* Avoid the blue selection/highlight flash on long-press without killing callout */
+  -webkit-tap-highlight-color: transparent;
 }
 /* Allow typing/selection only inside action/choice inputs */
 .story-reader-root input,
 .story-reader-root textarea {
   user-select: text;
   -webkit-user-select: text;
+  -webkit-touch-callout: default;
 }
 
 /* StoryReader panel — full width on mobile, 9:16 portrait on desktop */
