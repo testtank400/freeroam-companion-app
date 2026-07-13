@@ -14,7 +14,7 @@ import { ApiWorld } from '@/components/WorldCard';
 import StoryMenu from '@/components/StoryMenu';
 import CharacterPanel from '@/components/CharacterPanel';
 import { Bookmark, ChevronLeft, ChevronRight, X, Loader2, ImageIcon, Home, ChevronDown, ChevronUp, Zap, Clapperboard, Users, Image as ImageLucide, Share2, RefreshCw } from 'lucide-react';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from 'react';
 import { toast } from 'sonner';
 
 interface StoryReaderProps {
@@ -1907,6 +1907,34 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
   // Bookmark state for current panel
   const isBookmarked = panel ? bookmarkedPanelIds.has(panel.panel_id) : false;
 
+  // Short-press vs long-press on panel art: long-press = Save Image (native); short-press = navigate
+  const panelImgPressRef = useRef<{ x: number; y: number; t: number } | null>(null);
+
+  /** Freeroam-style: tap left third of the art = back, rest = forward. Skips long-press/drag. */
+  const handlePanelImageNavigate = useCallback((e: ReactMouseEvent<HTMLImageElement> | ReactPointerEvent<HTMLImageElement>) => {
+    if (isNavigating) return;
+    // Ignore non-primary mouse buttons (right-click is for Save Image)
+    if ('button' in e && e.button !== 0) return;
+
+    const start = panelImgPressRef.current;
+    panelImgPressRef.current = null;
+    if (start) {
+      const dt = Date.now() - start.t;
+      const dist = Math.hypot(e.clientX - start.x, e.clientY - start.y);
+      // Long-press (save image) or drag — do not advance
+      if (dt > 400 || dist > 14) return;
+    }
+
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const leftZone = rect.width * 0.28;
+    if (x < leftZone) {
+      if (canGoBack) void handleNavigate('prev');
+    } else {
+      if (canGoForward && !isPolling && !isRegeneratePolling) void handleNavigate('next');
+    }
+  }, [isNavigating, canGoBack, canGoForward, isPolling, isRegeneratePolling, handleNavigate]);
+
   /** Unrestricted image regen is available only on panels with character_references (source art). */
   const canRegenerateNsfwImage =
     unrestrictedImagesEnabled
@@ -1974,13 +2002,11 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
         }}
       />
 
-      {/* Edge tap zones for prev/next — only the gutters OUTSIDE the portrait panel.
-          Full-viewport overlays sat on top of the <img> and stole right-click / long-press
-          Save Image (Freeroam keeps the panel art interactive). On mobile the panel is full
-          width so gutters collapse to 0; use chevrons instead. */}
+      {/* Desktop gutters only (outside portrait column) — click to navigate without covering the <img>.
+          On mobile the panel is full-width so gutters are 0; center-tap advance is on the image itself. */}
       {canGoBack && (
         <div
-          className="fixed left-0 top-0 bottom-0 z-[5]"
+          className="fixed left-0 top-0 bottom-0 z-[10]"
           style={{
             width: 'max(0px, calc((100vw - min(100vw, 100dvh * 9 / 16)) / 2))',
             cursor: 'pointer',
@@ -1991,7 +2017,7 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
       )}
       {(canGoForward || isPolling || isRegeneratePolling) && (
         <div
-          className="fixed right-0 top-0 bottom-0 z-[5]"
+          className="fixed right-0 top-0 bottom-0 z-[10]"
           style={{
             width: 'max(0px, calc((100vw - min(100vw, 100dvh * 9 / 16)) / 2))',
             cursor: 'pointer',
@@ -2001,12 +2027,17 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
         />
       )}
 
-      {/* Left navigation halo */}
+      {/* Left navigation halo — stop above action bar so it never steals Characters/Act taps.
+          Use z-[35] (Tailwind has no z-25 by default). */}
       <button
         onClick={() => handleNavigate('prev')}
         disabled={!canGoBack || isNavigating}
-        className="absolute left-0 top-0 bottom-0 z-25 flex items-center justify-start pl-2 sm:pl-4 disabled:opacity-0 transition-opacity"
-        style={{ width: 'clamp(44px, 15vw, 100px)', cursor: canGoBack ? 'pointer' : 'default' }}
+        className="absolute left-0 top-0 z-[35] flex items-center justify-start pl-2 sm:pl-4 disabled:opacity-0 transition-opacity"
+        style={{
+          width: 'clamp(44px, 15vw, 100px)',
+          bottom: 'calc(112px + env(safe-area-inset-bottom, 0px))',
+          cursor: canGoBack ? 'pointer' : 'default',
+        }}
         aria-label="Previous panel"
       >
         <div
@@ -2017,12 +2048,16 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
         </div>
       </button>
 
-      {/* Right navigation halo */}
+      {/* Right navigation halo — same: leave bottom action bar free */}
       <button
         onClick={() => handleNavigate('next')}
         disabled={(!canGoForward && !isPolling && !isRegeneratePolling) || isNavigating}
-        className="absolute right-0 top-0 bottom-0 z-25 flex items-center justify-end pr-2 sm:pr-4 disabled:opacity-0 transition-opacity"
-        style={{ width: 'clamp(44px, 15vw, 100px)', cursor: canGoForward ? 'pointer' : 'default' }}
+        className="absolute right-0 top-0 z-[35] flex items-center justify-end pr-2 sm:pr-4 disabled:opacity-0 transition-opacity"
+        style={{
+          width: 'clamp(44px, 15vw, 100px)',
+          bottom: 'calc(112px + env(safe-area-inset-bottom, 0px))',
+          cursor: canGoForward ? 'pointer' : 'default',
+        }}
         aria-label="Next panel"
       >
         <div
@@ -2063,8 +2098,9 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
         </div>
       </button>
 
-      {/* Center panel — z-20 so the <img> is above ambient/scrims/gutters and receives
-          right-click / long-press Save Image like Freeroam. Nav chevrons stay higher (z-25). */}
+      {/* Center panel — portrait column only. Image handles short-press left/right navigate
+          (Freeroam-style) so we do not put a full-screen overlay over the <img> (that broke
+          Save Image). Action bar / top bar use high z-index inside the panel. */}
       <div className="absolute inset-0 z-20 flex items-start justify-center pointer-events-none">
         <div
           className="relative story-reader-panel pointer-events-auto"
@@ -2356,7 +2392,13 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
               draggable
               className="story-reader-panel-image w-full h-full"
               style={{ objectFit: 'cover', objectPosition: 'center top', zIndex: 0 }}
-              // Ensure browser native context menu (Save Image) is not blocked
+              // Short-press left/right regions advance (center ≈ next). Long-press / right-click = Save Image.
+              onPointerDown={(e) => {
+                if (e.button !== 0) return;
+                panelImgPressRef.current = { x: e.clientX, y: e.clientY, t: Date.now() };
+              }}
+              onPointerCancel={() => { panelImgPressRef.current = null; }}
+              onClick={handlePanelImageNavigate}
               onContextMenu={(e) => e.stopPropagation()}
               onError={() => {
                 if (nsfwImageUrl && imageUrl === nsfwImageUrl) {
@@ -2701,9 +2743,9 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
               </div>
             </div>
           )}
-        {/* Action bar — hidden on choice/requires_action panels */}
+        {/* Action bar — above image + side nav (z-40). Must receive Characters/Act taps. */}
         <div
-          className="absolute left-0 right-0 z-30 transition-all duration-300"
+          className="absolute left-0 right-0 z-40 transition-all duration-300"
           style={{ bottom: (actionBarVisible && !panel?.requires_action && !panel?.is_action) ? '0' : '-110px' }}
         >
           {/* Pill buttons row */}
