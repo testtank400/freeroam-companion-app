@@ -1,0 +1,51 @@
+# GitHub Actions CI — runs on every push and pull request to main.
+# View results: repo → Actions tab on GitHub.
+#
+# What this does:
+#   1. Install dependencies (pnpm)
+#   2. Typecheck (same as: pnpm check / tsc --noEmit)
+#   3. Unit tests (same as: pnpm test)
+#
+# It does NOT deploy. It only checks that the code is healthy.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Cancel an older run if you push again quickly
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Typecheck & test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: TypeScript check
+        run: pnpm check
+
+      - name: Unit tests
+        run: pnpm test
