@@ -2,7 +2,7 @@
 # View results: repo → Actions tab on GitHub.
 #
 # What this does:
-#   1. Install dependencies (pnpm)
+#   1. Install dependencies (pnpm via Corepack)
 #   2. Typecheck (same as: pnpm check / tsc --noEmit)
 #   3. Unit tests (same as: pnpm test)
 #
@@ -19,7 +19,6 @@ on:
   pull_request:
     branches: [main]
 
-# Cancel an older run if you push again quickly
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
@@ -33,16 +32,17 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Install pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 10
-
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: pnpm
+
+      # Corepack ships with Node and is more reliable than a separate pnpm action
+      - name: Enable pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@9.15.9 --activate
+          pnpm --version
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
