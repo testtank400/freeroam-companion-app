@@ -7,6 +7,7 @@ import { ApiWorld } from '@/components/WorldCard';
 import { trpc } from '@/lib/trpc';
 import { Heart, MessageCircle, Bookmark, Share2, RotateCcw, RefreshCw, Pencil, ChevronDown, Check, X as XIcon } from 'lucide-react';
 import { useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { toast } from 'sonner';
 
 type BookmarkEntry = {
@@ -849,23 +850,43 @@ export default function StoryMenu({
   const [topTab, setTopTab] = useState<'story' | 'journal'>('story');
   const [journalTab, setJournalTab] = useState<'summary' | 'state' | 'threads' | 'preferences'>('summary');
 
-  return (
+  // Portal to document.body so the menu spans the full viewport (like Freeroam),
+  // not the 9:16 story-reader-panel it is rendered under.
+  //
+  // Glass uses a fixed full-viewport layer (no transform). Slide is content-only
+  // so backdrop-filter can actually sample the story underneath.
+  const menu = (
     <>
+      {/* Frosted glass backdrop — full viewport, only when open */}
       <div
-        className="fixed top-0 left-0 right-0 z-[210] overflow-y-auto"
+        aria-hidden
         style={{
+          position: 'fixed',
+          inset: 0,
+          zIndex: 209,
+          opacity: isOpen ? 1 : 0,
+          transition: 'opacity 0.25s ease',
+          pointerEvents: 'none',
+          // Lighter scrim so blur of the story art is actually visible
+          background: 'rgba(12, 12, 20, 0.38)',
+          backdropFilter: 'blur(40px) saturate(1.35)',
+          WebkitBackdropFilter: 'blur(40px) saturate(1.35)',
+        }}
+      />
+      {/* Menu content sheet — slides; intentionally no backdrop-filter here */}
+      <div
+        className="fixed left-0 right-0 z-[210] overflow-y-auto"
+        style={{
+          top: isOpen ? 0 : '-100%',
+          width: '100vw',
+          maxWidth: '100vw',
           maxHeight: '100dvh',
-          transform: isOpen ? 'translateY(0)' : 'translateY(-100%)',
-          transition: 'transform 0.25s ease',
-          background: 'rgba(10, 10, 16, 0.97)',
-          backdropFilter: 'blur(24px)',
-          borderBottomLeftRadius: '20px',
-          borderBottomRightRadius: '20px',
-          boxShadow: '0 12px 48px rgba(0,0,0,0.7)',
+          transition: 'top 0.25s ease',
+          background: 'transparent',
           pointerEvents: isOpen ? 'auto' : 'none',
         }}
       >
-        <div className="mx-auto px-5 pt-4 pb-8" style={{ maxWidth: '680px' }}>
+        <div className="mx-auto px-5 pt-4 pb-8" style={{ width: '100%', maxWidth: '960px' }}>
 
           {/* Close pill */}
           <div className="flex justify-center mb-3">
@@ -1158,4 +1179,7 @@ export default function StoryMenu({
       </div>
     </>
   );
+
+  if (typeof document === 'undefined') return null;
+  return createPortal(menu, document.body);
 }

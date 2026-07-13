@@ -2636,42 +2636,84 @@ export const appRouter = router({
         const db = await getDb();
         if (!db) throw new Error('Database not available');
 
-        const { or } = await import('drizzle-orm');
+        // ── Cache / single-flight claim ─────────────────────────────────────────
+        // IMPORTANT: claim the panelId row BEFORE any slow LLM/image work.
+        // The old code classified first, then deleted+inserted `generating` —
+        // concurrent requests both saw empty cache, both classified, both hit Seedream.
+        const readPanelCache = async () => {
+          const rows = await db.select().from(imageCache).where(eq(imageCache.panelId, input.panelId)).limit(1);
+          return rows[0] ?? null;
+        };
 
-        // Check cache: first by panelId (exact match), then by freeroamImageUrl (reuse across panels)
-        // Only cache 'ready' and 'generating' entries — no SFW caching (not worth it)
-        const cachedByPanel = await db.select().from(imageCache).where(eq(imageCache.panelId, input.panelId)).limit(1);
-        if (cachedByPanel.length > 0) {
-          if (cachedByPanel[0].status === 'ready' && cachedByPanel[0].imageUrl) {
-            return { imageUrl: cachedByPanel[0].imageUrl, fromCache: true, generating: false };
+        const existing = await readPanelCache();
+        if (existing) {
+          if (existing.status === 'ready' && existing.imageUrl) {
+            return { imageUrl: existing.imageUrl, fromCache: true, generating: false };
           }
-          if (cachedByPanel[0].status === 'generating') {
+          if (existing.status === 'generating') {
             return { imageUrl: null, fromCache: false, generating: true };
+          }
+          if (existing.status === 'skipped') {
+            return { imageUrl: null, fromCache: true, generating: false, notNsfw: true };
           }
         }
 
-        // Check by freeroamImageUrl — reuse generated image across panels sharing the same source image
+        // Cross-panel reuse by Freeroam source image URL
         if (input.imageUrl) {
           const cachedByUrl = await db.select().from(imageCache)
             .where(eq(imageCache.freeroamImageUrl, input.imageUrl))
             .limit(1);
           if (cachedByUrl.length > 0 && cachedByUrl[0].status === 'ready' && cachedByUrl[0].imageUrl) {
-            // Store a panelId reference so future lookups for this panel are instant
             await db.insert(imageCache).values({
               panelId: input.panelId,
               worldId: input.worldId,
               status: 'ready',
               imageUrl: cachedByUrl[0].imageUrl,
               freeroamImageUrl: input.imageUrl,
-            }).catch(() => {});
+            }).catch(async () => {
+              // Race: another request claimed this panelId — prefer whatever they wrote
+            });
+            const after = await readPanelCache();
+            if (after?.status === 'ready' && after.imageUrl) {
+              return { imageUrl: after.imageUrl, fromCache: true, generating: false };
+            }
+            if (after?.status === 'generating') {
+              return { imageUrl: null, fromCache: false, generating: true };
+            }
             return { imageUrl: cachedByUrl[0].imageUrl, fromCache: true, generating: false };
           }
         }
 
-        // Grok NSFW classification — classify NSFW, detect art style, AND generate an enhanced Seedream prompt
+        // Atomic claim: unique(panelId) ensures only one worker proceeds past this point
+        let claimed = false;
+        try {
+          await db.insert(imageCache).values({
+            panelId: input.panelId,
+            worldId: input.worldId,
+            status: 'generating',
+            imageUrl: '',
+            freeroamImageUrl: input.imageUrl ?? null,
+          });
+          claimed = true;
+        } catch {
+          // Unique conflict — another request owns this panel
+          const raced = await readPanelCache();
+          if (raced?.status === 'ready' && raced.imageUrl) {
+            return { imageUrl: raced.imageUrl, fromCache: true, generating: false };
+          }
+          if (raced?.status === 'generating') {
+            return { imageUrl: null, fromCache: false, generating: true };
+          }
+          if (raced?.status === 'skipped') {
+            return { imageUrl: null, fromCache: true, generating: false, notNsfw: true };
+          }
+          // Unexpected state — do not start a second generation
+          return { imageUrl: null, fromCache: false, generating: false };
+        }
+
+        // DeepSeek NSFW classification + art style (only the claim holder runs this)
         let detectedArtStyle: string | null = null;
         let enhancedSeedreamPrompt: string | null = null;
-        const grokKey = process.env.GROK_API_KEY;
         const atlasLlmKey = process.env.ATLAS_CLOUD_API_KEY;
 
         if (input.debug) {
@@ -2683,9 +2725,7 @@ export const appRouter = router({
         }
 
         // Step A: DeepSeek — NSFW classification + art style detection
-        // DeepSeek handles adult content without restrictions, unlike Grok which is overly conservative.
-        // IMPORTANT: Only proceed to generation if DeepSeek EXPLICITLY returns isNsfw: true.
-        // If the call fails or is ambiguous, skip generation (safe default = no generation).
+        // IMPORTANT: Only proceed if DeepSeek EXPLICITLY returns isNsfw: true.
         let classifyConfirmedNsfw = false;
         if (atlasLlmKey) {
           try {
@@ -2724,24 +2764,22 @@ export const appRouter = router({
           console.log('[NSFW DEBUG] DeepSeek classify result: confirmed=', classifyConfirmedNsfw, 'artStyle=', detectedArtStyle);
         }
 
-        // Only proceed if DeepSeek explicitly confirmed NSFW content
+        // Not NSFW: mark skipped so remounts / retries do not re-enter the pipeline
         if (!classifyConfirmedNsfw) {
           if (input.debug) console.log('[NSFW DEBUG] DeepSeek returned not-NSFW — skipping generation');
+          if (claimed) {
+            await db.update(imageCache).set({
+              status: 'skipped',
+              imageUrl: '',
+              freeroamImageUrl: input.imageUrl ?? null,
+            }).where(eq(imageCache.panelId, input.panelId));
+          }
           return { imageUrl: null, fromCache: false, generating: false, notNsfw: true };
         }
 
-        // Insert placeholder to prevent duplicate generation
-        // Delete any stale entry first, then insert fresh
-        await db.delete(imageCache).where(eq(imageCache.panelId, input.panelId));
-        await db.insert(imageCache).values({
-          panelId: input.panelId,
-          worldId: input.worldId,
-          status: 'generating',
-          imageUrl: '',
-        });
-
         const atlasKey = process.env.ATLAS_CLOUD_API_KEY;
         if (!atlasKey) {
+          // Release claim so a later retry can run once the key is configured
           await db.delete(imageCache).where(eq(imageCache.panelId, input.panelId));
           throw new Error('ATLAS_CLOUD_API_KEY not configured');
         }
@@ -2982,6 +3020,7 @@ User intent: "${sourcePrompt}"` },
         // Check by panelId first
         const rows = await db.select().from(imageCache).where(eq(imageCache.panelId, input.panelId)).limit(1);
         if (rows.length) {
+          // status: ready | generating | skipped
           return { status: rows[0].status, imageUrl: rows[0].imageUrl || null };
         }
         // Check by freeroamImageUrl — reuse cached image from another panel with same source
@@ -2994,6 +3033,19 @@ User intent: "${sourcePrompt}"` },
           }
         }
         return { status: 'not_found', imageUrl: null };
+      }),
+
+    /** Clear a panel's image_cache row so NSFW generation can run again (regenerate). */
+    clearImageCacheEntry: publicProcedure
+      .input(z.object({ panelId: z.string() }))
+      .mutation(async ({ input }) => {
+        const { getDb } = await import('./db');
+        const { imageCache } = await import('../drizzle/schema');
+        const { eq } = await import('drizzle-orm');
+        const db = await getDb();
+        if (!db) throw new Error('Database not available');
+        await db.delete(imageCache).where(eq(imageCache.panelId, input.panelId));
+        return { ok: true };
       }),
 
     /** Set an app setting */

@@ -420,8 +420,13 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
   // NSFW image replacement state
   const [nsfwImageUrl, setNsfwImageUrl] = useState<string | null>(null);
   const [isGeneratingNsfwImage, setIsGeneratingNsfwImage] = useState(false);
-  const nsfwProcessedPanelsRef = useRef<Set<string>>(new Set()); // tracks all panel IDs that have been processed — never cleared during session
+  // Session guards: processed = finished decision for panel; inFlight = generate/poll currently running
+  const nsfwProcessedPanelsRef = useRef<Set<string>>(new Set());
+  const nsfwInFlightRef = useRef<Set<string>>(new Set());
+  // Bump to force the NSFW effect to re-run for regenerate (same panel_id)
+  const [nsfwRegenNonce, setNsfwRegenNonce] = useState(0);
   const generateNsfwImageMutation = trpc.voice.generateNsfwImage.useMutation();
+  const clearImageCacheEntryMutation = trpc.voice.clearImageCacheEntry.useMutation();
   const { data: unrestrictedImagesSettingData } = trpc.voice.getSetting.useQuery({ key: 'unrestricted_images' });
   const unrestrictedImagesEnabled = unrestrictedImagesSettingData === 'true';
   const likeMutation = trpc.worlds.like.useMutation();
@@ -1012,45 +1017,61 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
   }, [worldCharacters]);
 
   // NSFW image detection and replacement.
-  // When unrestricted_images is enabled and the panel image prompt contains explicit content,
-  // call generateNsfwImage to replace the Freeroam image with a Seedream-generated one.
+  // Server single-flight (unique panelId claim) is the source of truth; client Set is a session optimization.
   useEffect(() => {
     if (!currentPanel || !unrestrictedImagesEnabled) return;
     const img = currentPanel.panel_content?.images?.[0];
     if (!img?.prompt) return;
     const prompt = img.prompt;
-    // Always call server — Grok classification happens server-side
-    // Guard against duplicate calls for the same panel
     const panelId = currentPanel.panel_id;
-    if (nsfwProcessedPanelsRef.current.has(panelId)) return; // already processed or processing
-    nsfwProcessedPanelsRef.current.add(panelId);
+
+    // Already finished this panel this session (ready / skipped / failed decision)
+    if (nsfwProcessedPanelsRef.current.has(panelId)) return;
+    // Already running generate/poll for this panel (covers Strict Mode + fast re-entry)
+    if (nsfwInFlightRef.current.has(panelId)) return;
+    nsfwInFlightRef.current.add(panelId);
+
+    let cancelled = false;
     (async () => {
       try {
         const freeroamImageUrl = img.url ?? undefined;
         const cached = await utils.voice.checkImageReady.fetch({ panelId, freeroamImageUrl });
+        if (cancelled) return;
+
         if (cached.status === 'ready' && cached.imageUrl) {
           setNsfwImageUrl(cached.imageUrl);
+          nsfwProcessedPanelsRef.current.add(panelId);
+          return;
+        }
+        // Classified SFW earlier — do not call Seedream again
+        if (cached.status === 'skipped') {
+          nsfwProcessedPanelsRef.current.add(panelId);
           return;
         }
         if (cached.status === 'generating') {
           setIsGeneratingNsfwImage(true);
-          // Poll until ready
           for (let i = 0; i < 60; i++) {
+            if (cancelled) return;
             await new Promise(r => setTimeout(r, 2000));
             const poll = await utils.voice.checkImageReady.fetch({ panelId, freeroamImageUrl });
             if (poll.status === 'ready' && poll.imageUrl) {
-              setNsfwImageUrl(poll.imageUrl);
+              if (!cancelled) setNsfwImageUrl(poll.imageUrl);
+              nsfwProcessedPanelsRef.current.add(panelId);
+              setIsGeneratingNsfwImage(false);
+              return;
+            }
+            if (poll.status === 'skipped') {
+              nsfwProcessedPanelsRef.current.add(panelId);
               setIsGeneratingNsfwImage(false);
               return;
             }
             if (poll.status === 'not_found') break;
           }
           setIsGeneratingNsfwImage(false);
+          // Stale generating row or timeout — allow a later retry on remount
           return;
         }
-        // For action panels, pass the user's action text as the edit instruction.
-        // If the current panel has no action text, check the previous panel in the cache
-        // (the result panel comes after the action panel, so prev_panel_id points to the action panel).
+
         const charRefs = (currentPanel as unknown as { character_references?: Record<string, { external_id: string; name: string; appearance: string | null; headshot_url: string | null; is_main_character: boolean }> }).character_references ?? {};
         let actionText = ((currentPanel.panel_content as unknown as { action?: string | null })?.action ?? null) as string | null;
         if (!actionText && currentPanel.prev_panel_id) {
@@ -1058,16 +1079,15 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
           const prevAction = ((prevPanel?.panel_content as unknown as { action?: string | null })?.action ?? null) as string | null;
           if (prevAction) actionText = prevAction;
         }
-        // Strip 'Change the image to' prefix — it's a UI instruction, not an image description
         if (actionText) {
           actionText = actionText.replace(/^change\s+the\s+image\s+to\s+/i, '').trim();
           if (!actionText) actionText = null;
         }
-        // Show IMG badge after a short delay — fast responses (not_nsfw, cache hit) complete before
-        // the timer fires and the badge never shows. Slow responses (actual generation) show the badge.
-        const badgeTimer = setTimeout(() => setIsGeneratingNsfwImage(true), 800);
+
+        const badgeTimer = setTimeout(() => {
+          if (!cancelled) setIsGeneratingNsfwImage(true);
+        }, 800);
         try {
-          // Extract story text from surrounding panels for scene context
           const extractPanelText = (p: typeof currentPanel | undefined) => {
             if (!p?.panel_content?.speech_bubbles) return null;
             return (p.panel_content.speech_bubbles as Array<{text?: string; style?: string}>)
@@ -1078,9 +1098,6 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
           };
           const prevPanel = currentPanel.prev_panel_id ? panelCache.current.get(currentPanel.prev_panel_id) : undefined;
           const nextPanelData = currentPanel.next_panel_id ? panelCache.current.get(currentPanel.next_panel_id) : undefined;
-          const prevPanelText = extractPanelText(prevPanel);
-          const currentPanelText = extractPanelText(currentPanel);
-          const nextPanelText = extractPanelText(nextPanelData);
 
           const result = await generateNsfwImageMutation.mutateAsync({
             panelId,
@@ -1088,40 +1105,54 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
             prompt,
             imageUrl: img.url ?? null,
             actionText,
-            prevPanelText,
-            currentPanelText,
-            nextPanelText,
+            prevPanelText: extractPanelText(prevPanel),
+            currentPanelText: extractPanelText(currentPanel),
+            nextPanelText: extractPanelText(nextPanelData),
             shot: img.shot ?? null,
             characterReferences: charRefs,
             debug: debugMode,
           });
           clearTimeout(badgeTimer);
+          if (cancelled) return;
+
           if (result.generating) {
             setIsGeneratingNsfwImage(true);
-            // Poll until ready
             for (let i = 0; i < 60; i++) {
+              if (cancelled) return;
               await new Promise(r => setTimeout(r, 2000));
               const poll = await utils.voice.checkImageReady.fetch({ panelId });
               if (poll.status === 'ready' && poll.imageUrl) {
                 setNsfwImageUrl(poll.imageUrl);
                 break;
               }
+              if (poll.status === 'skipped' || poll.status === 'not_found') break;
             }
           } else if (result.imageUrl) {
             setNsfwImageUrl(result.imageUrl);
           }
+          // Mark done for ready, notNsfw, or finished generate attempt
+          nsfwProcessedPanelsRef.current.add(panelId);
         } catch {
           clearTimeout(badgeTimer);
-          // Non-fatal — fall back to original Freeroam image
+          // Leave unprocessed so a later visit can retry after server released the claim
         } finally {
-          setIsGeneratingNsfwImage(false);
+          if (!cancelled) setIsGeneratingNsfwImage(false);
         }
       } catch {
         // Outer catch — non-fatal
+      } finally {
+        nsfwInFlightRef.current.delete(panelId);
       }
     })();
+
+    return () => {
+      cancelled = true;
+      // Free the session lock so Strict Mode remount / panel re-entry can proceed.
+      // Server unique(panelId) claim still prevents duplicate Seedream jobs.
+      nsfwInFlightRef.current.delete(panelId);
+    };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentPanel?.panel_id]);
+  }, [currentPanel?.panel_id, unrestrictedImagesEnabled, nsfwRegenNonce]);
 
   // Auto-advance timer: fires when panel changes and auto-advance is enabled.
   // Voice-based advance is handled in triggerTTS audio.onended (playAudioClip helper).
@@ -1837,15 +1868,19 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
               {/* Regenerate NSFW image button — shown when unrestricted images is on and a NSFW image is displayed or was attempted */}
               {unrestrictedImagesEnabled && nsfwImageUrl && (
                 <button
-                  onClick={() => {
+                  onClick={async () => {
                     if (!currentPanel) return;
                     const panelId = currentPanel.panel_id;
-                    // Remove from processed set so the effect can re-fire
                     nsfwProcessedPanelsRef.current.delete(panelId);
-                    // Clear cached image and delete from DB cache
+                    nsfwInFlightRef.current.delete(panelId);
                     setNsfwImageUrl(null);
-                    // Trigger re-generation by invalidating the cache entry
-                    utils.voice.checkImageReady.invalidate({ panelId });
+                    try {
+                      await clearImageCacheEntryMutation.mutateAsync({ panelId });
+                    } catch {
+                      // Still attempt client re-run even if cache clear fails
+                    }
+                    // Force NSFW effect to re-run for the same panel_id
+                    setNsfwRegenNonce(n => n + 1);
                   }}
                   className="flex items-center justify-center rounded-full transition-all hover:bg-white/20"
                   style={{ width: '28px', height: '28px', background: 'rgba(255,255,255,0.12)', color: 'rgba(255,255,255,0.75)' }}
@@ -1923,10 +1958,13 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
           {/* Bottom text overlay */}
           {hasText && !isLoading && (
             <>
-              {/* storyVnDialogue__scrim — exact Freeroam gradient for text readability */}
+              {/* storyVnDialogue__scrim — late scrim: keep mid/upper art open, darken only the text band */}
               <div
                 className="absolute inset-0 pointer-events-none"
-                style={{ background: 'linear-gradient(rgba(0,0,0,0), rgba(0,0,0,0.18) 45%, rgba(0,0,0,0.4) 74%, rgba(0,0,0,0.58))' }}
+                style={{
+                  background:
+                    'linear-gradient(to bottom, rgba(0,0,0,0) 0%, rgba(0,0,0,0) 52%, rgba(0,0,0,0.06) 64%, rgba(0,0,0,0.22) 78%, rgba(0,0,0,0.42) 92%, rgba(0,0,0,0.52) 100%)',
+                }}
               />
               {/* storyVnDialogue: flex column with ::before spacer pushing content to 67dvh anchor */}
               <div
@@ -2152,7 +2190,8 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
             <div
               className="absolute bottom-0 left-0 right-0 z-20 px-4 pb-4 pt-10"
               style={{
-                background: 'linear-gradient(to top, rgba(0,0,0,0.82) 40%, transparent)',
+                // Strong late bed under choices/input so light text stays readable without veiling the whole panel
+                background: 'linear-gradient(to top, rgba(0,0,0,0.62) 0%, rgba(0,0,0,0.45) 38%, rgba(0,0,0,0.12) 68%, transparent 88%)',
                 maxHeight: '85dvh',
                 overflowY: 'auto',
                 WebkitOverflowScrolling: 'touch',

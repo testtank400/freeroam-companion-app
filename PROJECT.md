@@ -422,9 +422,14 @@ Character headshot images from `character_references` on the panel are passed to
 
 ### Loop Prevention
 
-The client uses a `Set<string>` (`nsfwProcessedPanelsRef`) to track all panel IDs that have been processed during the session. Once a panel ID is added to the set, the NSFW effect will not fire again for that panel — regardless of re-renders or state changes. The set is only cleared for a specific panel when the user clicks the **Regenerate** button.
+**Server single-flight (source of truth):** `generateNsfwImage` claims a unique `image_cache` row with `status: 'generating'` **before** DeepSeek classification or Seedream. Concurrent callers hit the unique `panelId` constraint and return `generating` / `ready` / `skipped` instead of starting a second job. The old flow classified first, then `DELETE`+`INSERT` — that race let multiple Seedream runs fire for one panel.
 
-**Known issue:** A loop bug exists where multiple Seedream generations fire for the same panel. The `Set` guard should prevent this but something is bypassing it in production. The feature is currently shelved (Unrestricted Images disabled) pending a proper debugging session with production logs.
+**Statuses:**
+- `generating` — claim held; other requests poll
+- `ready` — image URL stored
+- `skipped` — classified not-NSFW; remounts must not re-enter generation
+
+**Client session guards:** `nsfwInFlightRef` blocks overlapping effect runs; `nsfwProcessedPanelsRef` records finished decisions. Regenerate deletes the DB row (`clearImageCacheEntry`), clears both sets for that panel, and bumps `nsfwRegenNonce` so the effect re-runs.
 
 ### Regenerate Button
 
@@ -496,7 +501,7 @@ The choice panel is `absolute bottom-0` and uses `display: block` (not `flex fle
 - **Debug mode** — a debug overlay is available in preferences (Voice Settings → Debug Mode). Shows `forward_state`, `next_panel_id`, `isPolling`, `isNavigating`, `canGoForward`, `is_action`, `requires_action` in real time. Leave on when investigating navigation issues.
 - **Story text brightness** — deliberately kept at `rgba(255,255,255,0.85)` rather than full white. Freeroam uses full white which can wash out against bright panel images. Our softer value is intentional.
 - **Choice panel design** — uses `display: block` (not `flex flex-col`) on the outer container to prevent Tailwind's custom `.flex` from squishing button heights.
-- **NSFW loop bug** — multiple Seedream generations fire for the same panel in production. The `nsfwProcessedPanelsRef` Set guard should prevent this but is being bypassed. Feature shelved until production logs are accessible for debugging.
+- **NSFW loop bug** — fixed via server-side atomic claim before classification (see Loop Prevention). Re-test Unrestricted Images before relying on it in production.
 - **Story reader text positioning** — text overlay uses Freeroam's exact CSS (`67dvh` flex spacer anchor) but visual alignment still differs slightly from Freeroam's app. Pending further comparison with Freeroam's DevTools CSS.
 
 ---
