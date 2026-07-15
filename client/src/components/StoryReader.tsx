@@ -2889,8 +2889,9 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
           )}
         </div>
 
-        {/* Action bar collapsed — show up arrow to restore */}
-        {!actionBarVisible && (
+        {/* Action bar collapsed — show up arrow only on panels where the bar can appear.
+            Choice/action panels force-hide the bar; don't show the restore arrow there. */}
+        {!actionBarVisible && !panel?.requires_action && !panel?.is_action && (
           <button
             onClick={() => setActionBarVisible(true)}
             onTouchStart={(e) => {
