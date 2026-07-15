@@ -3141,7 +3141,19 @@ Respond with ONLY this JSON (no other text): {"isNsfw": true or false, "artStyle
 - Do NOT invent random outfits.`;
 
               const framingNote =
-                `FRAMING (secondary): Freeroam image prompt describes camera/composition only (may be a mild close-up). Keep that framing when possible, but the ACTION must match the story.\nFreeroam framing: "${freeroamPromptPlain}"`;
+                `FRAMING (secondary): Freeroam image prompt describes camera/composition only (may be a mild close-up). Keep that framing when possible, but the ACTION and BODY POSITION must match the story.\nFreeroam framing: "${freeroamPromptPlain}"`;
+
+              // Standing is a common bad default for intimacy when story omits setting — forbid unless stated.
+              const positionRule = isSexualScene
+                ? `POSITION / SETTING RULE (critical — SEXUAL SCENE):
+- Prefer pose and location from STORY CONTEXT and Freeroam framing (bed, couch, wall, floor, kneeling, on top, spooning, etc.).
+- If the story clearly states standing / against a wall / in a doorway / etc., follow that.
+- If the story does NOT clearly specify where they are or whether they are standing, ASSUME: on a bed, characters lying down (reclining / horizontal / on their backs or sides as fits the act). State "on a bed" and "lying" (or equivalent) explicitly in the prompt.
+- Do NOT default to standing, upright, or full-body standing intercourse unless the story or Freeroam prompt explicitly says so.
+- Reference images are often upright full-body portraits — IGNORE that upright stance for sexual scenes; pose must follow story/setting rules above, not the ref's standing pose.`
+                : `POSITION / SETTING RULE (non-sexual / unclear):
+- Prefer pose and location from STORY CONTEXT and Freeroam framing when stated.
+- If unspecified, keep a natural pose consistent with the scene; do not invent a sexual bed scene.`;
 
               const actionNote = input.actionText
                 ? `\nUser action / image instruction: "${input.actionText}"\n`
@@ -3156,7 +3168,7 @@ Respond with ONLY this JSON (no other text): {"isNsfw": true or false, "artStyle
                     {
                       role: 'system',
                       content:
-                        'You write erotic image-edit prompts for Seedream for an adult story app. When story context is sexual, the prompt MUST describe that sexual action explicitly and characters MUST be nude. Freeroam reference images (called headshots but often full-body) are for likeness only — ignore their clothing in sexual scenes. Never collapse sex to a mild SFW close-up. Use ONLY FIXED CAST sex descriptors. Present tense. End with a single JSON object only (no markdown).',
+                        'You write erotic image-edit prompts for Seedream for an adult story app. When story context is sexual, the prompt MUST describe that sexual action explicitly, characters MUST be nude, and body position/setting MUST come from the story — never default intimate scenes to standing. If sexual and setting/pose is unclear, assume on a bed, lying down. Freeroam reference images (called headshots but often full-body standing art) are for likeness only — ignore their clothing and upright stance in sexual scenes. Never collapse sex to a mild SFW close-up. Use ONLY FIXED CAST sex descriptors. Present tense. End with a single JSON object only (no markdown).',
                     },
                     {
                       role: 'user',
@@ -3164,12 +3176,16 @@ Respond with ONLY this JSON (no other text): {"isNsfw": true or false, "artStyle
 
 ${clothingRule}
 
+${positionRule}
+
 ${framingNote}
 ${actionNote}
 Write a Seedream image-edit prompt:
 - PRIORITY 1: sexual action / body contact / climax from STORY CONTEXT (thrusting, penetration, wet, tight, kissing while pinned, claws in wall during sex, etc.)
-- PRIORITY 2: framing from Freeroam prompt (close-up hand, etc.) can remain if it still shows the sexual moment
-- ${isSexualScene ? 'PRIORITY 3: explicitly include nude / bare skin / no clothing (required)' : 'PRIORITY 3: clothing per CLOTHING RULE'}
+- PRIORITY 2: body position and setting from STORY CONTEXT (or Freeroam framing if it states place/pose). If sexual and unclear: on a bed, lying down — never invent standing intimacy by default
+- PRIORITY 3: framing from Freeroam prompt (close-up hand, etc.) can remain if it still shows the sexual moment and does not force standing when the story is bed/intimate
+- ${isSexualScene ? 'PRIORITY 4: explicitly include nude / bare skin / no clothing (required)' : 'PRIORITY 4: clothing per CLOTHING RULE'}
+- NEVER default sexual scenes to standing / upright unless the story or Freeroam prompt says so
 - NEVER output a SFW-only hand/wall description when the story is intercourse
 - NEVER output "same clothing as the reference image" when the story is sexual
 - Respect FIXED CAST and CAST RULE (no invented people)
@@ -3254,6 +3270,21 @@ Respond with ONLY this JSON: {"prompt": "..."}`,
               .trim();
             if (!/\b(nude|naked|bare skin|no clothing|unclothed|fully bare)\b/i.test(seedreamPrompt)) {
               seedreamPrompt = `${seedreamPrompt} Nude, bare skin, no clothing.`;
+            }
+
+            // Position: if story never said standing, strip accidental standing defaults and ensure bed/lying when unset.
+            const storyOrAction = [input.actionText, storyBlob].filter(Boolean).join('\n');
+            const storySaysStanding = /\b(standing|upright|against (?:the |a )?wall|in (?:the |a )?doorway)\b/i.test(storyOrAction);
+            const hasHorizontalPose = /\b(bed|lying|lie |lies |laying|reclining|supine|prone|on (?:their|her|his) back|on (?:their|her|his) side|spooning|straddling|missionary|cowgirl|kneeling on (?:the )?bed)\b/i.test(seedreamPrompt);
+            if (!storySaysStanding) {
+              seedreamPrompt = seedreamPrompt
+                .replace(/\bstanding (?:upright )?(?:together|close|intimately)?\b/gi, 'lying on a bed')
+                .replace(/\bupright\b/gi, '')
+                .replace(/\s{2,}/g, ' ')
+                .trim();
+            }
+            if (!hasHorizontalPose && !storySaysStanding) {
+              seedreamPrompt = `${seedreamPrompt} On a bed, lying down.`;
             }
           }
 
