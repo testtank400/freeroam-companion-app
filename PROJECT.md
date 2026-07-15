@@ -228,10 +228,13 @@ The choice panel uses `display: block` (not `flex flex-col`) to prevent Tailwind
 
 ### Auto-advance
 
-Auto-advance fires via two paths:
+Auto-advance fires via shared `scheduleAutoAdvance(fromPanelId, nextId, delayMs)` (always cancels prior timers first; callbacks no-op if the panel changed or advance is paused):
 
-1. **Voiced panels** — `audio.onended` in `playAudioClip` schedules `loadPanel(next_panel_id)` after `autoAdvanceMinDelay` seconds.
-2. **Unvoiced panels** — `noVoiceTimer` fires at reading speed when `ttsConfirmedNoVoiceRef` is true (no voice assigned) or after the 2× fallback timeout.
+1. **Voiced panels** — when audio starts, fallbacks are cancelled. `audio.onended` schedules advance after `autoAdvanceMinDelay`. Playback errors re-arm reading-time advance.
+2. **Unvoiced panels** — reading-time delay (word count / speed, floored by min delay), or static delay if no text.
+3. **Voice maybe** — reading-time check if TTS already confirmed no voice; 2× reading fallback that **waits while `ttsInFlightRef`** (generate/poll) instead of skipping mid-TTS. When TTS confirms no voice, `confirmNoVoiceForPanel` arms reading-time advance.
+
+**Race fixed:** `onended` used to overwrite `autoAdvanceTimerRef` without `clearTimeout` on the 2× fallback, leaking a timer that double-advanced into later (often unvoiced) panels.
 
 Auto-advance is **paused** when any of these are open: action input (Act/Direct/Image), Characters panel, story menu. All use `pauseAutoAdvance()` / `resumeAutoAdvance()`. The pause state is tracked in `autoAdvancePausedRef` (a ref, not state) to avoid stale closures in `audio.onended`.
 
@@ -239,8 +242,9 @@ Auto-advance is **paused** when any of these are open: action input (Act/Direct/
 
 | Ref | Purpose |
 |---|---|
-| `ttsWillPlayRef` | `true` when `audio.play()` has been called and audio hasn't ended yet. The auto-advance fallback timer checks this to avoid firing while audio is playing. |
-| `ttsConfirmedNoVoiceRef` | `true` when TTS confirmed no voice is assigned. Lets the no-voice timer fire at reading speed. |
+| `ttsWillPlayRef` | `true` when `audio.play()` has been called and audio hasn't ended yet. Fallbacks skip while this is set. |
+| `ttsInFlightRef` | `true` while generateSpeech/poll is running. 2× fallback extends wait instead of advancing early. |
+| `ttsConfirmedNoVoiceRef` | `true` when TTS confirmed no audio will play. Arms reading-time advance. |
 | `autoAdvancePausedRef` | `true` when auto-advance is paused (action input open, Characters panel open, story menu open). |
 | `autoAdvanceEnabledRef` | Mirror of `autoAdvanceEnabled` state — used in async closures to avoid stale state. |
 | `autoAdvanceMinDelayRef` | Mirror of `autoAdvanceMinDelay` state — used in async closures. |
@@ -266,7 +270,7 @@ Voice generation happens server-side in the `voice.generateSpeech` procedure (`s
 
 ### Flow (on cache miss)
 
-1. **Cache check** — look up `(panelId, worldId, characterId)` in `tts_cache`. If `status = 'ready'`, return the cached URL immediately. If `status = 'generating'`, return `{ generating: true, audioUrl: null }` to tell the client to poll.
+1. **Cache check** — look up `(panelId, worldId, characterId)` in `tts_cache` (unique index). If `status = 'ready'` with a non-empty URL, return it. If `status = 'generating'` and the row is fresh (under 3 min), return `{ generating: true }` for client poll. Stale `generating` rows or empty URLs are deleted and regeneration proceeds. Spoken dialogue without `characterId` is rejected (no `__narrator__` fallback).
 2. **Placeholder insert** — insert a row with `status = 'generating'` before calling any external APIs. This prevents duplicate generation if the user navigates away and back.
 3. **Grok tag inference** — call `https://api.x.ai/v1/responses` with `model: 'grok-4.3'` using `GROK_API_KEY`. Send up to 3 turns (prev + current + next panel text) for context. The LLM returns delivery tags like `[nervous]`, `[whispering]`, `[shouting]` prepended to each line. Only the current panel's tagged text is used.
 4. **Accent tag** — if the voice assignment has a `languageCode` set (e.g. `'it'`), prepend `[Italian accent]` to the text.
@@ -277,8 +281,9 @@ Voice generation happens server-side in the `voice.generateSpeech` procedure (`s
 
 ### Client-side TTS Flow (`StoryReader.tsx`)
 
-- `triggerTTS(panel)` is called from two places: the panel-change effect and the worldCharacters retry effect.
-- The panel-change effect **skips** on the very first panel load (`hasNavigatedRef`) — the worldCharacters retry handles the initial panel once character IDs are available.
+- `triggerTTS(panel)` is called from the panel-change effect, plus retry effects when `worldCharacters` or `narratorVoiceId` first become available.
+- Voice assignments are cached by character **name**, but each entry stores the Freeroam **`characterId`**. Spoken TTS always sends that id — never falls back to `__narrator__` (which caused false cache misses and re-generation).
+- If the character id is not resolvable yet, TTS no-ops and waits for the character-list retry instead of generating under the wrong key.
 - All audio playback goes through `playAudioClip(url, panel)` — a single helper that sets `ttsWillPlayRef`, handles `onerror`/`onstalled` for poor connections, and wires `onended` for auto-advance.
 - If the server returns `{ generating: true }`, the client polls `voice.checkTtsReady` every 2 seconds (up to 30 seconds) until `status = 'ready'`, then plays the audio inline.
 
@@ -340,7 +345,7 @@ The Grok call is **non-fatal** — if it fails for any reason, TTS proceeds with
 | `export_jobs` | Background character export job tracking — status, progress, download URL |
 | `world_collection_members` | World-to-collection membership (local, since Freeroam hides private worlds) |
 | `character_voices` | ElevenLabs voice assignments per character — voiceId, stability, similarityBoost, style, languageCode |
-| `tts_cache` | Cached TTS audio URLs. `status` column: `'generating'` or `'ready'`. Keyed by `(panelId, worldId, characterId)`. |
+| `tts_cache` | Cached TTS audio URLs. `status`: `'generating'` or `'ready'`. Unique on `(panelId, worldId, characterId)`. |
 | `app_settings` | Key-value store for global settings (narrator voice, auto-play, auto-advance, etc.) |
 | `image_cache` | Cached NSFW image replacements. `status`: `'generating'` or `'ready'`. Keyed by `panelId`; also indexed by `freeroamImageUrl` for cross-panel reuse. |
 

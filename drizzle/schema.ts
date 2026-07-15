@@ -1,4 +1,4 @@
-import { int, mysqlEnum, mysqlTable, text, timestamp, varchar } from "drizzle-orm/mysql-core";
+import { int, mysqlEnum, mysqlTable, text, timestamp, uniqueIndex, varchar } from "drizzle-orm/mysql-core";
 
 /**
  * Core user table backing auth flow.
@@ -195,7 +195,14 @@ export const ttsCache = mysqlTable("tts_cache", {
   /** S3 URL of the generated audio clip (empty string while generating) */
   audioUrl: text("audioUrl").notNull().default(''),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-});
+}, (table) => ({
+  // Single-flight + correct cache hits: one row per panel/world/character
+  panelWorldCharUnique: uniqueIndex("tts_cache_panel_world_char_uidx").on(
+    table.panelId,
+    table.worldId,
+    table.characterId,
+  ),
+}));
 
 export type TtsCache = typeof ttsCache.$inferSelect;
 export type InsertTtsCache = typeof ttsCache.$inferInsert;

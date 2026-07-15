@@ -2322,7 +2322,7 @@ export const appRouter = router({
         panelId: z.string(),
         worldId: z.string(),
         characterName: z.string(), // 'narrator' for narration
-        characterId: z.string().optional(), // Freeroam character external_id
+        characterId: z.string().optional(), // Freeroam character external_id — required for spoken dialogue
         text: z.string(),
         voiceId: z.string(),
         stability: z.string().optional().default('0.5'),
@@ -2342,8 +2342,20 @@ export const appRouter = router({
         const db = await getDb();
         if (!db) throw new Error('Database not available');
 
+        // Cache key is characterId. Spoken dialogue must pass a real Freeroam id —
+        // never fall back to __narrator__ (that caused cache misses and double ElevenLabs bills).
+        const isNarrator =
+          input.characterName === 'narrator' ||
+          input.characterId === '__narrator__';
+        if (!isNarrator && (!input.characterId || !input.characterId.trim())) {
+          throw new Error('characterId is required for character TTS (refusing __narrator__ fallback)');
+        }
+        const lookupCharId = isNarrator ? '__narrator__' : input.characterId!.trim();
+
+        // How long a 'generating' row may block before we reclaim and retry
+        const STALE_GENERATING_MS = 3 * 60 * 1000;
+
         // Check cache first — use characterId as the stable lookup key (names are mutable)
-        const lookupCharId = input.characterId ?? '__narrator__';
         const cached = await db.select().from(ttsCache).where(
           and(
             eq(ttsCache.panelId, input.panelId),
@@ -2352,14 +2364,25 @@ export const appRouter = router({
           )
         ).limit(1);
         if (cached.length > 0) {
-          if (cached[0].status === 'generating') {
-            // Already in progress — tell the client to retry later
-            return { audioUrl: null, fromCache: false, generating: true };
+          const row = cached[0];
+          if (row.status === 'generating') {
+            const age = Date.now() - new Date(row.createdAt).getTime();
+            if (age < STALE_GENERATING_MS) {
+              // Still in progress — tell the client to poll
+              return { audioUrl: null, fromCache: false, generating: true };
+            }
+            // Stale claim (process died mid-generation) — delete and fall through to regenerate
+            await db.delete(ttsCache).where(eq(ttsCache.id, row.id));
+          } else if (row.audioUrl) {
+            return { audioUrl: row.audioUrl, fromCache: true, generating: false };
+          } else {
+            // ready/unknown but empty URL — treat as invalid and regenerate
+            await db.delete(ttsCache).where(eq(ttsCache.id, row.id));
           }
-          return { audioUrl: cached[0].audioUrl, fromCache: true, generating: false };
         }
 
         // Insert a placeholder row to prevent concurrent duplicate generation
+        // (unique index on panelId+worldId+characterId makes the catch path reliable)
         try {
           await db.insert(ttsCache).values({
             panelId: input.panelId,
@@ -2371,7 +2394,7 @@ export const appRouter = router({
             status: 'generating',
           });
         } catch {
-          // Race condition: another request inserted first — skip this generation
+          // Race condition: another request inserted first — poll instead of generating twice
           return { audioUrl: null, fromCache: false, generating: true };
         }
 
@@ -2518,6 +2541,7 @@ export const appRouter = router({
         ).limit(1);
         if (rows.length === 0) return { audioUrl: null, ready: false };
         if (rows[0].status === 'generating') return { audioUrl: null, ready: false };
+        if (!rows[0].audioUrl) return { audioUrl: null, ready: false };
         return { audioUrl: rows[0].audioUrl, ready: true };
       }),
 

@@ -70,4 +70,8 @@
 ## StoryReader Bugs (Jun 2026)
 - [x] Fix auto-advance: opening action input or Characters panel must immediately cancel any running setTimeout, not just set a flag
 - [x] Fix initial spoken TTS cache miss: on reader open, triggerTTS fires before worldCharacters is populated, so charExternalId is undefined and the server cache lookup uses the wrong key
+- [x] TTS: always pass characterId with voice name-cache (stop __narrator__ false misses / re-gens)
+- [x] TTS: refuse spoken generate without characterId; reclaim stale generating rows; unique index on tts_cache
+- [x] TTS: retry when worldCharacters or narratorVoiceId arrives after first panel
 - [x] Fix StoryReader autoplay regression where auto-advancing from an unvoiced spoken/text panel to a voiced spoken panel prevents the next voice from playing and can leave later text-panel auto-advance unreliable.
+- [x] Fix auto-advance race: leaked 2× fallback timer when audio.onended overwrote timer ref without clearTimeout (double-advance into unvoiced panels); panel-id guards; wait while TTS in-flight

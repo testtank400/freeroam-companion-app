@@ -147,8 +147,18 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
   // Set to true by triggerTTS when it confirms no voice will play (no voice assigned, no narrator).
   // Lets the fallback timer fire at reading speed instead of 2x.
   const ttsConfirmedNoVoiceRef = useRef(false);
-  // Voice assignments cache: character_name -> voice data (null = no voice assigned, undefined = not yet fetched)
-  const voiceCache = useRef<Map<string, { voiceId: string; voiceName: string; stability: string | null; similarityBoost: string | null; style: string | null; languageCode: string | null } | null>>(new Map());
+  // Voice assignments cache: character_name -> voice data (null = no voice assigned, undefined = not yet fetched).
+  // characterId is stored with the entry so cache lookups always use the stable Freeroam id, not __narrator__.
+  type VoiceCacheEntry = {
+    voiceId: string;
+    voiceName: string;
+    stability: string | null;
+    similarityBoost: string | null;
+    style: string | null;
+    languageCode: string | null;
+    characterId: string;
+  } | null;
+  const voiceCache = useRef<Map<string, VoiceCacheEntry>>(new Map());
 
   // Load auto-play setting on mount
   const { data: autoPlaySetting } = trpc.voice.getSetting.useQuery({ key: 'auto_play_enabled' });
@@ -176,12 +186,21 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
   // Refs for values used inside async closures (audio.onended) to avoid stale captures
   const autoAdvanceEnabledRef = useRef(false);
   const autoAdvanceMinDelayRef = useRef(2);
+  const autoAdvanceReadingSpeedRef = useRef(1.0);
+  /** True while generateSpeech / poll is in progress for the current panel (not yet playing or failed). */
+  const ttsInFlightRef = useRef(false);
   const { data: autoAdvanceSetting } = trpc.voice.getSetting.useQuery({ key: 'auto_advance_enabled' });
   const { data: readingSpeedSetting } = trpc.voice.getSetting.useQuery({ key: 'auto_advance_reading_speed' });
   const { data: minDelaySetting } = trpc.voice.getSetting.useQuery({ key: 'auto_advance_min_delay' });
   const { data: staticDelaySetting } = trpc.voice.getSetting.useQuery({ key: 'auto_advance_static_delay' });
   useEffect(() => { if (autoAdvanceSetting !== undefined) { const v = autoAdvanceSetting === 'true'; setAutoAdvanceEnabled(v); autoAdvanceEnabledRef.current = v; } }, [autoAdvanceSetting]);
-  useEffect(() => { if (readingSpeedSetting) setAutoAdvanceReadingSpeed(parseFloat(readingSpeedSetting)); }, [readingSpeedSetting]);
+  useEffect(() => {
+    if (readingSpeedSetting) {
+      const v = parseFloat(readingSpeedSetting);
+      setAutoAdvanceReadingSpeed(v);
+      autoAdvanceReadingSpeedRef.current = v;
+    }
+  }, [readingSpeedSetting]);
   useEffect(() => { if (minDelaySetting) { const v = parseFloat(minDelaySetting); setAutoAdvanceMinDelay(v); autoAdvanceMinDelayRef.current = v; } }, [minDelaySetting]);
   useEffect(() => { if (staticDelaySetting) setAutoAdvanceStaticDelay(parseFloat(staticDelaySetting)); }, [staticDelaySetting]);
 
@@ -733,9 +752,55 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
     }
   }, []);
 
+  /** Reading-time delay for a block of text (respects min delay + reading speed). */
+  const readingDelayMsForText = useCallback((text: string) => {
+    const wordCount = text.trim() ? text.trim().split(/\s+/).length : 0;
+    const wpm = 200 * autoAdvanceReadingSpeedRef.current;
+    const readingTimeMs = wpm > 0 ? (wordCount / wpm) * 60 * 1000 : 0;
+    return Math.max(autoAdvanceMinDelayRef.current * 1000, readingTimeMs);
+  }, []);
+
+  /**
+   * Schedule auto-advance to nextPanelId after delayMs, only if still on fromPanelId.
+   * Always cancels prior timers first so we never leak a 2× fallback under a new timeout id
+   * (that race was skipping panels / double-firing into unvoiced panels).
+   */
+  const scheduleAutoAdvance = useCallback((
+    fromPanelId: string,
+    nextPanelId: string | null | undefined,
+    delayMs: number,
+  ) => {
+    if (!nextPanelId) return;
+    if (!autoAdvanceEnabledRef.current || autoAdvancePausedRef.current) return;
+    if (currentPanelIdRef.current !== fromPanelId) return;
+    cancelAutoAdvance();
+    autoAdvanceTimerRef.current = setTimeout(() => {
+      autoAdvanceTimerRef.current = null;
+      if (currentPanelIdRef.current !== fromPanelId) return;
+      if (!autoAdvanceEnabledRef.current || autoAdvancePausedRef.current) return;
+      loadPanelRef.current?.(nextPanelId, world.external_id);
+    }, Math.max(0, delayMs));
+  }, [cancelAutoAdvance, world.external_id]);
+
+  /** TTS confirmed this panel will not play audio — arm reading-time auto-advance. */
+  const confirmNoVoiceForPanel = useCallback((panel: PanelData) => {
+    ttsConfirmedNoVoiceRef.current = true;
+    ttsInFlightRef.current = false;
+    setIsGeneratingTts(false);
+    if (!autoAdvanceEnabledRef.current || autoAdvancePausedRef.current) return;
+    if (currentPanelIdRef.current !== panel.panel_id) return;
+    if (ttsWillPlayRef.current) return;
+    const text =
+      panel.panel_content?.speech_bubbles?.[0]?.text
+      ?? panel.panel_content?.narration
+      ?? '';
+    scheduleAutoAdvance(panel.panel_id, panel.next_panel_id, readingDelayMsForText(text));
+  }, [readingDelayMsForText, scheduleAutoAdvance]);
+
   const loadPanel = useCallback(async (panelId: string, worldId: string) => {
     stopPolling();
     cancelAutoAdvance();
+    ttsInFlightRef.current = false;
     setPendingActionText(null); // Clear pending action text when navigating to next panel
     setChoiceIdeasVisible(showChoiceIdeasByDefault);
     // Check panel cache first for instant navigation.
@@ -819,32 +884,91 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
   // Helper: play an audio clip with error/stall handling for poor connections
   const playAudioClip = useCallback((audioUrl: string, panel: PanelData) => {
     audioRef.current?.pause();
+    // Voice owns auto-advance from here — kill reading/2× fallbacks so they can't fire
+    // after onended overwrites the timer ref (leaked timeout race).
+    cancelAutoAdvance();
     const audio = new Audio(audioUrl);
     audioRef.current = audio;
     ttsWillPlayRef.current = true;
+    ttsInFlightRef.current = false;
     setIsGeneratingTts(false);
-    audio.play().catch(() => { ttsWillPlayRef.current = false; });
     setIsPlayingAudio(true);
 
-    const handlePlaybackFailure = () => {
-      // Audio failed or stalled — clear playing state, let fallback timer handle auto-advance
+    const textForFallback =
+      panel.panel_content?.speech_bubbles?.[0]?.text
+      ?? panel.panel_content?.narration
+      ?? '';
+
+    const armReadingFallback = () => {
       ttsWillPlayRef.current = false;
       setIsPlayingAudio(false);
+      scheduleAutoAdvance(
+        panel.panel_id,
+        panel.next_panel_id,
+        readingDelayMsForText(textForFallback),
+      );
     };
-    audio.onerror = handlePlaybackFailure;
-    audio.onstalled = handlePlaybackFailure;
+
+    audio.play().catch(() => { armReadingFallback(); });
+
+    audio.onerror = () => { armReadingFallback(); };
+    // Stall: don't treat as permanent failure (mobile can stall briefly); leave fallbacks off
+    // while still "playing". If it never recovers, user can tap; onended/onerror will handle.
+    audio.onstalled = () => { /* keep ttsWillPlayRef true */ };
 
     audio.onended = () => {
       setIsPlayingAudio(false);
       ttsWillPlayRef.current = false;
-      if (autoAdvanceEnabledRef.current && !autoAdvancePausedRef.current) {
-        autoAdvanceTimerRef.current = setTimeout(() => {
-          loadPanelRef.current?.(panel.next_panel_id!, world.external_id);
-        }, Math.max(0, autoAdvanceMinDelayRef.current * 1000));
-      }
+      // Clear any stragglers, then post-voice min delay (only if still on this panel)
+      cancelAutoAdvance();
+      scheduleAutoAdvance(
+        panel.panel_id,
+        panel.next_panel_id,
+        autoAdvanceMinDelayRef.current * 1000,
+      );
     };
+  }, [cancelAutoAdvance, readingDelayMsForText, scheduleAutoAdvance]);
+
+  // Resolve Freeroam character external_id from world list or panel characters API.
+  // Never invent ids — missing id means wait/retry, not generate under __narrator__.
+  const resolveCharacterExternalId = useCallback(async (
+    charName: string,
+    panelId: string,
+  ): Promise<string | undefined> => {
+    const normalizedCharName = charName.toLowerCase().replace(/-/g, ' ');
+    const worldChar = worldCharacters.find(c =>
+      c.name?.toLowerCase().replace(/-/g, ' ') === normalizedCharName
+    );
+    if (worldChar?.external_id) return worldChar.external_id;
+
+    try {
+      const panelChars = await utils.worlds.getPanelCharacters.fetch({
+        worldId: world.external_id,
+        panelId,
+      });
+      const allPanelChars = [
+        ...(panelChars.story_characters ?? []),
+        ...(panelChars.world_characters ?? []),
+      ];
+      if (allPanelChars.length > 0) {
+        setWorldCharacters(prev => {
+          const existing = new Set(prev.map(c => c.external_id));
+          const newChars = allPanelChars
+            .filter(c => !existing.has(c.external_id))
+            .map(c => ({ name: c.name, external_id: c.external_id }));
+          return newChars.length > 0 ? [...prev, ...newChars] : prev;
+        });
+        const found = allPanelChars.find(c =>
+          c.name?.toLowerCase().replace(/-/g, ' ') === normalizedCharName
+        );
+        if (found?.external_id) return found.external_id;
+      }
+    } catch {
+      // Non-fatal — caller will retry later when worldCharacters loads
+    }
+    return undefined;
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [world.external_id]);
+  }, [world.external_id, worldCharacters]);
 
   // TTS: trigger speech generation and playback for a panel
   const triggerTTS = useCallback(async (panel: PanelData) => {
@@ -859,11 +983,16 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
     // Handle narration panels via narrator voice
     if (speechBubble.style === 'narration' || !speechBubble.character) {
       if (!narratorVoiceId) {
-        // No narrator voice — signal the fallback timer to fire at reading speed
-        ttsConfirmedNoVoiceRef.current = true;
+        // Narrator voice not loaded/configured yet — don't lock no-voice forever;
+        // the narratorVoiceId retry effect will re-fire when the setting arrives.
+        // Only confirm no-voice after settings query has resolved to null/empty.
+        if (narratorVoiceId === null || narratorVoiceId === '') {
+          confirmNoVoiceForPanel(panel);
+        }
         return;
       }
       try {
+        ttsInFlightRef.current = true;
         setIsGeneratingTts(true);
         // Get previous panel's text and voice for context
         const prevPanel = panel.prev_panel_id ? panelCache.current.get(panel.prev_panel_id) : null;
@@ -890,7 +1019,7 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
           nextVoiceId,
         });
         if (result.fromCache) setIsGeneratingTts(false); // cache hit — clear immediately
-        if (!checkStillCurrent()) return; // Panel changed while awaiting — abort
+        if (!checkStillCurrent()) { ttsInFlightRef.current = false; return; }
         // If another request is already generating this panel's audio, poll until ready
         if ((result as { generating?: boolean }).generating && !result.audioUrl) {
           // Poll checkTtsReady every 2s until status=ready, then play inline
@@ -898,7 +1027,7 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
           let pollUrl: string | null = null;
           for (let attempt = 0; attempt < 15; attempt++) {
             await new Promise(resolve => setTimeout(resolve, 2000));
-            if (!checkStillCurrent()) return;
+            if (!checkStillCurrent()) { ttsInFlightRef.current = false; return; }
             try {
               const poll = await utils.voice.checkTtsReady.fetch({
                 panelId: panel.panel_id,
@@ -908,21 +1037,30 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
               if (poll.ready && poll.audioUrl) { pollUrl = poll.audioUrl; break; }
             } catch { /* non-fatal */ }
           }
-          if (!checkStillCurrent()) return;
+          if (!checkStillCurrent()) { ttsInFlightRef.current = false; return; }
           if (pollUrl) {
             setCurrentAudioUrl(pollUrl);
+            ttsInFlightRef.current = false;
             if (autoPlayEnabled) playAudioClip(pollUrl, panel);
+            else confirmNoVoiceForPanel(panel); // have URL but autoplay off — treat as timed read
           } else {
-            setIsGeneratingTts(false);
-            ttsConfirmedNoVoiceRef.current = true; // treat as no-voice for auto-advance
+            confirmNoVoiceForPanel(panel);
           }
           return;
         }
         if (result.audioUrl) {
           setCurrentAudioUrl(result.audioUrl);
+          ttsInFlightRef.current = false;
           if (autoPlayEnabled) playAudioClip(result.audioUrl, panel);
+          else confirmNoVoiceForPanel(panel);
+        } else {
+          confirmNoVoiceForPanel(panel);
         }
-      } catch { setIsGeneratingTts(false); /* Non-fatal */ }
+      } catch {
+        ttsInFlightRef.current = false;
+        setIsGeneratingTts(false);
+        confirmNoVoiceForPanel(panel);
+      }
       return;
     }
 
@@ -931,74 +1069,75 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
     const charName = speechBubble.character;
     const text = speechBubble.text;
 
-    // Look up voice assignment for this character
+    // Look up voice assignment for this character — always keep characterId with the entry
     let voiceData = voiceCache.current.get(charName);
-    let charExternalId: string | undefined;
-    if (voiceData === undefined) {
-      // Not yet cached — fetch from server
-      try {
-        // Find the character's external_id from the world's character list (reliable)
-        // Fall back to panel's visible_characters if world list doesn't have it
-        const normalizedCharName = charName.toLowerCase().replace(/-/g, ' ');
-        const worldChar = worldCharacters.find(c =>
-          c.name?.toLowerCase().replace(/-/g, ' ') === normalizedCharName
-        );
-        if (worldChar) {
-          charExternalId = worldChar.external_id;
-        } else {
-          // worldCharacters may be empty on initial reader open (worlds.get not yet resolved).
-          // Always call getPanelCharacters as fallback — it returns the current character list
-          // directly from Freeroam and is the reliable source for charExternalId.
-          try {
-            const panelChars = await utils.worlds.getPanelCharacters.fetch({
-              worldId: world.external_id,
-              panelId: panel.panel_id,
-            });
-            // Merge story_characters into worldCharacters for future lookups
-            const allPanelChars = [
-              ...(panelChars.story_characters ?? []),
-              ...(panelChars.world_characters ?? []),
-            ];
-            if (allPanelChars.length > 0) {
-              setWorldCharacters(prev => {
-                const existing = new Set(prev.map(c => c.external_id));
-                const newChars = allPanelChars
-                  .filter(c => !existing.has(c.external_id))
-                  .map(c => ({ name: c.name, external_id: c.external_id }));
-                return newChars.length > 0 ? [...prev, ...newChars] : prev;
-              });
-              const found = allPanelChars.find(c =>
-                c.name?.toLowerCase().replace(/-/g, ' ') === normalizedCharName
-              );
-              charExternalId = found?.external_id;
-            }
-            // Cache null if still not found — prevents repeated getPanelCharacters calls
-            if (!charExternalId) voiceCache.current.set(charName, null);
-          } catch {
-            // Non-fatal — no fallback available
-          }
-        }
-        if (!checkStillCurrent()) return; // Panel changed while awaiting — abort
-        if (charExternalId) {
-          const assignment = await utils.voice.getVoiceAssignment.fetch({ characterId: charExternalId });
-          voiceData = assignment ?? null;
-          // Only cache if we got a definitive result (found external_id and queried DB)
-          voiceCache.current.set(charName, voiceData);
-        }
-        // If no external_id found, don't cache null — retry on next panel
-      } catch {
-        // Don't cache on error — retry next time
-      }
-    } else {
-    }
 
-    if (!voiceData) {
-      // Confirmed no voice — signal the fallback timer to fire at reading speed
-      ttsConfirmedNoVoiceRef.current = true;
+    // null = previously fetched, confirmed no voice assignment
+    if (voiceData === null) {
+      confirmNoVoiceForPanel(panel);
       return;
     }
 
+    let charExternalId: string | undefined = voiceData?.characterId;
+
+    // Always re-resolve external_id when missing (name-cache used to drop it and cause __narrator__ misses)
+    if (!charExternalId) {
+      charExternalId = await resolveCharacterExternalId(charName, panel.panel_id);
+      if (!checkStillCurrent()) return;
+    }
+
+    if (voiceData === undefined) {
+      // Not yet cached — fetch assignment once we have a stable character id
+      if (!charExternalId) {
+        // Character list not ready yet — wait for worldCharacters retry effects.
+        // Do NOT generate, and do NOT mark confirmed no-voice (id may arrive shortly).
+        return;
+      }
+      try {
+        const assignment = await utils.voice.getVoiceAssignment.fetch({ characterId: charExternalId });
+        if (!checkStillCurrent()) return;
+        if (assignment) {
+          voiceData = {
+            voiceId: assignment.voiceId,
+            voiceName: assignment.voiceName,
+            stability: assignment.stability ?? null,
+            similarityBoost: assignment.similarityBoost ?? null,
+            style: assignment.style ?? null,
+            languageCode: assignment.languageCode ?? null,
+            characterId: charExternalId,
+          };
+          voiceCache.current.set(charName, voiceData);
+        } else {
+          voiceData = null;
+          voiceCache.current.set(charName, null);
+          confirmNoVoiceForPanel(panel);
+          return;
+        }
+      } catch {
+        // Don't cache on error — retry next time
+        return;
+      }
+    } else if (voiceData && !voiceData.characterId && charExternalId) {
+      // Backfill id onto an older-shaped cache entry if any
+      voiceData = { ...voiceData, characterId: charExternalId };
+      voiceCache.current.set(charName, voiceData);
+    }
+
+    if (!voiceData) {
+      confirmNoVoiceForPanel(panel);
+      return;
+    }
+
+    // Still no id after resolve attempt — wait for character list; don't fall back to __narrator__
+    if (!charExternalId && !voiceData.characterId) {
+      return;
+    }
+
+    // Prefer id stored on the voice entry (stable)
+    const lookupCharId = voiceData.characterId || charExternalId!;
+
     try {
+      ttsInFlightRef.current = true;
       setIsGeneratingTts(true);
       // Get previous panel's text and voice for context
       const prevPanelForChar = panel.prev_panel_id ? panelCache.current.get(panel.prev_panel_id) : null;
@@ -1017,7 +1156,7 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
         panelId: panel.panel_id,
         worldId: world.external_id,
         characterName: charName,
-        characterId: charExternalId ?? undefined,
+        characterId: lookupCharId,
         text,
         voiceId: voiceData.voiceId,
         stability: voiceData.stability ?? '0.5',
@@ -1030,56 +1169,65 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
         nextVoiceId: nextTextForChar ? nextVoiceIdForChar : undefined,
       });
       if (result.fromCache) setIsGeneratingTts(false); // cache hit — clear immediately
-      if (!checkStillCurrent()) return; // Panel changed while awaiting — abort
+      if (!checkStillCurrent()) { ttsInFlightRef.current = false; return; }
 
       // If another request is already generating this panel's audio, poll until ready
       if ((result as { generating?: boolean }).generating && !result.audioUrl) {
-        const pollCharId = charExternalId ?? '__narrator__';
         let pollUrl: string | null = null;
         for (let attempt = 0; attempt < 15; attempt++) {
           await new Promise(resolve => setTimeout(resolve, 2000));
-          if (!checkStillCurrent()) return;
+          if (!checkStillCurrent()) { ttsInFlightRef.current = false; return; }
           try {
             const poll = await utils.voice.checkTtsReady.fetch({
               panelId: panel.panel_id,
               worldId: world.external_id,
-              characterId: pollCharId,
+              characterId: lookupCharId,
             });
             if (poll.ready && poll.audioUrl) { pollUrl = poll.audioUrl; break; }
           } catch { /* non-fatal */ }
         }
-        if (!checkStillCurrent()) return;
+        if (!checkStillCurrent()) { ttsInFlightRef.current = false; return; }
         if (pollUrl) {
           setCurrentAudioUrl(pollUrl);
+          ttsInFlightRef.current = false;
           if (autoPlayEnabled) playAudioClip(pollUrl, panel);
+          else confirmNoVoiceForPanel(panel);
         } else {
-          setIsGeneratingTts(false);
-          ttsConfirmedNoVoiceRef.current = true; // treat as no-voice for auto-advance
+          confirmNoVoiceForPanel(panel);
         }
         return;
       }
 
       if (result.audioUrl) {
         setCurrentAudioUrl(result.audioUrl);
+        ttsInFlightRef.current = false;
         if (autoPlayEnabled) playAudioClip(result.audioUrl, panel);
+        else confirmNoVoiceForPanel(panel);
+      } else {
+        confirmNoVoiceForPanel(panel);
       }
     } catch {
-      // Non-fatal — TTS failure should not interrupt navigation
+      ttsInFlightRef.current = false;
+      setIsGeneratingTts(false);
+      confirmNoVoiceForPanel(panel);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoPlayEnabled, voiceEnabled, narratorVoiceId, world.external_id, worldCharacters, autoAdvanceEnabled, autoAdvanceMinDelay]);
+  }, [autoPlayEnabled, voiceEnabled, narratorVoiceId, world.external_id, worldCharacters, autoAdvanceEnabled, autoAdvanceMinDelay, resolveCharacterExternalId, confirmNoVoiceForPanel, playAudioClip]);
 
   // Keep loadPanelRef updated with latest loadPanel
   useEffect(() => { loadPanelRef.current = loadPanel; }, [loadPanel]);
 
-  // Track whether the reader has advanced past the first panel load
-  const hasNavigatedRef = useRef(false);
+  // Helper: only re-fire TTS if nothing is already playing / resolved for this panel
+  const maybeRetryTts = useCallback((panel: PanelData | null) => {
+    if (!panel) return;
+    if (audioRef.current && !audioRef.current.paused && !audioRef.current.ended) return;
+    if (currentAudioUrl) return;
+    triggerTTS(panel);
+  }, [currentAudioUrl, triggerTTS]);
 
   // Trigger TTS when panel changes and has spoken dialogue.
-  // NOTE: TTS is also re-fired by the worldCharacters effect (line ~805) when character
-  //       IDs first become available after the initial panel load.
-  // NOTE: The actual audio playback is in playAudioClip (line ~522), which is called
-  //       from triggerTTS. All 4 audio play sites use playAudioClip.
+  // Also re-fired by worldCharacters / narratorVoiceId effects when deps arrive after open.
+  // NOTE: The actual audio playback is in playAudioClip, which is called from triggerTTS.
   // NOTE: ttsWillPlayRef must be set to true before audio.play() and false on
   //       audio.onended/onerror/onstalled. The auto-advance fallback timer checks it.
   useEffect(() => {
@@ -1087,18 +1235,13 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
     // Reset TTS flags — triggerTTS will update them based on outcome
     ttsWillPlayRef.current = false;
     ttsConfirmedNoVoiceRef.current = false;
+    ttsInFlightRef.current = false;
     setIsGeneratingTts(false); // Clear stuck GEN badge on panel change
     // Stop any currently playing audio
     audioRef.current?.pause();
     audioRef.current = null;
     setIsPlayingAudio(false);
     setCurrentAudioUrl(null);
-    // Skip auto-play on the very first panel load — TTS cache may not be ready yet.
-    // The worldCharacters retry effect below will re-fire TTS once characters are loaded.
-    if (!hasNavigatedRef.current) {
-      hasNavigatedRef.current = true;
-      return;
-    }
     // Reset choice input on every panel change — no buffer for choice panels
     setChoiceInput('');
     // Reset NSFW badge state on panel change
@@ -1163,29 +1306,35 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
     } else {
       setNsfwImageUrl(null);
     }
-    // Fire TTS in background (non-blocking)
+    // Fire TTS in background (non-blocking). Spoken lines without char id will no-op
+    // until worldCharacters retry; narration waits for narratorVoiceId if needed.
     triggerTTS(currentPanel);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentPanel?.panel_id]);
 
   // Re-fire TTS when worldCharacters first arrives (async after initial load).
-  // On reader open, triggerTTS runs before worlds.get resolves, so charExternalId is
-  // undefined and the server cache lookup misses. This effect retries once characters
-  // are available, but only if audio isn't already playing (avoid duplicate generation).
+  // Spoken dialogue needs stable Freeroam character ids for cache lookup.
   const worldCharactersLoadedRef = useRef(false);
   useEffect(() => {
     if (worldCharacters.length === 0) return;
     if (worldCharactersLoadedRef.current) return; // Only retry on the FIRST population
     worldCharactersLoadedRef.current = true;
-    if (!currentPanel) return;
-    // Skip if audio is already playing (TTS succeeded on first attempt)
-    if (audioRef.current && !audioRef.current.paused && !audioRef.current.ended) return;
-    // Skip if audio URL already resolved (cache hit on first attempt)
-    if (currentAudioUrl) return;
-    // Retry TTS now that character IDs are available
-    triggerTTS(currentPanel);
+    maybeRetryTts(currentPanel);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [worldCharacters]);
+
+  // Re-fire TTS when narrator voice setting arrives after initial panel load.
+  const narratorVoiceReadyRef = useRef(false);
+  useEffect(() => {
+    if (!narratorVoiceId) return;
+    if (narratorVoiceReadyRef.current) return;
+    narratorVoiceReadyRef.current = true;
+    const bubble = currentPanel?.panel_content?.speech_bubbles?.[0];
+    const isNarration = !!bubble && (bubble.style === 'narration' || !bubble.character);
+    if (!isNarration) return;
+    maybeRetryTts(currentPanel);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [narratorVoiceId]);
 
   // NSFW image detection and replacement.
   // Server single-flight (unique panelId claim) is the source of truth; client Set is a session optimization.
@@ -1505,88 +1654,80 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
   }, [currentPanel?.panel_id, unrestrictedImagesEnabled, nsfwRegenNonce]);
 
   // Auto-advance timer: fires when panel changes and auto-advance is enabled.
-  // Voice-based advance is handled in triggerTTS audio.onended (playAudioClip helper).
-  // This handles panels without voice: text-based timer or static delay.
-  // NOTE: Auto-advance is also controlled by autoAdvancePausedRef (set by pauseAutoAdvance/
-  //       resumeAutoAdvance). Pause triggers: action input open, Characters panel open,
-  //       story menu open. All must be dismissed before advance resumes.
-  // NOTE: The advance itself fires in audio.onended (voiced panels) or noVoiceTimer
-  //       (unvoiced panels). If you add a new advance path, check both.
+  // Voiced panels: playAudioClip onended → scheduleAutoAdvance(minDelay).
+  // Unvoiced panels: reading-time / static delay via scheduleAutoAdvance.
+  // While TTS may still start: reading-time no-voice check + 2× fallback that waits if in-flight.
   useEffect(() => {
     if (!currentPanel || !autoAdvanceEnabled || autoAdvancePaused) return;
     // Don't auto-advance on choice, action, or polling panels
     if (currentPanel.requires_action || currentPanel.is_action || isPolling) return;
     // Don't auto-advance if there's no next panel
     if (!currentPanel.next_panel_id) return;
-    // If voice is enabled and auto-play is on, the audio.onended handler will trigger advance
-    // Only set a text-based timer if voice is disabled or no voice assigned
+
+    const panelId = currentPanel.panel_id;
+    const nextId = currentPanel.next_panel_id;
     const speechBubble = currentPanel.panel_content?.speech_bubbles?.[0];
     const narration = currentPanel.panel_content?.narration;
-    // A panel has speakable text if it has a spoken or narration speech bubble, or a narration field
     const isSpokenBubble = speechBubble?.style === 'spoken' && !!speechBubble?.text;
     const isNarrationBubble = (speechBubble?.style === 'narration' || !speechBubble?.character) && !!speechBubble?.text;
     const hasNarrationField = !!narration;
     const hasSpeakableText = isSpokenBubble || isNarrationBubble || hasNarrationField;
-    // Non-speakable text (action bubbles etc.) — treat as no-voice text
     const hasAnyText = !!speechBubble?.text || !!narration;
+    const textForTiming = speechBubble?.text ?? narration ?? '';
+    const totalDelay = readingDelayMsForText(textForTiming);
+
     if (hasSpeakableText && voiceEnabled) {
-      const textForTiming = speechBubble?.text ?? narration ?? '';
-      const wordCount = textForTiming.split(/\s+/).length;
-      const wordsPerMinute = 200 * autoAdvanceReadingSpeed;
-      const readingTimeMs = (wordCount / wordsPerMinute) * 60 * 1000;
-      const totalDelay = Math.max(autoAdvanceMinDelay * 1000, readingTimeMs);
-      // Determine if we know for certain that no voice will play on this panel
       const charName = speechBubble?.character;
       const cachedVoice = charName ? voiceCache.current.get(charName) : undefined;
       const knownNoVoice = cachedVoice === null; // null = fetched, confirmed no voice
-      // Narration panels with no narrator voice set will never play TTS
       const isNarrationNoVoice = (isNarrationBubble || hasNarrationField) && !narratorVoiceId;
+
       if (knownNoVoice || isNarrationNoVoice) {
-        // Definitely no voice — use reading-time timer directly
-        autoAdvanceTimerRef.current = setTimeout(() => {
-          loadPanelRef.current?.(currentPanel.next_panel_id!, world.external_id);
-        }, totalDelay);
+        // Definitely no voice — reading-time advance
+        scheduleAutoAdvance(panelId, nextId, totalDelay);
       } else {
-        // Voice might play — set a generous fallback timer.
-        // The timer checks ttsWillPlayRef (set when audio.play() is called) and
-        // ttsConfirmedNoVoiceRef (set when triggerTTS determines no voice is assigned).
-        // If either confirms no voice, advance immediately at reading speed.
-        // 2x fallback: fires if voice never started
-        autoAdvanceTimerRef.current = setTimeout(() => {
-          if (!ttsWillPlayRef.current) {
-            loadPanelRef.current?.(currentPanel.next_panel_id!, world.external_id);
-          }
-        }, totalDelay * 2);
-        // Reading-speed check: fires sooner if triggerTTS confirms no voice
-        // This handles the case where voice lookup completes quickly with null result
-        const noVoiceTimer = setTimeout(() => {
-          if (ttsConfirmedNoVoiceRef.current && !ttsWillPlayRef.current) {
-            // Cancel the 2x timer and advance now
-            if (autoAdvanceTimerRef.current) { clearTimeout(autoAdvanceTimerRef.current); autoAdvanceTimerRef.current = null; }
-            loadPanelRef.current?.(currentPanel.next_panel_id!, world.external_id);
+        // Voice might play — arm two timers:
+        // 1) reading-speed: advance if TTS already confirmed no voice
+        // 2) 2× fallback: advance only if audio never started AND TTS is not still in-flight
+        noVoiceTimerRef.current = setTimeout(() => {
+          noVoiceTimerRef.current = null;
+          if (currentPanelIdRef.current !== panelId) return;
+          if (ttsConfirmedNoVoiceRef.current && !ttsWillPlayRef.current && !ttsInFlightRef.current) {
+            scheduleAutoAdvance(panelId, nextId, 0);
           }
         }, totalDelay);
-        // Patch cancelAutoAdvance to also clear noVoiceTimer
-        const origCancel = autoAdvanceTimerRef.current;
-        void origCancel; // suppress lint
-        // Store noVoiceTimer in a separate ref so cleanup can reach it
-        noVoiceTimerRef.current = noVoiceTimer;
+
+        autoAdvanceTimerRef.current = setTimeout(() => {
+          autoAdvanceTimerRef.current = null;
+          if (currentPanelIdRef.current !== panelId) return;
+          if (ttsWillPlayRef.current) return; // audio playing — onended owns advance
+          if (ttsInFlightRef.current) {
+            // Still generating/polling — extend wait (up to ~30s more in 2s steps via re-arm)
+            let extensions = 0;
+            const extend = () => {
+              if (currentPanelIdRef.current !== panelId) return;
+              if (ttsWillPlayRef.current) return;
+              if (ttsInFlightRef.current && extensions < 15) {
+                extensions += 1;
+                autoAdvanceTimerRef.current = setTimeout(extend, 2000);
+                return;
+              }
+              // Done waiting — advance if nothing is playing
+              if (!ttsWillPlayRef.current) {
+                scheduleAutoAdvance(panelId, nextId, 0);
+              }
+            };
+            autoAdvanceTimerRef.current = setTimeout(extend, 2000);
+            return;
+          }
+          // No audio, not in flight — safe to advance (unvoiced or TTS gave up)
+          scheduleAutoAdvance(panelId, nextId, 0);
+        }, totalDelay * 2);
       }
     } else if (hasAnyText) {
-      // No voice — use reading time
-      const textForTiming2 = speechBubble?.text ?? narration ?? '';
-      const wordCount = textForTiming2.split(/\s+/).length;
-      const wordsPerMinute = 200 * autoAdvanceReadingSpeed;
-      const readingTimeMs = (wordCount / wordsPerMinute) * 60 * 1000;
-      const totalDelay = Math.max(autoAdvanceMinDelay * 1000, readingTimeMs);
-      autoAdvanceTimerRef.current = setTimeout(() => {
-        loadPanelRef.current?.(currentPanel.next_panel_id!, world.external_id);
-      }, totalDelay);
+      scheduleAutoAdvance(panelId, nextId, totalDelay);
     } else {
-      // No text — use static delay
-      autoAdvanceTimerRef.current = setTimeout(() => {
-        loadPanelRef.current?.(currentPanel.next_panel_id!, world.external_id);
-      }, autoAdvanceStaticDelay * 1000);
+      scheduleAutoAdvance(panelId, nextId, autoAdvanceStaticDelay * 1000);
     }
     return () => cancelAutoAdvance();
   // eslint-disable-next-line react-hooks/exhaustive-deps
