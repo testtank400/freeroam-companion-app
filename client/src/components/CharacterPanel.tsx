@@ -7,6 +7,7 @@
  */
 
 import { trpc } from '@/lib/trpc';
+import { getFreeroamAuthHeaders } from '@/lib/freeroamHeaders';
 import { X, Plus, ArrowLeft, Search, Loader2, Save } from 'lucide-react';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { toast } from 'sonner';
@@ -117,14 +118,11 @@ export default function CharacterPanel({
   const loadLibrary = useCallback(async () => {
     setIsLoadingLibrary(true);
     try {
-      const cookie = localStorage.getItem('freeroam_cookie') ?? '';
-      const accountId = localStorage.getItem('freeroam_account_id') ?? '';
-      const params = encodeURIComponent(JSON.stringify({ '0': { json: {} } }));
+            const params = encodeURIComponent(JSON.stringify({ '0': { json: {} } }));
       const res = await fetch(`/api/trpc/characters.library?batch=1&input=${params}`, {
         credentials: 'include',
         headers: {
-          ...(cookie ? { 'x-freeroam-cookie': cookie } : {}),
-          ...(accountId ? { 'x-freeroam-account-id': accountId } : {}),
+          ...getFreeroamAuthHeaders(),
         },
       });
       if (!res.ok) return;
@@ -788,15 +786,12 @@ function StoryDetailEditView({
         reader.readAsDataURL(file);
       });
 
-      const cookie = localStorage.getItem('freeroam_cookie') ?? '';
-      const accountId = localStorage.getItem('freeroam_account_id') ?? '';
       const res = await fetch('/api/trpc/characters.uploadHeadshot?batch=1', {
         method: 'POST',
         credentials: 'include',
         headers: {
           'content-type': 'application/json',
-          ...(cookie ? { 'x-freeroam-cookie': cookie } : {}),
-          ...(accountId ? { 'x-freeroam-account-id': accountId } : {}),
+          ...getFreeroamAuthHeaders(),
         },
         body: JSON.stringify({
           '0': { json: { fileBase64: base64, mimeType: file.type, fileName: file.name } },

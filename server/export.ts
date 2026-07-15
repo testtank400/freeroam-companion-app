@@ -99,14 +99,26 @@ async function fetchCharacterData(
 /**
  * Download a headshot image from a URL. Returns the buffer and file extension.
  * Returns null if download fails or URL is empty.
+ * @param timeoutMs optional abort timeout (used by bulk export job for fail-fast batches)
  */
-async function downloadHeadshot(
-  url: string | null | undefined
+export async function downloadHeadshot(
+  url: string | null | undefined,
+  timeoutMs?: number
 ): Promise<{ buffer: Buffer; ext: string } | null> {
   if (!url) return null;
 
   try {
-    const response = await fetch(url);
+    const controller = timeoutMs != null ? new AbortController() : undefined;
+    const timeout =
+      controller && timeoutMs != null
+        ? setTimeout(() => controller.abort(), timeoutMs)
+        : undefined;
+    let response: Response;
+    try {
+      response = await fetch(url, controller ? { signal: controller.signal } : undefined);
+    } finally {
+      if (timeout) clearTimeout(timeout);
+    }
     if (!response.ok) return null;
 
     const arrayBuffer = await response.arrayBuffer();
@@ -136,7 +148,7 @@ async function downloadHeadshot(
 /**
  * Build the about-freeroam.md file content.
  */
-function buildAboutFreeroamMarkdown(
+export function buildAboutFreeroamMarkdown(
   freeroamBackstory: string | null | undefined
 ): string {
   const hasContent = freeroamBackstory && freeroamBackstory.trim().length > 0;
@@ -150,7 +162,7 @@ function buildAboutFreeroamMarkdown(
  * Build the about-extended.md file content.
  * Returns null if no extended content exists.
  */
-function buildAboutExtendedMarkdown(
+export function buildAboutExtendedMarkdown(
   extendedBackstory: string | null | undefined
 ): string | null {
   const hasContent = extendedBackstory && extendedBackstory.trim().length > 0;
@@ -161,7 +173,7 @@ function buildAboutExtendedMarkdown(
 /**
  * Build the appearance-freeroam.md file content.
  */
-function buildAppearanceFreeroamMarkdown(
+export function buildAppearanceFreeroamMarkdown(
   freeroamAppearance: string | null | undefined
 ): string {
   const hasContent = freeroamAppearance && freeroamAppearance.trim().length > 0;
@@ -175,7 +187,7 @@ function buildAppearanceFreeroamMarkdown(
  * Build the appearance-extended.md file content.
  * Returns null if no extended content exists.
  */
-function buildAppearanceExtendedMarkdown(
+export function buildAppearanceExtendedMarkdown(
   extendedAppearance: string | null | undefined
 ): string | null {
   const hasContent = extendedAppearance && extendedAppearance.trim().length > 0;
@@ -186,7 +198,7 @@ function buildAppearanceExtendedMarkdown(
 /**
  * Sanitize a character name for use as a folder name.
  */
-function sanitizeFolderName(name: string): string {
+export function sanitizeFolderName(name: string): string {
   return name
     .replace(/[/\\?%*:|"<>]/g, "_")
     .replace(/\.$/g, "")

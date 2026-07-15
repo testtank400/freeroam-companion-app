@@ -392,7 +392,7 @@ When **Unrestricted Images** is enabled (Preferences → Images), the app replac
 
 2. **DeepSeek V4 Flash prompt enhancement** — second DeepSeek call. Receives action text plus prev/current/next story text. Writes an image-edit prompt. **Cast** from `character_references` (who is in the image): sex labels derived from each ref’s appearance (woman / man / futanari woman / person) — **never invent a male partner** for woman/futa pairs; no forced hetero pairing. Solo = one person. **Clothing:** only if story or Freeroam image prompt explicitly states outfit/undress/nude; otherwise **same clothing as the reference image**. Headshot refs capped to cast size (max 2).
 
-3. **Seedream v5.0 Pro Edit image generation** (`bytedance/seedream-v5.0-pro/edit`) — via Atlas Cloud (`https://api.atlascloud.ai/api/v1/model/generateImage`). Receives the enhanced prompt plus character **reference images** from `headshot_url` (up to 2). Note: Freeroam “headshots” may be **face or full-body** art. Output size: **1600×2400** (2:3 portrait). We do **not** pass Freeroam panel images as Seedream refs (only `headshot_url`). Classify may return an `artStyle` phrase, but we **do not** prepend it when reference images exist — Seedream should take style/species from the refs. A global tag like `[anime furry…]` can incorrectly furry-ize non-furry cast. Art-style prepend is only a fallback if there are **zero** reference images.
+3. **Seedream image generation** — model id and poll/stale budgets live in `server/nsfwImageCache.ts` (`SEEDREAM_EDIT_MODEL`, currently `bytedance/seedream-v5.0-pro/edit`) via Atlas Cloud (`https://api.atlascloud.ai/api/v1/model/generateImage`). Receives the enhanced prompt plus character **reference images** from `headshot_url` (up to 2). Note: Freeroam “headshots” may be **face or full-body** art. Output size: **1600×2400** (2:3 portrait). We do **not** pass Freeroam panel images as Seedream refs (only `headshot_url`). Classify may return an `artStyle` phrase, but we **do not** prepend it when reference images exist — Seedream should take style/species from the refs. A global tag like `[anime furry…]` can incorrectly furry-ize non-furry cast. Art-style prepend is only a fallback if there are **zero** reference images.
 
 ### Caching and Cross-Panel Reuse
 
@@ -498,7 +498,7 @@ Freeroam has occasionally had someone relevant who is **not** tagged with `~~Nam
 
 ### Loop Prevention
 
-**Server single-flight (source of truth):** `generateNsfwImage` claims a unique `image_cache` row with `status: 'generating'` **before** DeepSeek classification or Seedream. Concurrent callers hit the unique `panelId` constraint and return `generating` / `ready` / `skipped` instead of starting a second job. The old flow classified first, then `DELETE`+`INSERT` — that race let multiple Seedream runs fire for one panel.
+**Server single-flight (source of truth):** `generateNsfwImage` claims a unique `image_cache` row **before** DeepSeek classification or Seedream. Concurrent callers hit the unique `panelId` constraint and return `generating` / `ready` / `skipped` instead of starting a second job. Stale claim reclaim and Seedream poll limits are shared in `server/nsfwImageCache.ts`. **`checkImageReady` is read-only** (must never delete claims — polling deleted long Seedream jobs and forced re-runs).
 
 **Statuses:**
 - `classifying` — DeepSeek NSFW check in progress (no Seedream yet; **no IMG badge**)

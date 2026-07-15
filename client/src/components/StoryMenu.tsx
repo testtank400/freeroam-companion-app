@@ -5,6 +5,7 @@
 
 import { ApiWorld } from '@/components/WorldCard';
 import { trpc } from '@/lib/trpc';
+import { getFreeroamAuthHeaders } from '@/lib/freeroamHeaders';
 import { Heart, MessageCircle, Bookmark, Share2, RotateCcw, RefreshCw, Pencil, ChevronDown, Check, X as XIcon } from 'lucide-react';
 import { useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
@@ -252,15 +253,12 @@ function JournalPreferences() {
 
   // Load preferences on mount
   useState(() => {
-    const cookie = localStorage.getItem('freeroam_cookie') ?? '';
-    const accountId = localStorage.getItem('freeroam_account_id') ?? '';
-    const params = encodeURIComponent(JSON.stringify({ '0': { json: {} } }));
+        const params = encodeURIComponent(JSON.stringify({ '0': { json: {} } }));
     fetch(`/api/trpc/preferences.get?batch=1&input=${params}`, {
       credentials: 'include',
       headers: {
-        ...(cookie ? { 'x-freeroam-cookie': cookie } : {}),
-        ...(accountId ? { 'x-freeroam-account-id': accountId } : {}),
-      },
+          ...getFreeroamAuthHeaders(),
+        },
     })
       .then(r => r.json())
       .then(json => {

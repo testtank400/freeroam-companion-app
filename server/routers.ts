@@ -2669,10 +2669,14 @@ export const appRouter = router({
 
         // ── Cache / single-flight claim ─────────────────────────────────────────
         // IMPORTANT: claim the panelId row BEFORE any slow LLM/image work.
-        // The old code classified first, then deleted+inserted `generating` —
-        // concurrent requests both saw empty cache, both classified, both hit Seedream.
-        const STALE_CLASSIFYING_MS = 90_000;  // DeepSeek should finish well under this
-        const STALE_GENERATING_MS = 120_000; // Seedream + upload; also recovers from mid-job server restarts
+        // Stale policy is shared (server/nsfwImageCache.ts) — only THIS procedure may
+        // delete abandoned claims. checkImageReady must stay read-only.
+        const {
+          releaseStaleNsfwClaim,
+          SEEDREAM_EDIT_MODEL,
+          SEEDREAM_POLL_INTERVAL_MS,
+          SEEDREAM_POLL_MAX_ATTEMPTS,
+        } = await import('./nsfwImageCache');
 
         const readPanelCache = async () => {
           const rows = await db.select().from(imageCache).where(eq(imageCache.panelId, input.panelId)).limit(1);
@@ -2680,16 +2684,12 @@ export const appRouter = router({
           return rows.length > 0 ? rows[0] : null;
         };
 
-        /** Drop abandoned claims so regenerate / remount is not stuck on CHECK forever. */
-        const releaseIfStale = async (row: { status: string; createdAt: Date | string }) => {
-          if (row.status !== 'classifying' && row.status !== 'generating') return false;
-          const age = Date.now() - new Date(row.createdAt).getTime();
-          const limit = row.status === 'classifying' ? STALE_CLASSIFYING_MS : STALE_GENERATING_MS;
-          if (age <= limit) return false;
-          console.warn(`[NSFW] Releasing stale ${row.status} claim for panel ${input.panelId} (age ${Math.round(age / 1000)}s)`);
-          await db.delete(imageCache).where(eq(imageCache.panelId, input.panelId));
-          return true;
-        };
+        const releaseIfStale = async (row: { status: string; createdAt: Date | string }) =>
+          releaseStaleNsfwClaim(
+            () => db.delete(imageCache).where(eq(imageCache.panelId, input.panelId)),
+            row,
+            input.panelId,
+          );
 
         /** After long work, ensure we still own the claim (regenerate may have deleted/replaced it). */
         const stillOwnClaim = async (expectedStatus: 'classifying' | 'generating') => {
@@ -2997,11 +2997,13 @@ Respond with ONLY this JSON (no other text): {"isNsfw": true or false, "artStyle
           return { imageUrl: null, fromCache: false, generating: false, aborted: true };
         }
 
-        // Promote claim to Seedream phase — only now should clients show the IMG badge
+        // Promote claim to Seedream phase — only now should clients show the IMG badge.
+        // Reset createdAt so the stale clock covers Seedream wait, not DeepSeek+Seedream combined.
         await db.update(imageCache).set({
           status: 'generating',
           freeroamImageUrl: input.imageUrl ?? null,
           freeroamImagePrompt: input.prompt || null,
+          createdAt: new Date(),
         }).where(eq(imageCache.panelId, input.panelId));
 
         try {
@@ -3289,7 +3291,7 @@ Respond with ONLY this JSON: {"prompt": "..."}`,
             console.log('[NSFW DEBUG] Full Seedream prompt:', seedreamPrompt);
           }
 
-          // Call Atlas Cloud Seedream v5.0 Pro Edit
+          // Call Atlas Cloud Seedream (model id + poll budget from nsfwImageCache.ts)
           const generateResp = await fetch('https://api.atlascloud.ai/api/v1/model/generateImage', {
             method: 'POST',
             headers: {
@@ -3297,7 +3299,7 @@ Respond with ONLY this JSON: {"prompt": "..."}`,
               'Content-Type': 'application/json',
             },
             body: JSON.stringify({
-              model: 'bytedance/seedream-v5.0-pro/edit',
+              model: SEEDREAM_EDIT_MODEL,
               prompt: seedreamPrompt,
               images: images.length > 0 ? images : undefined,
               size: '1600*2400',
@@ -3312,10 +3314,10 @@ Respond with ONLY this JSON: {"prompt": "..."}`,
           const generateData = await generateResp.json() as { data: { id: string } };
           const predictionId = generateData.data.id;
 
-          // Poll for result (max 120s)
+          // Timing out early deletes the image_cache claim and forces a full re-run on revisit.
           let resultUrl: string | null = null;
-          for (let i = 0; i < 60; i++) {
-            await new Promise(resolve => setTimeout(resolve, 2000));
+          for (let i = 0; i < SEEDREAM_POLL_MAX_ATTEMPTS; i++) {
+            await new Promise(resolve => setTimeout(resolve, SEEDREAM_POLL_INTERVAL_MS));
             const pollResp = await fetch(`https://api.atlascloud.ai/api/v1/model/prediction/${predictionId}`, {
               headers: { 'Authorization': `Bearer ${atlasKey}` },
             });
@@ -3330,7 +3332,8 @@ Respond with ONLY this JSON: {"prompt": "..."}`,
             }
           }
 
-          if (!resultUrl) throw new Error('Atlas Cloud generation timed out');
+          const pollBudgetSec = Math.round((SEEDREAM_POLL_MAX_ATTEMPTS * SEEDREAM_POLL_INTERVAL_MS) / 1000);
+          if (!resultUrl) throw new Error(`Atlas Cloud generation timed out after ${pollBudgetSec}s`);
 
           // Always download the Atlas output. Aliyun OSS URLs often fail as <img src>
           // in the browser (hotlink / short-lived). Re-host via Forge when available,
@@ -3402,22 +3405,13 @@ Respond with ONLY this JSON: {"prompt": "..."}`,
         const db = await getDb();
         if (!db) return { status: 'not_found', imageUrl: null };
 
-        const STALE_CLASSIFYING_MS = 90_000;
-        const STALE_GENERATING_MS = 120_000; // mid-job restart leaves orphan generating rows
-        const isStale = (row: { status: string; createdAt: Date | string }) => {
-          if (row.status !== 'classifying' && row.status !== 'generating') return false;
-          const age = Date.now() - new Date(row.createdAt).getTime();
-          const limit = row.status === 'classifying' ? STALE_CLASSIFYING_MS : STALE_GENERATING_MS;
-          return age > limit;
-        };
+        // READ-ONLY: never delete claims here. Client polls this every ~0.5–1.5s while waiting.
+        // Deleting "stale" generating rows on poll was wiping Seedream v5 jobs (~2 min) and
+        // forcing a full re-run on leave/return. Stale reclaim belongs only in generateNsfwImage.
 
         // Check by panelId first
         const rows = await db.select().from(imageCache).where(eq(imageCache.panelId, input.panelId)).limit(1);
         if (rows.length) {
-          if (isStale(rows[0])) {
-            await db.delete(imageCache).where(eq(imageCache.panelId, input.panelId));
-            return { status: 'not_found', imageUrl: null };
-          }
           return { status: rows[0].status, imageUrl: rows[0].imageUrl || null };
         }
         // Same Freeroam source image URL

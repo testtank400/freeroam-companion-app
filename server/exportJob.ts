@@ -2,81 +2,23 @@
  * Background export job runner.
  * Generates ZIP files in the background with memory-safe batching,
  * uploads to S3, and updates the job record in the database.
+ *
+ * Markdown / headshot helpers live in export.ts (single source of truth).
  */
 import JSZip from "jszip";
 import { eq } from "drizzle-orm";
 import { exportJobs } from "../drizzle/schema";
 import { getCharacterExtended, getCharactersNsfw, getCollectionsByAccountId, getDb } from "./db";
+import {
+  buildAboutExtendedMarkdown,
+  buildAboutFreeroamMarkdown,
+  buildAppearanceExtendedMarkdown,
+  buildAppearanceFreeroamMarkdown,
+  downloadHeadshot,
+  sanitizeFolderName,
+  type LibraryCharacterData,
+} from "./export";
 import { storagePut, storageGetSignedUrl } from "./storage";
-import type { LibraryCharacterData } from "./export";
-
-// ─── Helpers (duplicated from export.ts to keep this module self-contained) ──
-
-function sanitizeFolderName(name: string): string {
-  return name
-    .replace(/[/\\?%*:|"<>]/g, "_")
-    .replace(/\.$/g, "")
-    .replace(/^\.+/, "")
-    .trim()
-    .replace(/\s+/g, " ") || "Unknown_Character";
-}
-
-function buildAboutFreeroamMarkdown(freeroamBackstory: string | null | undefined): string {
-  const hasContent = freeroamBackstory && freeroamBackstory.trim().length > 0;
-  if (!hasContent) return "# About\n\n*No content on Freeroam.*\n";
-  return `# About\n\n${freeroamBackstory}\n`;
-}
-
-function buildAboutExtendedMarkdown(extendedBackstory: string | null | undefined): string | null {
-  const hasContent = extendedBackstory && extendedBackstory.trim().length > 0;
-  if (!hasContent) return null;
-  return `# About (Extended)\n\n${extendedBackstory}\n`;
-}
-
-function buildAppearanceFreeroamMarkdown(freeroamAppearance: string | null | undefined): string {
-  const hasContent = freeroamAppearance && freeroamAppearance.trim().length > 0;
-  if (!hasContent) return "# Appearance\n\n*No content on Freeroam.*\n";
-  return `# Appearance\n\n${freeroamAppearance}\n`;
-}
-
-function buildAppearanceExtendedMarkdown(extendedAppearance: string | null | undefined): string | null {
-  const hasContent = extendedAppearance && extendedAppearance.trim().length > 0;
-  if (!hasContent) return null;
-  return `# Appearance (Extended)\n\n${extendedAppearance}\n`;
-}
-
-async function downloadHeadshot(url: string | null | undefined): Promise<{ buffer: Buffer; ext: string } | null> {
-  if (!url) return null;
-  try {
-    // 8-second timeout per image — fail fast instead of blocking the batch
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 8000);
-    let response: Response;
-    try {
-      response = await fetch(url, { signal: controller.signal });
-    } finally {
-      clearTimeout(timeout);
-    }
-    if (!response.ok) return null;
-    const arrayBuffer = await response.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
-    const urlExt = url.split(".").pop()?.split("?")[0] || "";
-    const contentType = response.headers.get("content-type") || "";
-    let ext = "webp";
-    if (urlExt && ["jpg", "jpeg", "png", "webp", "gif"].includes(urlExt.toLowerCase())) {
-      ext = urlExt.toLowerCase();
-    } else if (contentType.includes("jpeg") || contentType.includes("jpg")) {
-      ext = "jpg";
-    } else if (contentType.includes("png")) {
-      ext = "png";
-    } else if (contentType.includes("webp")) {
-      ext = "webp";
-    }
-    return { buffer, ext };
-  } catch {
-    return null;
-  }
-}
 
 // ─── Job Runner ─────────────────────────────────────────────────────────────
 
@@ -226,7 +168,8 @@ export async function runExportJob(
 
       const results = await Promise.allSettled(
         batch.map(async ({ url, folderName }) => {
-          const headshot = await downloadHeadshot(url);
+          // 8s fail-fast so a hung CDN URL does not block the batch
+          const headshot = await downloadHeadshot(url, 8000);
           if (headshot) {
             const charFolder = rootFolder.folder(folderName)!;
             charFolder.file(`headshot.${headshot.ext}`, headshot.buffer);

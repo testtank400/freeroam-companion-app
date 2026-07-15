@@ -10,6 +10,7 @@
 //   - Choice options: frosted glass pills below the panel
 
 import { trpc } from '@/lib/trpc';
+import { getFreeroamAuthHeaders } from '@/lib/freeroamHeaders';
 import { ApiWorld } from '@/components/WorldCard';
 import StoryMenu from '@/components/StoryMenu';
 import CharacterPanel from '@/components/CharacterPanel';
@@ -403,15 +404,12 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
         return;
       }
       try {
-        const cookie = localStorage.getItem('freeroam_cookie') ?? '';
-        const accountId = localStorage.getItem('freeroam_account_id') ?? '';
-        const params = encodeURIComponent(JSON.stringify({ '0': { json: { worldId } } }));
+                const params = encodeURIComponent(JSON.stringify({ '0': { json: { worldId } } }));
         const res = await fetch(`/api/trpc/worlds.get?batch=1&input=${params}`, {
           credentials: 'include',
           headers: {
-            ...(cookie ? { 'x-freeroam-cookie': cookie } : {}),
-            ...(accountId ? { 'x-freeroam-account-id': accountId } : {}),
-          },
+          ...getFreeroamAuthHeaders(),
+        },
         });
         if (!res.ok) return;
         const json = await res.json();
@@ -673,11 +671,7 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
     setIsPolling(true);
     if (isImage) setIsImagePolling(true);
     (async () => {
-      const cookie = localStorage.getItem('freeroam_cookie') ?? '';
-      const accountId = localStorage.getItem('freeroam_account_id') ?? '';
-      const extraHeaders: Record<string, string> = {};
-      if (cookie) extraHeaders['x-freeroam-cookie'] = cookie;
-      if (accountId) extraHeaders['x-freeroam-account-id'] = accountId;
+      const extraHeaders = getFreeroamAuthHeaders();
       for (let i = 0; i < 240 && !controller.signal.aborted; i++) {
         try {
           const res = await fetch(
@@ -1439,8 +1433,9 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
           setIsGeneratingNsfwImage(false);
         };
 
+        // Match server Seedream wait (server/nsfwImageCache.ts SEEDREAM_POLL_* ≈ 5 min)
         const pollUntilSettled = async () => {
-          for (let i = 0; i < 90; i++) {
+          for (let i = 0; i < 200; i++) { // 200 × 1.5s ≈ 5 min
             if (!isActiveRun()) return null;
             await new Promise(r => setTimeout(r, 1500));
             const poll = await fetchImageCacheFresh({
@@ -1744,15 +1739,12 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
     // Helper: call tRPC endpoint directly (bypasses query cache) so errors don't hit the global error handler
     const trpcGet = async <T,>(procedure: string, input: Record<string, unknown>): Promise<T | null> => {
       try {
-        const cookie = localStorage.getItem('freeroam_cookie') ?? '';
-        const accountId = localStorage.getItem('freeroam_account_id') ?? '';
-        const params = encodeURIComponent(JSON.stringify({ '0': { json: input } }));
+                const params = encodeURIComponent(JSON.stringify({ '0': { json: input } }));
         const res = await fetch(`/api/trpc/${procedure}?batch=1&input=${params}`, {
           credentials: 'include',
           headers: {
-            ...(cookie ? { 'x-freeroam-cookie': cookie } : {}),
-            ...(accountId ? { 'x-freeroam-account-id': accountId } : {}),
-          },
+          ...getFreeroamAuthHeaders(),
+        },
         });
         if (!res.ok) return null;
         const json = await res.json();
@@ -2322,15 +2314,12 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
             onNavigateToDepth={async (depth) => {
               if (!panel) return;
               try {
-                const cookie = localStorage.getItem('freeroam_cookie') ?? '';
-                const accountId = localStorage.getItem('freeroam_account_id') ?? '';
-                const params = encodeURIComponent(JSON.stringify({ '0': { json: { worldId: world.external_id, fromPanelId: panel.panel_id, targetDepth: depth } } }));
+                                const params = encodeURIComponent(JSON.stringify({ '0': { json: { worldId: world.external_id, fromPanelId: panel.panel_id, targetDepth: depth } } }));
                 const res = await fetch(`/api/trpc/worlds.getPanelAtDepth?batch=1&input=${params}`, {
                   credentials: 'include',
                   headers: {
-                    ...(cookie ? { 'x-freeroam-cookie': cookie } : {}),
-                    ...(accountId ? { 'x-freeroam-account-id': accountId } : {}),
-                  },
+          ...getFreeroamAuthHeaders(),
+        },
                 });
                 if (!res.ok) return;
                 const json = await res.json();
@@ -2349,12 +2338,9 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
             onToggleLike={handleToggleLike}
             onRegenerate={async () => {
               try {
-                const cookie = localStorage.getItem('freeroam_cookie') ?? '';
-                const accountId = localStorage.getItem('freeroam_account_id') ?? '';
                 const headers: Record<string, string> = {
                   'content-type': 'application/json',
-                  ...(cookie ? { 'x-freeroam-cookie': cookie } : {}),
-                  ...(accountId ? { 'x-freeroam-account-id': accountId } : {}),
+                  ...getFreeroamAuthHeaders(),
                 };
                 // Step 1: Regenerate starting scene (story — not panel image)
                 const regenRes = await fetch('/api/trpc/worlds.regenerateStartingScene?batch=1', {
@@ -2387,15 +2373,12 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
             }}
             onRestart={async () => {
               try {
-                const cookie = localStorage.getItem('freeroam_cookie') ?? '';
-                const accountId = localStorage.getItem('freeroam_account_id') ?? '';
                 const res = await fetch('/api/trpc/worlds.restart?batch=1', {
                   method: 'POST',
                   credentials: 'include',
                   headers: {
                     'content-type': 'application/json',
-                    ...(cookie ? { 'x-freeroam-cookie': cookie } : {}),
-                    ...(accountId ? { 'x-freeroam-account-id': accountId } : {}),
+                    ...getFreeroamAuthHeaders(),
                   },
                   body: JSON.stringify({ '0': { json: { worldId: world.external_id } } }),
                 });
@@ -3117,17 +3100,14 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
           setCharPanelOpen(false);
 
           // Fire character update and sendAction in parallel for minimum latency
-          const cookie = localStorage.getItem('freeroam_cookie') ?? '';
-          const accountId = localStorage.getItem('freeroam_account_id') ?? '';
-          const [, ] = await Promise.all([
+                    const [, ] = await Promise.all([
             // 1. Update character in Freeroam's database (background)
             fetch('/api/trpc/characters.update?batch=1', {
               method: 'POST',
               credentials: 'include',
               headers: {
                 'content-type': 'application/json',
-                ...(cookie ? { 'x-freeroam-cookie': cookie } : {}),
-                ...(accountId ? { 'x-freeroam-account-id': accountId } : {}),
+                ...getFreeroamAuthHeaders(),
               },
               body: JSON.stringify({
                 '0': {
