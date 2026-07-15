@@ -2625,7 +2625,7 @@ export const appRouter = router({
         return rows[0]?.value ?? null;
       }),
 
-    /** Generate NSFW image using Seedream v4.5 Edit via Atlas Cloud.
+    /** Generate NSFW image using Seedream v5.0 Pro Edit via Atlas Cloud.
      * Takes the Freeroam image prompt, shot type, and character references.
      * Replaces ~~CharacterName tokens with appearance descriptions.
      * Uses character headshots as reference images for Seedream.
@@ -3289,7 +3289,7 @@ Respond with ONLY this JSON: {"prompt": "..."}`,
             console.log('[NSFW DEBUG] Full Seedream prompt:', seedreamPrompt);
           }
 
-          // Call Atlas Cloud Seedream v4.5 Edit
+          // Call Atlas Cloud Seedream v5.0 Pro Edit
           const generateResp = await fetch('https://api.atlascloud.ai/api/v1/model/generateImage', {
             method: 'POST',
             headers: {
@@ -3297,7 +3297,7 @@ Respond with ONLY this JSON: {"prompt": "..."}`,
               'Content-Type': 'application/json',
             },
             body: JSON.stringify({
-              model: 'bytedance/seedream-v4.5/edit',
+              model: 'bytedance/seedream-v5.0-pro/edit',
               prompt: seedreamPrompt,
               images: images.length > 0 ? images : undefined,
               size: '1600*2400',
