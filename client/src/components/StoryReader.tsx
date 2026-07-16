@@ -450,13 +450,13 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
       nsfwByArtKeyRef.current.set(artKey, base);
       // Seed every panel we already know that shares this Freeroam art so next-panel
       // navigation restores NSFW without a full reader remount.
-      for (const [pid, p] of panelCache.current.entries()) {
+      Array.from(panelCache.current.entries()).forEach(([pid, p]) => {
         const pImg = p.panel_content?.images?.[0];
         if (freeroamArtKey(pImg?.prompt, pImg?.url) === artKey) {
           nsfwByPanelIdRef.current.set(pid, base);
           nsfwProcessedPanelsRef.current.add(pid);
         }
-      }
+      });
     }
     nsfwProcessedPanelsRef.current.add(panelId);
     // Only paint if user is still on this panel (avoid stale writes after navigation)
@@ -1605,12 +1605,12 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
             // does not re-run Seedream after a forced regenerate of a skipped panel.
             nsfwProcessedPanelsRef.current.add(panelId);
             if (artKey) {
-              for (const [pid, p] of panelCache.current.entries()) {
+              Array.from(panelCache.current.entries()).forEach(([pid, p]) => {
                 const pImg = p.panel_content?.images?.[0];
                 if (freeroamArtKey(pImg?.prompt, pImg?.url) === artKey) {
                   nsfwProcessedPanelsRef.current.add(pid);
                 }
-              }
+              });
             }
             if (forceRegen && currentPanelIdRef.current === panelId) {
               console.warn('[NSFW] Regenerate finished without image (notNsfw or empty)', result);
