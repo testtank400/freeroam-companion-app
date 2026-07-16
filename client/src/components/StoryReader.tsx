@@ -14,6 +14,7 @@ import { getFreeroamAuthHeaders } from '@/lib/freeroamHeaders';
 import { ApiWorld } from '@/components/WorldCard';
 import StoryMenu from '@/components/StoryMenu';
 import CharacterPanel from '@/components/CharacterPanel';
+import { ActionBarComposer, ChoiceComposer } from '@/components/StoryActionComposers';
 import { Bookmark, ChevronLeft, ChevronRight, X, Loader2, ImageIcon, Home, ChevronDown, ChevronUp, Zap, Clapperboard, Users, Image as ImageLucide, Share2, RefreshCw } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
 import { toast } from 'sonner';
@@ -245,44 +246,12 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
   // Action bar state
   const [actionBarVisible, setActionBarVisible] = useState(true);
   const [activeInputMode, setActiveInputMode] = useState<'act' | 'direct' | 'image' | null>(null);
-  // Separate buffers per mode — switching modes preserves each buffer
-  const [actInput, setActInput] = useState('');
-  const [directInput, setDirectInput] = useState('');
-  const [imageInput, setImageInput] = useState('Change the image to ');
-  const [choiceInput, setChoiceInput] = useState('');
-  const choiceTextareaRef = useRef<HTMLTextAreaElement>(null);
-  // Auto-grow the choice textarea whenever the value changes
-  useEffect(() => {
-    const el = choiceTextareaRef.current;
-    if (!el) return;
-    el.style.height = 'auto';
-    el.style.height = el.scrollHeight + 'px';
-  }, [choiceInput]);
-  // Derived: current active buffer value
-  const actionInput = activeInputMode === 'act' ? actInput : activeInputMode === 'direct' ? directInput : activeInputMode === 'image' ? imageInput : '';
-  const setActionInput = (val: string) => {
-    if (activeInputMode === 'act') setActInput(val);
-    else if (activeInputMode === 'direct') setDirectInput(val);
-    else if (activeInputMode === 'image') setImageInput(val);
-  };
-  const actionTextareaRef = useRef<HTMLTextAreaElement>(null);
+  // Text buffers live in ActionBarComposer / ChoiceComposer so typing does not re-render
+  // this whole reader (ambient blur + panel + dialogue is expensive on mobile).
   const [isSendingAction, setIsSendingAction] = useState(false);
   // Text the user submitted — shown centered on screen while the next panel generates
   const [pendingActionText, setPendingActionText] = useState<string | null>(null);
   const sendActionMutation = trpc.worlds.sendAction.useMutation();
-
-  // When image mode activates, position cursor at end of the pre-filled text
-  useEffect(() => {
-    if (activeInputMode === 'image' && actionTextareaRef.current) {
-      const el = actionTextareaRef.current;
-      const len = el.value.length;
-      // Use requestAnimationFrame to ensure the textarea has rendered and focused
-      requestAnimationFrame(() => {
-        el.setSelectionRange(len, len);
-        el.focus();
-      });
-    }
-  }, [activeInputMode]);
 
   const handleActionBarButton = (mode: 'act' | 'direct' | 'image') => {
     if (activeInputMode === mode) {
@@ -291,7 +260,6 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
       if (!charPanelOpen) resumeAutoAdvance();
     } else {
       setActiveInputMode(mode);
-      // Do NOT wipe buffers — each mode preserves its own text
       // Pause auto-advance (and cancel any running timer) while user is composing
       pauseAutoAdvance();
     }
@@ -311,11 +279,6 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
   ) => {
     if (!panel || !text.trim() || isSendingAction) return;
     setIsSendingAction(true);
-    // Clear only the buffer that was just submitted; reset image buffer to prefix
-    if (activeInputMode === 'act' || actionType === 'take-action') setActInput('');
-    else if (activeInputMode === 'direct' || actionType === 'steer-story') setDirectInput('');
-    else if (activeInputMode === 'image' || actionType === 'image') setImageInput('Change the image to ');
-    else if (actionType === 'choice') { /* choice input cleared separately */ }
     setActiveInputMode(null);
     setPendingActionText(text.trim());
     try {
@@ -483,7 +446,19 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
   const rememberNsfwImage = (panelId: string, artKey: string, url: string, cacheBust = false) => {
     const base = nsfwUrlBase(url);
     nsfwByPanelIdRef.current.set(panelId, base);
-    if (artKey) nsfwByArtKeyRef.current.set(artKey, base);
+    if (artKey) {
+      nsfwByArtKeyRef.current.set(artKey, base);
+      // Seed every panel we already know that shares this Freeroam art so next-panel
+      // navigation restores NSFW without a full reader remount.
+      for (const [pid, p] of panelCache.current.entries()) {
+        const pImg = p.panel_content?.images?.[0];
+        if (freeroamArtKey(pImg?.prompt, pImg?.url) === artKey) {
+          nsfwByPanelIdRef.current.set(pid, base);
+          nsfwProcessedPanelsRef.current.add(pid);
+        }
+      }
+    }
+    nsfwProcessedPanelsRef.current.add(panelId);
     // Only paint if user is still on this panel (avoid stale writes after navigation)
     if (currentPanelIdRef.current === panelId) {
       setNsfwImageUrl(nsfwUrlForDisplay(base, cacheBust));
@@ -1236,8 +1211,7 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
     audioRef.current = null;
     setIsPlayingAudio(false);
     setCurrentAudioUrl(null);
-    // Reset choice input on every panel change — no buffer for choice panels
-    setChoiceInput('');
+    // Choice buffer lives in ChoiceComposer; remounted per panel via key below
     // Reset NSFW badge state on panel change
     setIsGeneratingNsfwImage(false);
     setIsClassifyingNsfwImage(false);
@@ -1272,11 +1246,13 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
       const sessionHit = lookupSessionNsfw(panelId, artKey);
       if (sessionHit) {
         // Stable URL (no cache-bust) so ambient/main don't flash on every nav
-        setNsfwImageUrl(nsfwUrlBase(sessionHit));
+        // Seed this panel id so future visits hit panel map first
+        nsfwByPanelIdRef.current.set(panelId, nsfwUrlBase(sessionHit));
         nsfwProcessedPanelsRef.current.add(panelId);
-      } else if (img?.prompt && freeroamImageUrl) {
+        setNsfwImageUrl(nsfwUrlBase(sessionHit));
+      } else if (img?.prompt || freeroamImageUrl) {
         // Clear previous panel's NSFW immediately so ambient doesn't show wrong art,
-        // then restore if server has ready for this panel/art.
+        // then restore if server has ready for this panel/art (prompt OR url is enough).
         setNsfwImageUrl(null);
         (async () => {
           try {
@@ -1288,7 +1264,6 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
             if (currentPanelIdRef.current !== panelId) return;
             if (cached.status === 'ready' && cached.imageUrl) {
               rememberNsfwImage(panelId, artKey, cached.imageUrl, false);
-              nsfwProcessedPanelsRef.current.add(panelId);
             }
           } catch {
             // leave Freeroam art
@@ -1362,17 +1337,23 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
 
     // Already decided this panel this session — restore from server if ready.
     // If still classifying/generating (user left mid-job), unstick and re-poll with badges.
-    // If cache was cleared (not_found), drop the session mark so classify can re-run.
+    // If cache was cleared (not_found), prefer session art-key hit over re-running Seedream
+    // (common after regenerate wiped sibling rows but this session still has the image).
     if (nsfwProcessedPanelsRef.current.has(panelId) && !forceRegen) {
       (async () => {
         try {
+          const sessionAgain = lookupSessionNsfw(panelId, artKey);
+          if (sessionAgain) {
+            rememberNsfwImage(panelId, artKey, sessionAgain);
+            return;
+          }
           const cached = await fetchImageCacheFresh({ panelId, freeroamImageUrl, freeroamImagePrompt });
           if (cached.status === 'ready' && cached.imageUrl) {
             rememberNsfwImage(panelId, artKey, cached.imageUrl);
             return;
           }
           if (cached.status === 'skipped') {
-            return; // stay on Freeroam art
+            return; // stay on Freeroam art — do not re-classify on remount
           }
           if (cached.status === 'classifying' || cached.status === 'generating') {
             // Job still running on server after we navigated away — re-attach badges + poll
@@ -1382,6 +1363,11 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
             return;
           }
           if (cached.status === 'not_found') {
+            // Only re-run if we truly have no session image for this art
+            if (lookupSessionNsfw(panelId, artKey)) {
+              rememberNsfwImage(panelId, artKey, lookupSessionNsfw(panelId, artKey)!);
+              return;
+            }
             nsfwProcessedPanelsRef.current.delete(panelId);
             nsfwInFlightRef.current.delete(panelId);
             setNsfwRegenNonce(n => n + 1);
@@ -1615,8 +1601,17 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
           } else if (result.imageUrl) {
             adoptReady(result.imageUrl);
           } else if (isActiveRun()) {
-            // notNsfw / no image — only mark processed if this run still owns the panel
+            // notNsfw / no image — mark this panel (and same-art panels we know) so remount
+            // does not re-run Seedream after a forced regenerate of a skipped panel.
             nsfwProcessedPanelsRef.current.add(panelId);
+            if (artKey) {
+              for (const [pid, p] of panelCache.current.entries()) {
+                const pImg = p.panel_content?.images?.[0];
+                if (freeroamArtKey(pImg?.prompt, pImg?.url) === artKey) {
+                  nsfwProcessedPanelsRef.current.add(pid);
+                }
+              }
+            }
             if (forceRegen && currentPanelIdRef.current === panelId) {
               console.warn('[NSFW] Regenerate finished without image (notNsfw or empty)', result);
             }
@@ -2855,33 +2850,11 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
                   <div style={{ flex: 1, height: '1px', background: 'rgba(255,255,255,0.15)' }} />
                 </div>
               )}
-              <div className="flex items-start gap-2 px-4 py-2" style={{ background: 'rgba(30,30,30,0.65)', border: '1px solid rgba(255,255,255,0.22)', borderRadius: '20px', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', boxShadow: '0 2px 8px rgba(0,0,0,0.3)' }}>
-                <textarea
-                  ref={choiceTextareaRef}
-                  rows={1}
-                  value={choiceInput}
-                  onChange={(e) => {
-                    setChoiceInput(e.target.value);
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                      e.preventDefault();
-                      if (choiceInput.trim()) handleSendAction(choiceInput, 'choice');
-                    }
-                  }}
-                  placeholder="Or type your own response..."
-                  className="flex-1 outline-none resize-none"
-                  style={{ fontFamily: 'Outfit, sans-serif', fontSize: '14px', color: 'rgba(255,255,255,0.75)', background: 'transparent', border: 'none', minWidth: 0, lineHeight: 1.5, overflow: 'hidden', maxHeight: '120px', overflowY: 'auto' }}
-                />
-                <button
-                  onClick={() => { if (choiceInput.trim()) { handleSendAction(choiceInput, 'choice'); setChoiceInput(''); } }}
-                  disabled={!choiceInput.trim() || isSendingAction}
-                  className="flex items-center justify-center rounded-full flex-shrink-0 transition-all hover:brightness-125 disabled:opacity-40 mt-0.5"
-                  style={{ width: '32px', height: '32px', background: 'rgba(255,255,255,0.15)', color: '#fff' }}
-                >
-                  {isSendingAction ? <Loader2 size={14} className="animate-spin" /> : <ChevronRight size={16} strokeWidth={2.5} />}
-                </button>
-              </div>
+              <ChoiceComposer
+                key={panel?.panel_id ?? 'choice'}
+                isSending={isSendingAction}
+                onSubmit={(text) => { void handleSendAction(text, 'choice'); }}
+              />
             </div>
           )}
         {/* Action bar — above image + side nav (z-40). Must receive Characters/Act taps. */}
@@ -2954,62 +2927,14 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
             </div>
           </div>
 
-          {/* Input field row (shown when Act/Direct/Image active) — below pills, closer to keyboard */}
+          {/* Input field row — isolated component so typing does not re-render the full reader */}
           {activeInputMode && (
-            <div
-              className="flex items-start gap-2 px-3 py-2"
-              style={{ background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)', borderTop: '1px solid rgba(255,255,255,0.08)' }}
-            >
-              <textarea
-                ref={actionTextareaRef}
-                autoFocus
-                rows={1}
-                value={actionInput}
-                onChange={(e) => {
-                  setActionInput(e.target.value);
-                  // Auto-grow: reset height then set to scrollHeight
-                  e.target.style.height = 'auto';
-                  e.target.style.height = e.target.scrollHeight + 'px';
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === 'Escape') { setActiveInputMode(null); if (!charPanelOpen) resumeAutoAdvance(); }
-                  // Enter without shift submits; shift+Enter adds newline
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    if (actionInput.trim()) {
-                      const type = activeInputMode === 'act' ? 'take-action' : activeInputMode === 'direct' ? 'steer-story' : 'image';
-                      handleSendAction(actionInput, type as 'take-action' | 'steer-story' | 'image');
-                    }
-                  }
-                }}
-                placeholder={activeInputMode === 'act' ? 'What do you do?' : activeInputMode === 'direct' ? 'Direct the scene...' : 'Describe the image...'}
-                className="flex-1 outline-none resize-none"
-                style={{
-                  fontFamily: 'Outfit-Regular, Outfit, sans-serif',
-                  fontSize: '14px',
-                  color: 'rgba(255,255,255,0.85)',
-                  background: 'transparent',
-                  border: 'none',
-                  minWidth: 0,
-                  lineHeight: 1.5,
-                  overflow: 'hidden',
-                  maxHeight: '120px',
-                  overflowY: 'auto',
-                }}
-              />
-              <button
-                onClick={() => {
-                  if (!actionInput.trim()) return;
-                  const type = activeInputMode === 'act' ? 'take-action' : activeInputMode === 'direct' ? 'steer-story' : 'image';
-                  handleSendAction(actionInput, type as 'take-action' | 'steer-story' | 'image');
-                }}
-                disabled={!actionInput.trim() || isSendingAction}
-                className="flex items-center justify-center rounded-full flex-shrink-0 transition-all hover:brightness-125 disabled:opacity-40 mt-0.5"
-                style={{ width: '36px', height: '36px', background: 'rgba(255,255,255,0.15)', color: '#fff' }}
-              >
-                {isSendingAction ? <Loader2 size={16} className="animate-spin" /> : <ChevronRight size={18} strokeWidth={2.5} />}
-              </button>
-            </div>
+            <ActionBarComposer
+              mode={activeInputMode}
+              isSending={isSendingAction}
+              onSubmit={(text, type) => { void handleSendAction(text, type); }}
+              onEscape={() => { setActiveInputMode(null); if (!charPanelOpen) resumeAutoAdvance(); }}
+            />
           )}
         </div>
 
