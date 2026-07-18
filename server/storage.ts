@@ -1,8 +1,21 @@
 // Preconfigured storage helpers for Manus WebDev templates
 // Uploads via Forge Server presigned URL to S3 (PUT direct).
 // Downloads return /manus-storage/{key} paths served via 307 redirect.
+//
+// Local fallback: when BUILT_IN_FORGE_API_URL / BUILT_IN_FORGE_API_KEY are
+// unset (typical for local/docker), files are written under data/local-storage
+// and served at /api/local-storage/*.
 
+import fs from "fs";
+import path from "path";
+import type { Express } from "express";
 import { ENV } from "./_core/env";
+
+const LOCAL_STORAGE_DIR = path.join(process.cwd(), "data", "local-storage");
+
+function hasForgeConfig(): boolean {
+  return Boolean(ENV.forgeApiUrl && ENV.forgeApiKey);
+}
 
 function getForgeConfig() {
   const forgeUrl = ENV.forgeApiUrl;
@@ -28,11 +41,54 @@ function appendHashSuffix(relKey: string): string {
   return `${relKey.slice(0, lastDot)}_${hash}${relKey.slice(lastDot)}`;
 }
 
+function localFilePath(key: string): string {
+  // Keep path segments but block traversal
+  const safe = normalizeKey(key)
+    .split("/")
+    .filter((p) => p && p !== "." && p !== "..")
+    .join(path.sep);
+  return path.join(LOCAL_STORAGE_DIR, safe);
+}
+
+function ensureParentDir(filePath: string) {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+}
+
+async function localStoragePut(
+  relKey: string,
+  data: Buffer | Uint8Array | string,
+): Promise<{ key: string; url: string }> {
+  const key = appendHashSuffix(normalizeKey(relKey));
+  const filePath = localFilePath(key);
+  ensureParentDir(filePath);
+
+  const buffer =
+    typeof data === "string" ? Buffer.from(data, "utf8") : Buffer.from(data);
+  await fs.promises.writeFile(filePath, buffer);
+
+  console.log(`[Storage] Local put → ${filePath} (${(buffer.length / 1024 / 1024).toFixed(2)} MB)`);
+  return { key, url: `/api/local-storage/${key}` };
+}
+
+async function localStorageGetSignedUrl(relKey: string): Promise<string> {
+  const key = normalizeKey(relKey);
+  const filePath = localFilePath(key);
+  if (!fs.existsSync(filePath)) {
+    throw new Error(`Local storage object not found: ${key}`);
+  }
+  // Same-origin path the browser can download directly
+  return `/api/local-storage/${key}`;
+}
+
 export async function storagePut(
   relKey: string,
   data: Buffer | Uint8Array | string,
   contentType = "application/octet-stream",
 ): Promise<{ key: string; url: string }> {
+  if (!hasForgeConfig()) {
+    return localStoragePut(relKey, data);
+  }
+
   const { forgeUrl, forgeKey } = getForgeConfig();
   const key = appendHashSuffix(normalizeKey(relKey));
 
@@ -73,10 +129,17 @@ export async function storagePut(
 
 export async function storageGet(relKey: string): Promise<{ key: string; url: string }> {
   const key = normalizeKey(relKey);
+  if (!hasForgeConfig()) {
+    return { key, url: `/api/local-storage/${key}` };
+  }
   return { key, url: `/manus-storage/${key}` };
 }
 
 export async function storageGetSignedUrl(relKey: string): Promise<string> {
+  if (!hasForgeConfig()) {
+    return localStorageGetSignedUrl(relKey);
+  }
+
   const { forgeUrl, forgeKey } = getForgeConfig();
   const key = normalizeKey(relKey);
 
@@ -94,4 +157,37 @@ export async function storageGetSignedUrl(relKey: string): Promise<string> {
 
   const { url } = (await resp.json()) as { url: string };
   return url;
+}
+
+/** Serve files written by the local storage fallback. */
+export function registerLocalStorageRoutes(app: Express) {
+  fs.mkdirSync(LOCAL_STORAGE_DIR, { recursive: true });
+
+  // Express 4/5 wildcard: capture remaining path after prefix
+  app.get("/api/local-storage/*", (req, res) => {
+    const key = (req.params as Record<string, string>)[0] ?? "";
+    if (!key) {
+      res.status(400).send("Missing storage key");
+      return;
+    }
+
+    const filePath = localFilePath(key);
+    if (!filePath.startsWith(LOCAL_STORAGE_DIR) || !fs.existsSync(filePath)) {
+      res.status(404).send("Not found");
+      return;
+    }
+
+    const basename = path.basename(filePath);
+    if (basename.toLowerCase().endsWith(".zip")) {
+      res.setHeader("Content-Type", "application/zip");
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename="${basename.replace(/"/g, "")}"`,
+      );
+    } else {
+      res.setHeader("Cache-Control", "no-cache, must-revalidate");
+    }
+
+    res.sendFile(filePath);
+  });
 }

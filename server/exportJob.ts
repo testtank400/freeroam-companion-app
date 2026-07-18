@@ -187,14 +187,14 @@ export async function runExportJob(
 
     // Phase 3: Generate ZIP buffer
     const zipBuffer = await zip.generateAsync({ type: "nodebuffer" });
-    console.log(`[ExportJob ${jobId}] Phase 3 done. ZIP size: ${(zipBuffer.length / 1024 / 1024).toFixed(1)} MB. Phase 4: Uploading to S3...`);
+    console.log(`[ExportJob ${jobId}] Phase 3 done. ZIP size: ${(zipBuffer.length / 1024 / 1024).toFixed(1)} MB. Phase 4: Uploading export...`);
 
-    // Phase 4: Upload to S3
+    // Phase 4: Upload (Manus Forge S3 when configured; local disk otherwise)
     const s3Key = `exports/${jobId}/${rootFolderName}.zip`;
     const { key } = await storagePut(s3Key, zipBuffer, "application/zip");
-    // Get a presigned URL valid for 24 hours (works anywhere, not just on the site)
+    // Forge: presigned URL (24h). Local: same-origin /api/local-storage/... path.
     const downloadUrl = await storageGetSignedUrl(key);
-    console.log(`[ExportJob ${jobId}] Phase 4 done. Presigned download URL generated.`);
+    console.log(`[ExportJob ${jobId}] Phase 4 done. Download URL ready.`);
 
     // Phase 5: Update job as done
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours

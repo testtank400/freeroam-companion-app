@@ -118,3 +118,8 @@ client/public/__manus__/version.json
 
 # PowerShell files
 *.ps1
+
+# DB dumps from Manus→Docker migration
+backups/
+*.sql.dump
+

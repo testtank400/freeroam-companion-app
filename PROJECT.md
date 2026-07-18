@@ -30,6 +30,10 @@ The app is a companion reader and character/world manager for [Freeroam](https:/
 | `client/src/components/SettingsModal.tsx` | Freeroam cookie management + bulk character export |
 | `client/src/components/CreateCharacterModal.tsx` | Create / edit / duplicate character modal |
 | `server/routers.ts` | All tRPC procedures — Freeroam proxy, TTS, voice settings, collections, export |
+| `server/export.ts` | Single-character export helpers + ZIP markdown builders |
+| `server/exportJob.ts` | Background bulk-export job runner (ZIP build + storage upload) |
+| `server/exportRoute.ts` | REST routes: `/api/export/start`, `/api/export/status/:jobId`, `/api/export/latest` |
+| `server/storage.ts` | File storage — Manus Forge S3 when configured; local disk fallback otherwise |
 | `server/db.ts` | Database query helpers |
 | `drizzle/schema.ts` | Database schema — all tables and types |
 
@@ -126,7 +130,32 @@ The limit is auto-detected from Freeroam's error response and stored in `backsto
 
 ### Bulk Export
 
-The Settings modal provides a bulk export feature. It calls `/api/export/bulk` (a direct REST endpoint, not tRPC) which starts an async export job tracked in `export_jobs`. The client polls `/api/export/status/:jobId` every 2 seconds. When done, a download link is provided. The job ID is persisted in `localStorage` so the user can resume polling after a page refresh.
+The Settings modal provides a bulk export feature for the full library (single-character export still goes through tRPC `export.single` and returns a base64 ZIP in-process).
+
+**Flow**
+
+1. Client `POST /api/export/start` with the library character array and `x-freeroam-account-id` (not tRPC — large payloads and long jobs).
+2. Server inserts a row in `export_jobs` and runs `runExportJob` in the background (`setImmediate`).
+3. Job builds a ZIP per character: Freeroam/companion markdown, `character-data.json`, `companion-data.json`, headshots (batched downloads).
+4. ZIP is uploaded via `storagePut`, then a download URL is written to the job (`storageGetSignedUrl`).
+5. Client polls `/api/export/status/:jobId` every 2 seconds. On modal open, `/api/export/latest` can restore a recent done job or an in-flight one. The job ID is also kept in `localStorage` so polling survives refresh.
+
+**Storage: Manus vs local**
+
+| Environment | How the ZIP is stored | Download URL |
+|---|---|---|
+| Manus (production) | Manus Forge → S3 via `BUILT_IN_FORGE_API_URL` + `BUILT_IN_FORGE_API_KEY` | Time-limited presigned S3 URL (~24h; job `expiresAt`) |
+| Local / Docker (no Forge env) | Files under `data/local-storage/` (gitignored with the rest of `data/`) | Same-origin `/api/local-storage/{key}` served by `registerLocalStorageRoutes` |
+
+If Forge env vars are missing and there is no local fallback, export fails with:
+
+```text
+Storage config missing: set BUILT_IN_FORGE_API_URL and BUILT_IN_FORGE_API_KEY
+```
+
+That message comes from `server/storage.ts` (Manus template storage). Local runs do **not** need real Forge keys: `storagePut` / `storageGetSignedUrl` automatically write and serve from disk when those vars are empty. The Settings UI’s **Download Export** link works with either URL shape.
+
+`storagePut` is also used for TTS audio and some image uploads; the same Forge-or-local rule applies there.
 
 ---
 
@@ -329,8 +358,8 @@ Voice generation happens server-side in the `voice.generateSpeech` procedure (`s
 3. **Grok tag inference** — call `https://api.x.ai/v1/responses` with `model: 'grok-4.3'` using `GROK_API_KEY`. Send up to 3 turns (prev + current + next panel text) for context. The LLM returns delivery tags like `[nervous]`, `[whispering]`, `[shouting]` prepended to each line. Only the current panel's tagged text is used.
 4. **Accent tag** — if the voice assignment has a `languageCode` set (e.g. `'it'`), prepend `[Italian accent]` to the text.
 5. **ElevenLabs TTS** — call `https://api.elevenlabs.io/v1/text-to-speech/{voiceId}` with `model_id: 'eleven_v3'` and the tagged text.
-6. **S3 upload** — upload the MP3 to S3 via `storagePut`.
-7. **Cache update** — update the placeholder row to `status = 'ready'` with the S3 URL.
+6. **Storage upload** — upload the MP3 via `storagePut` (Manus Forge S3 when configured; `data/local-storage/` + `/api/local-storage/...` when not — see [Bulk Export](#bulk-export)).
+7. **Cache update** — update the placeholder row to `status = 'ready'` with the storage URL.
 8. **Cleanup on failure** — if ElevenLabs fails, delete the placeholder row so future requests can retry.
 
 ### Client-side TTS Flow (`StoryReader.tsx`)

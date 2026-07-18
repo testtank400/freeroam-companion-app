@@ -69,10 +69,12 @@ export const ActionBarComposer = memo(function ActionBarComposer({
         autoFocus
         rows={1}
         value={text}
-        autoCapitalize="off"
-        autoCorrect="off"
+        // Mobile Safari/Chrome need autoCorrect for underlines/suggestions; desktop already works with spellCheck alone.
+        autoCapitalize="sentences"
+        autoCorrect="on"
         autoComplete="on"
         spellCheck={true}
+        lang="en"
         onChange={(e) => {
           setText(e.target.value);
           e.target.style.height = 'auto';
@@ -155,10 +157,11 @@ export const ChoiceComposer = memo(function ChoiceComposer({
         ref={textareaRef}
         rows={1}
         value={text}
-        autoCapitalize="off"
-        autoCorrect="off"
+        autoCapitalize="sentences"
+        autoCorrect="on"
         autoComplete="on"
         spellCheck={true}
+        lang="en"
         onChange={(e) => {
           setText(e.target.value);
           e.target.style.height = 'auto';
