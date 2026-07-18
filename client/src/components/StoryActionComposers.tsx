@@ -71,8 +71,8 @@ export const ActionBarComposer = memo(function ActionBarComposer({
         value={text}
         autoCapitalize="off"
         autoCorrect="off"
-        autoComplete="off"
-        spellCheck={false}
+        autoComplete="on"
+        spellCheck={true}
         onChange={(e) => {
           setText(e.target.value);
           e.target.style.height = 'auto';
@@ -157,8 +157,8 @@ export const ChoiceComposer = memo(function ChoiceComposer({
         value={text}
         autoCapitalize="off"
         autoCorrect="off"
-        autoComplete="off"
-        spellCheck={false}
+        autoComplete="on"
+        spellCheck={true}
         onChange={(e) => {
           setText(e.target.value);
           e.target.style.height = 'auto';

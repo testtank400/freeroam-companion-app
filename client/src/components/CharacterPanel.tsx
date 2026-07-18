@@ -8,8 +8,9 @@
 
 import { trpc } from '@/lib/trpc';
 import { getFreeroamAuthHeaders } from '@/lib/freeroamHeaders';
-import { X, Plus, ArrowLeft, Search, Loader2, Save } from 'lucide-react';
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useCollections, type Collection } from '@/hooks/useCollections';
+import { X, Plus, ArrowLeft, Search, Loader2, Save, FolderOpen, Star } from 'lucide-react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { toast } from 'sonner';
 
 type StoryCharacter = {
@@ -56,10 +57,13 @@ type CharacterPanelProps = {
   ) => Promise<void>;
 };
 
-type PendingChange = {
-  type: 'add' | 'remove';
-  character: StoryCharacter;
-};
+type LibraryFilter = 'all' | 'favorites' | 'collections';
+
+const LIBRARY_FILTERS: { id: LibraryFilter; label: string }[] = [
+  { id: 'all', label: 'All' },
+  { id: 'favorites', label: 'Favorites' },
+  { id: 'collections', label: 'Collections' },
+];
 
 export default function CharacterPanel({
   isOpen,
@@ -79,10 +83,12 @@ export default function CharacterPanel({
   const [isSaving, setIsSaving] = useState(false);
 
   // Library state
-  const [libraryFilter, setLibraryFilter] = useState<'all' | 'yours' | 'saved'>('all');
+  const [libraryFilter, setLibraryFilter] = useState<LibraryFilter>('all');
   const [librarySearch, setLibrarySearch] = useState('');
   const [libraryChars, setLibraryChars] = useState<LibraryCharacter[]>([]);
   const [isLoadingLibrary, setIsLoadingLibrary] = useState(false);
+  /** When set, library shows that collection's members instead of the collection list */
+  const [selectedCollectionId, setSelectedCollectionId] = useState<number | null>(null);
 
   // Detail state (library character)
   const [detailChar, setDetailChar] = useState<LibraryCharacter | null>(null);
@@ -90,6 +96,7 @@ export default function CharacterPanel({
   const [storyDetailChar, setStoryDetailChar] = useState<StoryCharacter | null>(null);
 
   const utils = trpc.useUtils();
+  const { collections, isLoading: isLoadingCollections } = useCollections();
 
   // Load story characters when panel opens
   const loadStoryChars = useCallback(async () => {
@@ -110,6 +117,9 @@ export default function CharacterPanel({
       setView('main');
       setPendingChanges(new Map());
       setPendingPlayAs(null);
+      setLibraryFilter('all');
+      setLibrarySearch('');
+      setSelectedCollectionId(null);
       loadStoryChars();
     }
   }, [isOpen, loadStoryChars]);
@@ -118,23 +128,12 @@ export default function CharacterPanel({
   const loadLibrary = useCallback(async () => {
     setIsLoadingLibrary(true);
     try {
-            const params = encodeURIComponent(JSON.stringify({ '0': { json: {} } }));
-      const res = await fetch(`/api/trpc/characters.library?batch=1&input=${params}`, {
-        credentials: 'include',
-        headers: {
-          ...getFreeroamAuthHeaders(),
-        },
-      });
-      if (!res.ok) return;
-      const json = await res.json();
-      // characters.library returns an array of character objects directly
-      const chars = json?.[0]?.result?.data?.json ?? [];
-      // Map to LibraryCharacter shape
-      setLibraryChars(chars.map((c: { external_id: string; name: string; headshot_url: string | null; backstory: string | null; is_yours?: boolean; is_saved?: boolean }) => ({
+      const chars = await utils.characters.library.fetch();
+      setLibraryChars(chars.map((c) => ({
         external_id: c.external_id,
         name: c.name,
-        headshot_url: c.headshot_url,
-        backstory: c.backstory ?? '',
+        headshot_url: c.headshot_url ?? c.display_headshot_url ?? null,
+        backstory: c.backstory ?? c.description ?? '',
         appearance: '',
         is_yours: c.is_yours,
         is_saved: c.is_saved,
@@ -144,17 +143,63 @@ export default function CharacterPanel({
     } finally {
       setIsLoadingLibrary(false);
     }
-  }, []);
+  }, [utils]);
 
   const handleOpenLibrary = () => {
     setView('library');
+    setLibraryFilter('all');
+    setLibrarySearch('');
+    setSelectedCollectionId(null);
     if (libraryChars.length === 0) loadLibrary();
   };
+
+  const libraryById = useMemo(() => {
+    const map = new Map<string, LibraryCharacter>();
+    for (const c of libraryChars) map.set(c.external_id, c);
+    return map;
+  }, [libraryChars]);
+
+  const selectedCollection = useMemo(
+    () => collections.find((c) => c.id === selectedCollectionId) ?? null,
+    [collections, selectedCollectionId]
+  );
+
+  /** Resolve collection member IDs against the library (placeholders for unresolved). */
+  const resolveCollectionMembers = useCallback(
+    (col: Collection): LibraryCharacter[] =>
+      col.characterIds.map((id) => {
+        const known = libraryById.get(id);
+        if (known) return known;
+        return {
+          external_id: id,
+          name: id,
+          headshot_url: null,
+          backstory: '',
+          appearance: '',
+        };
+      }),
+    [libraryById]
+  );
 
   const handleOpenDetail = (char: LibraryCharacter) => {
     setDetailChar(char);
     setView('detail');
   };
+
+  const toPendingStoryChar = (char: LibraryCharacter): StoryCharacter => ({
+    id: 0,
+    external_id: char.external_id,
+    name: char.name,
+    backstory: char.backstory,
+    appearance: char.appearance,
+    headshot_url: char.headshot_url ?? '',
+    display_headshot_url: null,
+    removable: true,
+    is_main_character: false,
+    is_saved: char.is_saved ?? false,
+    is_yours: char.is_yours ?? false,
+    creator_name: '',
+  });
 
   const handleAddFromLibrary = (char: LibraryCharacter) => {
     // Check if already in story
@@ -168,24 +213,67 @@ export default function CharacterPanel({
     const newPending = new Map(pendingChanges);
     newPending.set(char.external_id, 'add');
     setPendingChanges(newPending);
-    // Add to storyChars display (as pending)
-    const newChar: StoryCharacter = {
-      id: 0,
-      external_id: char.external_id,
-      name: char.name,
-      backstory: char.backstory,
-      appearance: char.appearance,
-      headshot_url: char.headshot_url ?? '',
-      display_headshot_url: null,
-      removable: true,
-      is_main_character: false,
-      is_saved: char.is_saved ?? false,
-      is_yours: char.is_yours ?? false,
-      creator_name: '',
-    };
-    setStoryChars(prev => [...prev, newChar]);
+    setStoryChars(prev => [...prev, toPendingStoryChar(char)]);
     setView('main');
-    toast.success(`${char.name} added — click Save Changes to confirm`);
+    toast.success(`${char.name.replace(/-/g, ' ')} added — click Save Changes to confirm`);
+  };
+
+  const handleSelectCollection = (col: Collection) => {
+    if (!col.characterIds.length) {
+      toast.info('This collection is empty');
+      return;
+    }
+    setSelectedCollectionId(col.id);
+    setLibrarySearch('');
+  };
+
+  /** Batch-add every member of a collection. Skips characters already in the story. No cap. */
+  const handleAddCollectionToStory = (col: Collection) => {
+    if (!col.characterIds.length) {
+      toast.info('This collection is empty');
+      return;
+    }
+
+    const inStory = new Set(storyChars.map((sc) => sc.external_id));
+    const members = resolveCollectionMembers(col);
+    const newPending = new Map(pendingChanges);
+    const toAdd: StoryCharacter[] = [];
+    let skipped = 0;
+
+    for (const char of members) {
+      if (inStory.has(char.external_id) || newPending.get(char.external_id) === 'add') {
+        skipped += 1;
+        continue;
+      }
+      newPending.set(char.external_id, 'add');
+      toAdd.push(toPendingStoryChar(char));
+      inStory.add(char.external_id);
+    }
+
+    if (toAdd.length === 0) {
+      toast.info(
+        skipped > 0
+          ? `All ${skipped} character${skipped === 1 ? '' : 's'} already in the story`
+          : 'This collection is empty'
+      );
+      return;
+    }
+
+    setPendingChanges(newPending);
+    setStoryChars((prev) => [...prev, ...toAdd]);
+    setSelectedCollectionId(null);
+    setView('main');
+
+    const name = col.name;
+    if (skipped > 0) {
+      toast.success(
+        `Added ${toAdd.length} from “${name}” (${skipped} already in story) — click Save Changes to confirm`
+      );
+    } else {
+      toast.success(
+        `Added ${toAdd.length} character${toAdd.length === 1 ? '' : 's'} from “${name}” — click Save Changes to confirm`
+      );
+    }
   };
 
   const handleToggleRemove = (char: StoryCharacter) => {
@@ -249,15 +337,29 @@ export default function CharacterPanel({
 
   const hasPendingChanges = pendingChanges.size > 0 || !!pendingPlayAs;
 
-  // Filter library characters
-  const filteredLibrary = libraryChars.filter(char => {
-    const matchesSearch = !librarySearch || char.name.toLowerCase().includes(librarySearch.toLowerCase());
+  const searchLower = librarySearch.trim().toLowerCase();
+
+  // Filter library characters (All / Favorites)
+  const filteredLibrary = libraryChars.filter((char) => {
+    const matchesSearch = !searchLower || char.name.toLowerCase().includes(searchLower);
     const matchesFilter =
       libraryFilter === 'all' ||
-      (libraryFilter === 'yours' && char.is_yours) ||
-      (libraryFilter === 'saved' && char.is_saved);
+      (libraryFilter === 'favorites' && !!char.is_saved);
     return matchesSearch && matchesFilter;
   });
+
+  // Collections list (name search)
+  const filteredCollections = collections.filter((col) => {
+    if (!searchLower) return true;
+    return col.name.toLowerCase().includes(searchLower);
+  });
+
+  // Members of the opened collection
+  const collectionMembers = selectedCollection
+    ? resolveCollectionMembers(selectedCollection).filter(
+        (char) => !searchLower || char.name.toLowerCase().includes(searchLower)
+      )
+    : [];
 
   if (!isOpen) return null;
 
@@ -503,7 +605,14 @@ export default function CharacterPanel({
             <div className="px-6 pt-6 pb-4 flex-shrink-0">
               <div className="flex items-center gap-3 mb-4">
                 <button
-                  onClick={() => setView('main')}
+                  onClick={() => {
+                    if (selectedCollectionId !== null) {
+                      setSelectedCollectionId(null);
+                      setLibrarySearch('');
+                    } else {
+                      setView('main');
+                    }
+                  }}
                   className="flex items-center gap-1 transition-all hover:brightness-125"
                   style={{ fontFamily: 'Outfit, sans-serif', fontSize: '14px', color: 'rgba(255,255,255,0.5)' }}
                 >
@@ -511,29 +620,35 @@ export default function CharacterPanel({
                   Back
                 </button>
                 <h2 style={{ fontFamily: 'Outfit, sans-serif', fontSize: '18px', fontWeight: 700, color: '#fff', flex: 1, textAlign: 'center' }}>
-                  Add Character
+                  {selectedCollection
+                    ? selectedCollection.name
+                    : 'Add Character'}
                 </h2>
+                {/* Spacer to balance back button */}
+                <div style={{ width: '52px' }} />
               </div>
 
-              {/* Create New Character */}
-              <a
-                href="https://getfreeroam.com/characters/new"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl transition-all hover:brightness-125 mb-4"
-                style={{
-                  fontFamily: 'Outfit, sans-serif',
-                  fontSize: '15px',
-                  fontWeight: 600,
-                  color: 'rgba(255,255,255,0.85)',
-                  background: 'rgba(255,255,255,0.07)',
-                  border: '1px solid rgba(255,255,255,0.12)',
-                  display: 'flex',
-                }}
-              >
-                <Plus size={16} strokeWidth={2.5} />
-                Create New Character
-              </a>
+              {/* Create New Character — only on top-level library */}
+              {!selectedCollection && (
+                <a
+                  href="https://getfreeroam.com/characters/new"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl transition-all hover:brightness-125 mb-4"
+                  style={{
+                    fontFamily: 'Outfit, sans-serif',
+                    fontSize: '15px',
+                    fontWeight: 600,
+                    color: 'rgba(255,255,255,0.85)',
+                    background: 'rgba(255,255,255,0.07)',
+                    border: '1px solid rgba(255,255,255,0.12)',
+                    display: 'flex',
+                  }}
+                >
+                  <Plus size={16} strokeWidth={2.5} />
+                  Create New Character
+                </a>
+              )}
 
               {/* Search */}
               <div className="relative mb-3">
@@ -542,7 +657,13 @@ export default function CharacterPanel({
                   type="text"
                   value={librarySearch}
                   onChange={(e) => setLibrarySearch(e.target.value)}
-                  placeholder="Search characters..."
+                  placeholder={
+                    selectedCollection
+                      ? 'Search collection...'
+                      : libraryFilter === 'collections'
+                        ? 'Search collections...'
+                        : 'Search characters...'
+                  }
                   className="w-full outline-none"
                   style={{
                     fontFamily: 'Outfit, sans-serif',
@@ -556,35 +677,195 @@ export default function CharacterPanel({
                 />
               </div>
 
-              {/* Filter tabs */}
-              <div className="flex gap-2">
-                {(['all', 'yours', 'saved'] as const).map(f => (
-                  <button
-                    key={f}
-                    onClick={() => setLibraryFilter(f)}
-                    className="px-4 py-1.5 rounded-full transition-all"
-                    style={{
-                      fontFamily: 'Outfit, sans-serif',
-                      fontSize: '13px',
-                      fontWeight: 600,
-                      color: libraryFilter === f ? '#fff' : 'rgba(255,255,255,0.45)',
-                      background: libraryFilter === f ? 'rgba(255,255,255,0.15)' : 'rgba(255,255,255,0.05)',
-                      border: `1px solid ${libraryFilter === f ? 'rgba(255,255,255,0.25)' : 'rgba(255,255,255,0.08)'}`,
-                      textTransform: 'capitalize',
-                    }}
-                  >
-                    {f}
-                  </button>
-                ))}
-              </div>
+              {/* Filter chips — hidden while browsing a collection's members */}
+              {!selectedCollection && (
+                <div className="flex gap-2 flex-wrap">
+                  {LIBRARY_FILTERS.map((f) => (
+                    <button
+                      key={f.id}
+                      onClick={() => {
+                        setLibraryFilter(f.id);
+                        setSelectedCollectionId(null);
+                        setLibrarySearch('');
+                      }}
+                      className="px-4 py-1.5 rounded-full transition-all inline-flex items-center gap-1.5"
+                      style={{
+                        fontFamily: 'Outfit, sans-serif',
+                        fontSize: '13px',
+                        fontWeight: 600,
+                        color: libraryFilter === f.id ? '#fff' : 'rgba(255,255,255,0.45)',
+                        background: libraryFilter === f.id ? 'rgba(255,255,255,0.15)' : 'rgba(255,255,255,0.05)',
+                        border: `1px solid ${libraryFilter === f.id ? 'rgba(255,255,255,0.25)' : 'rgba(255,255,255,0.08)'}`,
+                      }}
+                    >
+                      {f.id === 'favorites' && <Star size={12} strokeWidth={2.5} fill={libraryFilter === f.id ? 'currentColor' : 'none'} />}
+                      {f.id === 'collections' && <FolderOpen size={12} strokeWidth={2.5} />}
+                      {f.label}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
 
-            {/* Library grid */}
+            {/* Library body */}
             <div className="flex-1 overflow-y-auto px-6 pb-6">
-              {isLoadingLibrary ? (
+              {/* Collection members */}
+              {selectedCollection ? (
+                isLoadingLibrary ? (
+                  <div className="flex items-center justify-center py-12">
+                    <Loader2 size={24} className="animate-spin" style={{ color: 'rgba(255,255,255,0.4)' }} />
+                  </div>
+                ) : collectionMembers.length === 0 ? (
+                  <p className="text-center py-12" style={{ fontFamily: 'Outfit, sans-serif', fontSize: '14px', color: 'rgba(255,255,255,0.4)' }}>
+                    {searchLower ? 'No matching characters in this collection' : 'This collection is empty'}
+                  </p>
+                ) : (
+                  <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))' }}>
+                    {collectionMembers.map((char) => {
+                      const inStory = storyChars.some((sc) => sc.external_id === char.external_id);
+                      return (
+                        <button
+                          key={char.external_id}
+                          onClick={() => handleOpenDetail(char)}
+                          className="flex flex-col items-center gap-2 p-4 rounded-2xl transition-all hover:brightness-125 text-left"
+                          style={{
+                            background: 'rgba(255,255,255,0.05)',
+                            border: `1px solid ${inStory ? 'rgba(34,197,94,0.35)' : 'rgba(255,255,255,0.08)'}`,
+                            opacity: inStory ? 0.7 : 1,
+                          }}
+                        >
+                          {char.headshot_url ? (
+                            <img
+                              src={char.headshot_url}
+                              alt={char.name}
+                              className="rounded-full"
+                              style={{ width: '72px', height: '72px', objectFit: 'cover' }}
+                            />
+                          ) : (
+                            <div
+                              className="rounded-full flex items-center justify-center"
+                              style={{ width: '72px', height: '72px', background: 'rgba(255,255,255,0.08)', fontSize: '28px', color: 'rgba(255,255,255,0.3)' }}
+                            >
+                              {(char.name[0] || '?').toUpperCase()}
+                            </div>
+                          )}
+                          <p style={{ fontFamily: 'Outfit, sans-serif', fontSize: '13px', fontWeight: 600, color: '#fff', textAlign: 'center', lineHeight: 1.3 }}>
+                            {char.name.replace(/-/g, ' ')}
+                          </p>
+                          <p style={{ fontFamily: 'Outfit, sans-serif', fontSize: '11px', color: inStory ? 'rgba(34,197,94,0.9)' : 'rgba(255,255,255,0.4)' }}>
+                            {inStory ? 'in story' : 'tap to add'}
+                          </p>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )
+              ) : libraryFilter === 'collections' ? (
+                /* Collections list */
+                isLoadingCollections ? (
+                  <div className="flex items-center justify-center py-12">
+                    <Loader2 size={24} className="animate-spin" style={{ color: 'rgba(255,255,255,0.4)' }} />
+                  </div>
+                ) : filteredCollections.length === 0 ? (
+                  <p className="text-center py-12" style={{ fontFamily: 'Outfit, sans-serif', fontSize: '14px', color: 'rgba(255,255,255,0.4)' }}>
+                    {searchLower ? 'No matching collections' : 'No collections yet — create one on the Characters page'}
+                  </p>
+                ) : (
+                  <div className="flex flex-col gap-2">
+                    {filteredCollections.map((col) => {
+                      const count = col.characterIds.length;
+                      const previewIds = col.characterIds.slice(0, 3);
+                      const previewChars = previewIds
+                        .map((id) => libraryById.get(id))
+                        .filter(Boolean) as LibraryCharacter[];
+                      return (
+                        <div
+                          key={col.id}
+                          className="flex items-center gap-3 p-3 rounded-2xl w-full"
+                          style={{
+                            background: 'rgba(255,255,255,0.05)',
+                            border: '1px solid rgba(255,255,255,0.08)',
+                          }}
+                        >
+                          {/* Cover / folder preview — opens collection */}
+                          <button
+                            type="button"
+                            onClick={() => handleSelectCollection(col)}
+                            className="flex items-center gap-3 flex-1 min-w-0 text-left transition-all hover:brightness-125"
+                          >
+                            <div
+                              className="flex-shrink-0 rounded-xl overflow-hidden flex items-center justify-center"
+                              style={{
+                                width: '56px',
+                                height: '56px',
+                                background: 'rgba(255,255,255,0.06)',
+                                border: '1px solid rgba(255,255,255,0.08)',
+                              }}
+                            >
+                              {col.coverImage ? (
+                                <img src={col.coverImage} alt="" className="w-full h-full" style={{ objectFit: 'cover' }} />
+                              ) : previewChars.length > 0 ? (
+                                <div className="grid grid-cols-2 w-full h-full">
+                                  {[0, 1, 2, 3].map((i) => (
+                                    <div key={i} style={{ background: 'rgba(255,255,255,0.04)', overflow: 'hidden' }}>
+                                      {previewChars[i]?.headshot_url && (
+                                        <img
+                                          src={previewChars[i]!.headshot_url!}
+                                          alt=""
+                                          className="w-full h-full"
+                                          style={{ objectFit: 'cover', objectPosition: 'center top' }}
+                                        />
+                                      )}
+                                    </div>
+                                  ))}
+                                </div>
+                              ) : (
+                                <FolderOpen size={22} style={{ color: 'rgba(255,255,255,0.25)' }} />
+                              )}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p style={{ fontFamily: 'Outfit, sans-serif', fontSize: '15px', fontWeight: 600, color: '#fff', lineHeight: 1.3 }} className="truncate">
+                                {col.name}
+                              </p>
+                              <p style={{ fontFamily: 'Outfit, sans-serif', fontSize: '12px', color: 'rgba(255,255,255,0.4)', marginTop: '2px' }}>
+                                {count === 0 ? 'Empty' : `${count} character${count === 1 ? '' : 's'}`}
+                              </p>
+                            </div>
+                          </button>
+                          {/* Quick add-all */}
+                          <button
+                            type="button"
+                            onClick={() => handleAddCollectionToStory(col)}
+                            className="flex-shrink-0 px-3 py-1.5 rounded-full transition-all hover:brightness-125"
+                            style={{
+                              fontFamily: 'Outfit, sans-serif',
+                              fontSize: '12px',
+                              fontWeight: 600,
+                              color: count === 0 ? 'rgba(255,255,255,0.3)' : '#fff',
+                              background: count === 0 ? 'rgba(255,255,255,0.04)' : 'rgba(255,255,255,0.12)',
+                              border: `1px solid ${count === 0 ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.18)'}`,
+                            }}
+                          >
+                            Add all
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )
+              ) : /* All / Favorites character grid */
+              isLoadingLibrary ? (
                 <div className="flex items-center justify-center py-12">
                   <Loader2 size={24} className="animate-spin" style={{ color: 'rgba(255,255,255,0.4)' }} />
                 </div>
+              ) : filteredLibrary.length === 0 ? (
+                <p className="text-center py-12" style={{ fontFamily: 'Outfit, sans-serif', fontSize: '14px', color: 'rgba(255,255,255,0.4)' }}>
+                  {searchLower
+                    ? 'No matching characters'
+                    : libraryFilter === 'favorites'
+                      ? 'No favorites yet'
+                      : 'No characters found'}
+                </p>
               ) : (
                 <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))' }}>
                   {filteredLibrary.map((char) => (
@@ -615,14 +896,38 @@ export default function CharacterPanel({
                       <p style={{ fontFamily: 'Outfit, sans-serif', fontSize: '13px', fontWeight: 600, color: '#fff', textAlign: 'center', lineHeight: 1.3 }}>
                         {char.name.replace(/-/g, ' ')}
                       </p>
-                      <p style={{ fontFamily: 'Outfit, sans-serif', fontSize: '11px', color: 'rgba(139,92,246,0.8)' }}>
-                        {char.is_yours ? 'yours' : 'private'}
-                      </p>
+                      {char.is_saved && (
+                        <p className="inline-flex items-center gap-1" style={{ fontFamily: 'Outfit, sans-serif', fontSize: '11px', color: 'rgba(250,204,21,0.85)' }}>
+                          <Star size={10} fill="currentColor" strokeWidth={0} />
+                          favorite
+                        </p>
+                      )}
                     </button>
                   ))}
                 </div>
               )}
             </div>
+
+            {/* Add all footer when browsing a collection */}
+            {selectedCollection && selectedCollection.characterIds.length > 0 && (
+              <div className="px-6 py-4 flex-shrink-0" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+                <button
+                  onClick={() => handleAddCollectionToStory(selectedCollection)}
+                  className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl transition-all hover:brightness-125"
+                  style={{
+                    fontFamily: 'Outfit, sans-serif',
+                    fontSize: '15px',
+                    fontWeight: 600,
+                    color: '#fff',
+                    background: 'rgba(255,255,255,0.1)',
+                    border: '1px solid rgba(255,255,255,0.18)',
+                  }}
+                >
+                  <Plus size={16} strokeWidth={2.5} />
+                  Add all to story ({selectedCollection.characterIds.length})
+                </button>
+              </div>
+            )}
           </>
         )}
 

@@ -2057,8 +2057,22 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
 
     const rect = e.currentTarget.getBoundingClientRect();
     const x = e.clientX - rect.left;
-    // Freeroam-style: left strip = back; center + right = forward
-    const leftZone = rect.width * 0.28;
+    const y = e.clientY - rect.top;
+    // Only suppress navigate over actual top chrome hotspots — not a full-width dead band.
+    // (A full band made mid-top art untappable; logo/menu/close still must not advance.)
+    const topChromeH = 52;
+    if (y < topChromeH) {
+      const mid = rect.width / 2;
+      const overLogo = x < 96; // freeroam word + a little slack
+      const overMenuPill = x > mid - 48 && x < mid + 48;
+      const overRightChrome = x > rect.width - 140; // close / bookmark / page / badges
+      if (overLogo || overMenuPill || overRightChrome) return;
+    }
+
+    // Left = back, right of that = forward. Back zone is intentionally wide (~half the
+    // panel) so taps on leftish dialogue (e.g. around "For now, we…") still go previous,
+    // not next. Forward starts near mid-panel (about where that "w" sits on typical copy).
+    const leftZone = rect.width * 0.45;
     if (x < leftZone) {
       if (canGoBack) void handleNavigate('prev');
     } else if (canGoForward && !isPolling && !isRegeneratePolling) {
@@ -2158,14 +2172,48 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
         />
       )}
 
-      {/* Left navigation halo — stop above action bar so it never steals Characters/Act taps.
-          Use z-[35] (Tailwind has no z-25 by default). */}
+      {/* Side nav chevrons (pre-alignment-tinkering layout). Debug guides optional. */}
+      {debugMode && (
+        <div
+          className="absolute left-0 right-0 z-[34] pointer-events-none"
+          style={{
+            top: '56px',
+            bottom: 'calc(112px + env(safe-area-inset-bottom, 0px))',
+          }}
+          aria-hidden
+        >
+          <div
+            style={{
+              position: 'absolute',
+              left: 0,
+              right: 0,
+              top: '50%',
+              height: '1px',
+              marginTop: '-0.5px',
+              background: 'rgba(34, 197, 94, 0.95)',
+              boxShadow: '0 0 0 0.5px rgba(0,0,0,0.6)',
+            }}
+          />
+          <div
+            style={{
+              position: 'absolute',
+              left: '50%',
+              top: 0,
+              bottom: 0,
+              width: '1px',
+              marginLeft: '-0.5px',
+              background: 'rgba(56, 189, 248, 0.7)',
+            }}
+          />
+        </div>
+      )}
       <button
         onClick={() => handleNavigate('prev')}
         disabled={!canGoBack || isNavigating}
-        className="absolute left-0 top-0 z-[35] flex items-center justify-start pl-2 sm:pl-4 disabled:opacity-0 transition-opacity"
+        className="absolute left-0 z-[35] flex items-center justify-start pl-2 sm:pl-4 disabled:opacity-0 disabled:pointer-events-none transition-opacity"
         style={{
-          width: 'clamp(44px, 15vw, 100px)',
+          top: '56px',
+          width: 'clamp(44px, 12vw, 72px)',
           bottom: 'calc(112px + env(safe-area-inset-bottom, 0px))',
           cursor: canGoBack ? 'pointer' : 'default',
         }}
@@ -2179,13 +2227,13 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
         </div>
       </button>
 
-      {/* Right navigation halo — same: leave bottom action bar free */}
       <button
         onClick={() => handleNavigate('next')}
         disabled={(!canGoForward && !isPolling && !isRegeneratePolling) || isNavigating}
-        className="absolute right-0 top-0 z-[35] flex items-center justify-end pr-2 sm:pr-4 disabled:opacity-0 transition-opacity"
+        className="absolute right-0 z-[35] flex items-center justify-end pr-2 sm:pr-4 disabled:opacity-0 disabled:pointer-events-none transition-opacity"
         style={{
-          width: 'clamp(44px, 15vw, 100px)',
+          top: '56px',
+          width: 'clamp(44px, 12vw, 72px)',
           bottom: 'calc(112px + env(safe-area-inset-bottom, 0px))',
           cursor: canGoForward ? 'pointer' : 'default',
         }}
@@ -2193,9 +2241,13 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
       >
         <div
           className="relative flex items-center justify-center"
-          style={{ width: '24px', height: '24px', color: regenerateTimedOut ? '#ef4444' : 'rgba(255,255,255,0.8)', filter: 'drop-shadow(0 1px 3px rgba(0,0,0,0.9))' }}
+          style={{
+            width: '24px',
+            height: '24px',
+            color: regenerateTimedOut ? '#ef4444' : 'rgba(255,255,255,0.8)',
+            filter: 'drop-shadow(0 1px 3px rgba(0,0,0,0.9))',
+          }}
         >
-          {/* Spinning ring for polling states */}
           {(isPolling || isRegeneratePolling || regenerateTimedOut) && (
             <svg
               className="absolute inset-0"
@@ -2215,13 +2267,11 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
               />
             </svg>
           )}
-          {/* Icon inside the ring — only show icon when not using plain spinner ring */}
           {regenerateTimedOut ? (
             <X size={16} strokeWidth={2.5} style={{ color: '#ef4444' }} />
           ) : (isRegeneratePolling || (isPolling && isImagePolling)) ? (
             <ImageIcon size={14} strokeWidth={2} style={{ opacity: 0.8, animation: 'pulse 1.5s ease-in-out infinite' }} />
           ) : isPolling ? (
-            // Plain polling — SVG ring alone is enough, no inner icon
             null
           ) : (
             <ChevronRight size={16} strokeWidth={2} />
@@ -2398,11 +2448,27 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
             className="absolute top-0 left-0 right-0 z-40 flex items-center justify-between px-4 pt-3 pb-2 pointer-events-none"
             style={{ background: 'none' }}
           >
+            {/* Hit box strictly around the word — no flex stretch / line-box padding */}
             <a
               href="https://getfreeroam.com"
               target="_blank"
               rel="noopener noreferrer"
-              style={{ fontFamily: 'Lora, Georgia, serif', fontSize: '16px', fontWeight: 700, color: 'rgba(255,255,255,0.9)', letterSpacing: '0.02em', textDecoration: 'none', pointerEvents: 'auto' }}
+              style={{
+                fontFamily: 'Lora, Georgia, serif',
+                fontSize: '16px',
+                fontWeight: 700,
+                color: 'rgba(255,255,255,0.9)',
+                letterSpacing: '0.02em',
+                textDecoration: 'none',
+                pointerEvents: 'auto',
+                display: 'inline-block',
+                width: 'fit-content',
+                maxWidth: 'fit-content',
+                lineHeight: 1,
+                padding: 0,
+                margin: 0,
+                alignSelf: 'center',
+              }}
             >
               freeroam
             </a>

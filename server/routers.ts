@@ -170,7 +170,9 @@ export const appRouter = router({
         return parsed;
       }),
 
-    // Single-request library endpoint — returns ALL characters with is_saved, description, tags
+    // Single-request library endpoint — returns ALL characters with is_saved, description, tags.
+    // Freeroam quirk: the URL still requests page=1&limit=18, but the API returns the full
+    // library in one response (limit is not honored as real pagination). See PROJECT.md.
     library: publicProcedure
       .query(async ({ ctx }) => {
         // Return empty roster for users without their own cookie — do not expose owner's characters
@@ -186,6 +188,7 @@ export const appRouter = router({
             await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, attempt - 1)));
           }
           response = await fetch(
+            // limit=18 is historical; Freeroam currently returns the entire library anyway
             "https://getfreeroam.com/api/characters/library?page=1&limit=18&filter=",
             {
               headers: {
@@ -3084,42 +3087,52 @@ Respond with ONLY this JSON (no other text): {"isNsfw": true or false, "artStyle
           if (input.nextPanelText) sceneLines.push(`Next: ${input.nextPanelText}`);
           const storyBlob = sceneLines.join('\n');
 
+          /** Map appearance text → sex label for the prompt (no clothing, no inventing). */
+          const sexLabelFromAppearance = (appearance: string | null | undefined): string => {
+            const a = (appearance || '').toLowerCase();
+            if (/futanari|\bfuta\b|hermaphrodite|dickgirl|newhalf/.test(a)) return 'futanari woman';
+            if (/\b(trans\s*man|ftm)\b/.test(a)) return 'man';
+            if (/\b(trans\s*woman|mtf)\b/.test(a)) return 'woman';
+            if (/\b(female|woman|girl|she\/her|she,| heroine)\b/.test(a)) return 'woman';
+            if (/\b(male|man|boy|he\/him|he,)\b/.test(a) && !/\b(female|woman|girl)\b/.test(a)) return 'man';
+            // Unknown — neutral; do NOT default to man
+            return 'person';
+          };
+
+          const castEntries = Object.values(charRefs) as Array<{
+            name: string;
+            appearance: string | null;
+            headshot_url: string | null;
+          }>;
+          const castSexes = castEntries.map((ref) => sexLabelFromAppearance(ref.appearance));
+          const futaCount = castSexes.filter((s) => s === 'futanari woman').length;
+
           if (atlasLlmKey) {
             try {
               const sceneContext = sceneLines.length > 0
                 ? `STORY CONTEXT (PRIMARY source of pose, sexual action, body state, and climax — trust this over a mild image prompt):\n${storyBlob}\n\n`
                 : '';
 
-              /** Map appearance text → sex label for the prompt (no clothing, no inventing). */
-              const sexLabelFromAppearance = (appearance: string | null | undefined): string => {
-                const a = (appearance || '').toLowerCase();
-                if (/futanari|\bfuta\b|hermaphrodite|dickgirl|newhalf/.test(a)) return 'futanari woman';
-                if (/\b(trans\s*man|ftm)\b/.test(a)) return 'man';
-                if (/\b(trans\s*woman|mtf)\b/.test(a)) return 'woman';
-                if (/\b(female|woman|girl|she\/her|she,| heroine)\b/.test(a)) return 'woman';
-                if (/\b(male|man|boy|he\/him|he,)\b/.test(a) && !/\b(female|woman|girl)\b/.test(a)) return 'man';
-                // Unknown — neutral; do NOT default to man
-                return 'person';
-              };
-
-              const castEntries = Object.values(charRefs) as Array<{
-                name: string;
-                appearance: string | null;
-                headshot_url: string | null;
-              }>;
+              // Ordinal labels when multiple share the same sex (e.g. two futa → first/second)
+              const sexOrdinal = new Map<string, number>();
               const castLines = castEntries.map((ref, i) => {
-                const sex = sexLabelFromAppearance(ref.appearance);
-                return `${i + 1}. Use descriptor: "the ${sex}" (this is ${ref.name.replace(/-/g, ' ')} — do not change their sex/gender)`;
+                const sex = castSexes[i];
+                const n = (sexOrdinal.get(sex) ?? 0) + 1;
+                sexOrdinal.set(sex, n);
+                const sameSexCount = castSexes.filter((s) => s === sex).length;
+                const descriptor =
+                  sameSexCount > 1 ? `the ${n === 1 ? 'first' : n === 2 ? 'second' : `${n}th`} ${sex}` : `the ${sex}`;
+                const futaNote =
+                  sex === 'futanari woman'
+                    ? ' — has a penis/cock (must remain visible in sexual scenes)'
+                    : '';
+                return `${i + 1}. Use descriptor: "${descriptor}" (this is ${ref.name.replace(/-/g, ' ')} — do not change their sex/gender${futaNote})`;
               });
               const castListBlock = castLines.length > 0
                 ? `FIXED CAST (use these sex descriptors only; headshot order matches this list):\n${castLines.join('\n')}\n\n`
                 : '';
 
-              const castRule = isSoloScene
-                ? `CAST RULE (critical): Exactly ONE named character from FIXED CAST is visible (they may be partial: hand, arm, torso). Do NOT invent a second face/body as a full second person. POV partner may be implied only as off-screen / cropped edge if the story requires contact — never invent a new character identity.`
-                : `CAST RULE (critical): Exactly ${characterCount} distinct people from FIXED CAST. Do NOT invent extra people. Do NOT change anyone's sex/gender. Do NOT invent a man if the cast is women and/or futanari. Do NOT force a heterosexual male/female pair. If two cast members are both "woman" or "futanari woman", keep both female-presenting (e.g. "the first woman" and "the second woman" / "the futanari woman").`;
-
-              // Detect clearly sexual story/action so clothing rules can hard-require nudity.
+              // Detect clearly sexual story/action so clothing / futa anatomy rules can hard-require detail.
               // Freeroam "headshot_url" refs are often FULL-BODY clothed art (not just face crops);
               // without explicit nude language Seedream copies outfits from those refs.
               const sexualStorySignal = [
@@ -3128,6 +3141,26 @@ Respond with ONLY this JSON (no other text): {"isNsfw": true or false, "artStyle
                 freeroamPromptPlain,
               ].filter(Boolean).join('\n').toLowerCase();
               const isSexualScene = /(?:\bsex\b|intercourse|penetrat|thrust|fuck|fucking|cock|pussy|clit|cum|orgasm|climax|moan|wet for|so tight|so wet|blowjob|oral|anal|grind|hump|naked|nude|undress|bare skin|between (?:her|his|their) legs|inside (?:her|him|you)|mounts? you|rides? you)/i.test(sexualStorySignal);
+
+              const castRule = isSoloScene
+                ? `CAST RULE (critical): Exactly ONE named character from FIXED CAST is visible (they may be partial: hand, arm, torso). Do NOT invent a second face/body as a full second person. POV partner may be implied only as off-screen / cropped edge if the story requires contact — never invent a new character identity.${
+                    futaCount >= 1
+                      ? ' This character is futanari: in sexual scenes their cock/penis must be visible when the framing allows.'
+                      : ''
+                  }`
+                : `CAST RULE (critical): Exactly ${characterCount} distinct people from FIXED CAST. Do NOT invent extra people. Do NOT change anyone's sex/gender. Do NOT invent a man if the cast is women and/or futanari. Do NOT force a heterosexual male/female pair. If two cast members are both "woman" or "futanari woman", keep both female-presenting and use "the first …" / "the second …" descriptors from FIXED CAST.`;
+
+              // Two+ futanari: models often show only one cock — force both to be named in the prompt.
+              const multiFutaRule =
+                isSexualScene && futaCount >= 2
+                  ? `MULTI-FUTANARI ANATOMY RULE (critical — ${futaCount} futanari in cast):
+- EVERY futanari woman in FIXED CAST has her own cock/penis. Do NOT show only one cock for two people.
+- The prompt MUST explicitly mention BOTH (or all) cocks, e.g. "the first futanari woman's cock" and "the second futanari woman's cock" (or "both of their cocks", "each has a cock", "two cocks visible").
+- Do NOT merge them into a single-penis couple. Do NOT omit the second futanari's genitals.
+- If framing is tight, still state that both have cocks even if one is partially cropped.`
+                  : futaCount === 1 && isSexualScene
+                    ? `FUTANARI ANATOMY: The futanari character has a cock/penis — include it when the sexual framing shows genitals.`
+                    : '';
 
               const clothingRule = isSexualScene
                 ? `CLOTHING RULE (critical — SEXUAL SCENE):
@@ -3168,7 +3201,7 @@ Respond with ONLY this JSON (no other text): {"isNsfw": true or false, "artStyle
                     {
                       role: 'system',
                       content:
-                        'You write erotic image-edit prompts for Seedream for an adult story app. When story context is sexual, the prompt MUST describe that sexual action explicitly, characters MUST be nude, and body position/setting MUST come from the story — never default intimate scenes to standing. If sexual and setting/pose is unclear, assume on a bed, lying down. Freeroam reference images (called headshots but often full-body standing art) are for likeness only — ignore their clothing and upright stance in sexual scenes. Never collapse sex to a mild SFW close-up. Use ONLY FIXED CAST sex descriptors. Present tense. End with a single JSON object only (no markdown).',
+                        'You write erotic image-edit prompts for Seedream for an adult story app. When story context is sexual, the prompt MUST describe that sexual action explicitly, characters MUST be nude, and body position/setting MUST come from the story — never default intimate scenes to standing. If sexual and setting/pose is unclear, assume on a bed, lying down. When TWO OR MORE futanari are in the cast, the prompt MUST mention BOTH/ALL of their cocks (never only one penis for two futa). Freeroam reference images (called headshots but often full-body standing art) are for likeness only — ignore their clothing and upright stance in sexual scenes. Never collapse sex to a mild SFW close-up. Use ONLY FIXED CAST sex descriptors. Present tense. End with a single JSON object only (no markdown).',
                     },
                     {
                       role: 'user',
@@ -3177,7 +3210,7 @@ Respond with ONLY this JSON (no other text): {"isNsfw": true or false, "artStyle
 ${clothingRule}
 
 ${positionRule}
-
+${multiFutaRule ? `\n${multiFutaRule}\n` : ''}
 ${framingNote}
 ${actionNote}
 Write a Seedream image-edit prompt:
@@ -3185,12 +3218,14 @@ Write a Seedream image-edit prompt:
 - PRIORITY 2: body position and setting from STORY CONTEXT (or Freeroam framing if it states place/pose). If sexual and unclear: on a bed, lying down — never invent standing intimacy by default
 - PRIORITY 3: framing from Freeroam prompt (close-up hand, etc.) can remain if it still shows the sexual moment and does not force standing when the story is bed/intimate
 - ${isSexualScene ? 'PRIORITY 4: explicitly include nude / bare skin / no clothing (required)' : 'PRIORITY 4: clothing per CLOTHING RULE'}
+- ${futaCount >= 2 && isSexualScene ? 'PRIORITY 5: BOTH/ALL futanari cocks must be named in the prompt (first and second futanari woman each have a cock)' : futaCount === 1 && isSexualScene ? 'PRIORITY 5: futanari cock visible when genitals are in frame' : ''}
 - NEVER default sexual scenes to standing / upright unless the story or Freeroam prompt says so
 - NEVER output a SFW-only hand/wall description when the story is intercourse
 - NEVER output "same clothing as the reference image" when the story is sexual
+- NEVER show only one cock when two futanari are present
 - Respect FIXED CAST and CAST RULE (no invented people)
 - Do NOT invent face, hair, or species
-- Keep under 140 words
+- Keep under 160 words
 Respond with ONLY this JSON: {"prompt": "..."}`,
                     },
                   ],
@@ -3285,6 +3320,20 @@ Respond with ONLY this JSON: {"prompt": "..."}`,
             }
             if (!hasHorizontalPose && !storySaysStanding) {
               seedreamPrompt = `${seedreamPrompt} On a bed, lying down.`;
+            }
+
+            // Two+ futa: models often paint one cock — force both if the enhance prompt under-specified.
+            if (futaCount >= 2) {
+              const bothCocksNamed =
+                /\b(both|two|each)\b[\w\s,]{0,24}\b(cock|penis|cocks|penises)\b/i.test(seedreamPrompt)
+                || (
+                  /\b(first|1st)\b[\w\s']{0,40}\b(cock|penis)\b/i.test(seedreamPrompt)
+                  && /\b(second|2nd)\b[\w\s']{0,40}\b(cock|penis)\b/i.test(seedreamPrompt)
+                )
+                || (seedreamPrompt.match(/\b(cock|penis|cocks|penises)\b/gi) ?? []).length >= 2;
+              if (!bothCocksNamed) {
+                seedreamPrompt = `${seedreamPrompt} Both futanari women have cocks; the first futanari woman's cock and the second futanari woman's cock are both visible.`;
+              }
             }
           }
 

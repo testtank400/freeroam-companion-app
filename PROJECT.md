@@ -22,7 +22,7 @@ The app is a companion reader and character/world manager for [Freeroam](https:/
 | `client/src/components/StoryReader.tsx` | Full story reader — panel navigation, TTS, auto-advance, polling, action bar |
 | `client/src/components/StoryMenu.tsx` | Slide-down story menu — page scrubber, bookmarks, journal, preferences |
 | `client/src/components/VoicePicker.tsx` | Voice assignment modal — browse ElevenLabs voices, set stability/similarity/style/language |
-| `client/src/components/CharacterPanel.tsx` | In-reader character panel — view/add/remove characters in the current world |
+| `client/src/components/CharacterPanel.tsx` | In-reader character panel — view/edit story cast; library browser with All / Favorites / Collections filters and batch-add from local character collections |
 | `client/src/components/CharacterProfile.tsx` | Full-screen character detail — tabs for About, Appearance, Full Backstory, Full Appearance |
 | `client/src/components/CharacterCard.tsx` | Character card in the roster grid |
 | `client/src/components/WorldCard.tsx` | World card in the worlds grid |
@@ -59,22 +59,37 @@ The `freeroam_users` table stores a mapping of `accountId → username` for disp
 
 ## Character Roster (Characters Mode)
 
-The character roster is the default view. It loads characters from Freeroam's library endpoint with cursor-based infinite scroll.
+The character roster is the default view. It loads characters via `characters.library` — **one** tRPC query that proxies Freeroam's library endpoint:
+
+```
+GET https://getfreeroam.com/api/characters/library?page=1&limit=18&filter=
+```
+
+### Library load quirk (important)
+
+The request still includes `limit=18` (and `page=1`), but **Freeroam's library API does not actually paginate that way** — the response contains **the user's full character library** in a single payload (all characters with `is_saved`, description, tags, etc.). Treat this as a known Freeroam bug/quirk, not as intentional 18-item paging.
+
+Implications:
+- Home and the in-reader CharacterPanel both call `characters.library` once and map the full result client-side.
+- Do **not** reintroduce cursor/infinite-scroll loading for this endpoint unless Freeroam changes the API to honor `limit` / pages.
+- The server comment in `routers.ts` (`characters.library`) documents this as a single-request full-roster load.
 
 ### Filters and Sorting
 
 | Filter | Description |
 |---|---|
 | ALL / PRIVATE / PUBLIC / UNLISTED | Privacy status filter |
-| FAVORITES | Shows only characters the user has favorited on Freeroam |
+| FAVORITES | Shows only characters the user has favorited on Freeroam (`is_saved === true`) |
 | Search | Client-side text search across name and backstory |
 | Sort | Most Recent / Oldest First |
 
-### Collections
+### Collections (character collections — local DB)
 
-Collections are user-owned groups of characters stored in the local database (`collections` and `collection_members` tables). They are **not** Freeroam collections — they are entirely local. A character can belong to multiple collections. Collections support sub-collections (via `parentId`).
+Character collections are user-owned groups stored in the local database (`collections` and `collection_members` tables). They are **not** Freeroam world collections and are **not** Freeroam's remote character-collection product — they are entirely Companion-local, scoped by Freeroam `accountId`. A character can belong to multiple collections. Collections support sub-collections (via `parentId`).
 
 The `CollectionsStrip` component renders a horizontal scrollable strip of collection cards above the character grid. Clicking a collection filters the grid to show only its members.
+
+These same local character collections are what the in-reader CharacterPanel **Collections** chip uses for search and batch-add (see [Character Panel](#character-panel-in-reader) below).
 
 ### NSFW Flags
 
@@ -176,7 +191,7 @@ Navigation is handled by `handleNavigate('prev' | 'next')`. The embedded next pa
 2. Retries up to 10 times with 2s delay (Freeroam sometimes returns panel IDs before panels exist)
 3. Falls back to `startDirectPanelPolling` if all retries fail on an action panel
 
-Two invisible tap zones cover the left 25% (back) and right 60% (forward) of the screen, matching Freeroam's tap areas. Visible arrow icons sit at the edges at `z-25`.
+Invisible tap zones: the left **45%** of the panel advances back; the remainder advances forward (see `StoryReader` hit-zone math). Visible chevron icons sit at the edges for discoverability.
 
 ### Polling State Machine
 
@@ -262,6 +277,45 @@ The menu contains:
 
 A debug overlay is available in preferences (Voice Settings → Debug Mode). When enabled, a small overlay appears in the top bar of the reader showing real-time state: `forward_state`, `next_panel_id`, `isPolling`, `isNavigating`, `canGoForward`, `is_action`, `requires_action`. Essential for diagnosing navigation issues.
 
+### Character Panel (in-reader)
+
+`CharacterPanel.tsx` is the full-screen overlay opened from the reader's **Characters** pill. It has four views:
+
+| View | Purpose |
+|---|---|
+| Main | Current story cast — headshots, Play as, remove/restore, pending add/remove borders |
+| Library | Browse the user's Freeroam library and local collections to queue adds |
+| Detail | Library character detail → **Add to Story** |
+| Story detail | Edit in-story character personality/appearance/photo |
+
+Changes are **pending** until the user taps **Save Changes**, which calls StoryReader's `onSaveChanges` / `onPlayAs` / `onEditCharacter` (Freeroam batch character update via `sendAction`).
+
+#### Library chips
+
+There is **no "Yours" chip** — the library already shows the signed-in user's characters only.
+
+| Chip | Behavior |
+|---|---|
+| **All** | Full library from `characters.library` (see library load quirk above) |
+| **Favorites** | `is_saved === true` (Freeroam favorites) |
+| **Collections** | User's **local Companion character collections** from `collections.list` (`characterIds`) — **not** Freeroam world collections |
+
+Search is client-side: character name under All/Favorites; collection name under Collections; member name when a collection is open.
+
+#### Collections flow
+
+1. **Collections** chip lists local collections (cover image, headshot mosaic, or folder icon; member count).
+2. Tapping a collection:
+   - **Empty** → toast *"This collection is empty"* (same for **Add all** on empty).
+   - **Non-empty** → member grid (resolved against the loaded library when possible; unresolved IDs still add by `external_id`).
+3. **Add all** (list row or collection footer) batch-queues every member for story add:
+   - **No batch size cap** (for now).
+   - Characters **already in the story** (or already pending add) are **skipped**.
+   - Toast reports added vs skipped counts; user still must **Save Changes** to commit to Freeroam.
+4. Individual members can still be opened and added one at a time (same pending-add path as All/Favorites).
+
+Opening the panel or library resets filter/search/selected collection; auto-advance is paused while the panel is open.
+
 ---
 
 ## TTS Pipeline
@@ -329,6 +383,7 @@ The Grok call is **non-fatal** — if it fails for any reason, TTS proceeds with
 | Private worlds hidden from collection responses | Freeroam's API omits private worlds when listing collection members. | Store membership locally in `world_collection_members`. Merge API response with local DB on collection open. |
 | Character names use hyphens | Freeroam uses `Aerith-Guthrie` internally. Display replaces hyphens with spaces. | `speechBubble.character.replace(/-/g, ' ')` for display. |
 | Cookie-gated endpoints | Without a valid Freeroam session cookie, all character/world endpoints return 401. | `hasUserCookie()` check gates character loading. Users without a cookie see an empty roster. |
+| Library `?limit=18` returns the full library | Companion calls `GET /api/characters/library?page=1&limit=18&filter=`, but Freeroam **ignores/mishandles the limit** and returns **all** library characters (with `is_saved`, tags, etc.) in one response. | Documented intentional reliance. `characters.library` is a single full-roster load for Home and CharacterPanel. Do not assume true 18-item pagination. |
 
 ---
 
