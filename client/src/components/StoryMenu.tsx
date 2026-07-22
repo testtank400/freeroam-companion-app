@@ -781,9 +781,10 @@ export default function StoryMenu({
     ...bookmarks,
   ];
 
-  // Page slider state — sync with currentDepth when menu opens or depth changes
+  // Page slider state — sync with currentDepth when menu opens or depth changes.
+  // '' is allowed while the user is clearing/retyping so the first digit can be changed.
   const maxDepth = totalDepth ?? progressPanel?.depth ?? currentDepth;
-  const [sliderInput, setSliderInput] = useState<number>(currentDepth > 0 ? currentDepth : 1);
+  const [sliderInput, setSliderInput] = useState<number | ''>(currentDepth > 0 ? currentDepth : 1);
   const [isNavigatingToDepth, setIsNavigatingToDepth] = useState(false);
   const isDraggingRef = useRef(false);
   const trackRef = useRef<HTMLDivElement>(null);
@@ -795,20 +796,29 @@ export default function StoryMenu({
   }
   prevIsOpen.current = isOpen;
 
-  const inputChanged = sliderInput !== currentDepth;
+  const clampDepth = (v: number) => Math.max(1, Math.min(maxDepth, v));
+  const resolvedSlider = typeof sliderInput === 'number' && sliderInput >= 1 ? clampDepth(sliderInput) : 1;
+  // Show Go when a typed value would navigate somewhere different (clamped to range)
+  const inputChanged =
+    typeof sliderInput === 'number' &&
+    sliderInput >= 1 &&
+    clampDepth(sliderInput) !== currentDepth;
 
   const handleGoToDepth = async () => {
-    if (!onNavigateToDepth || isNavigatingToDepth || !inputChanged) return;
+    if (!onNavigateToDepth || isNavigatingToDepth || typeof sliderInput !== 'number' || sliderInput < 1) return;
+    const target = clampDepth(sliderInput);
+    setSliderInput(target);
+    if (target === currentDepth) return;
     setIsNavigatingToDepth(true);
     try {
-      await onNavigateToDepth(sliderInput);
+      await onNavigateToDepth(target);
     } finally {
       setIsNavigatingToDepth(false);
     }
   };
 
   const getDepthFromEvent = (clientX: number): number => {
-    if (!trackRef.current) return sliderInput;
+    if (!trackRef.current) return resolvedSlider;
     const rect = trackRef.current.getBoundingClientRect();
     const pct = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
     return Math.max(1, Math.round(pct * maxDepth));
@@ -962,10 +972,25 @@ export default function StoryMenu({
                     type="number"
                     min={1}
                     max={maxDepth}
-                    value={sliderInput}
+                    value={sliderInput === '' ? '' : sliderInput}
                     onChange={(e) => {
-                      const v = parseInt(e.target.value, 10);
-                      if (!isNaN(v)) setSliderInput(Math.max(1, Math.min(maxDepth, v)));
+                      const raw = e.target.value;
+                      // Allow empty so the field can be fully cleared and retyped
+                      // (e.g. change page 25 → 15 by deleting then typing).
+                      if (raw === '') {
+                        setSliderInput('');
+                        return;
+                      }
+                      const v = parseInt(raw, 10);
+                      // Don't clamp while typing — clamp on blur / Go so multi-digit entry works
+                      if (!isNaN(v) && v >= 0) setSliderInput(v);
+                    }}
+                    onBlur={() => {
+                      if (sliderInput === '' || typeof sliderInput !== 'number' || sliderInput < 1) {
+                        setSliderInput(currentDepth > 0 ? currentDepth : 1);
+                      } else if (sliderInput > maxDepth) {
+                        setSliderInput(maxDepth);
+                      }
                     }}
                     onKeyDown={(e) => { if (e.key === 'Enter') handleGoToDepth(); }}
                     style={{
@@ -1007,12 +1032,12 @@ export default function StoryMenu({
                   {/* Filled portion */}
                   <div
                     className="absolute rounded-full"
-                    style={{ top: '7px', bottom: '7px', height: '6px', left: 0, width: `${Math.min(100, maxDepth > 0 ? (sliderInput / maxDepth) * 100 : 0)}%`, background: inputChanged ? '#7c3aed' : 'rgba(255,255,255,0.65)' }}
+                    style={{ top: '7px', bottom: '7px', height: '6px', left: 0, width: `${Math.min(100, maxDepth > 0 ? (resolvedSlider / maxDepth) * 100 : 0)}%`, background: inputChanged ? '#7c3aed' : 'rgba(255,255,255,0.65)' }}
                   />
                   {/* Thumb */}
                   <div
                     className="absolute top-1/2 -translate-y-1/2 w-5 h-5 rounded-full"
-                    style={{ left: `calc(${Math.min(100, maxDepth > 0 ? (sliderInput / maxDepth) * 100 : 0)}% - 10px)`, background: inputChanged ? '#7c3aed' : '#fff', boxShadow: '0 0 8px rgba(255,255,255,0.5)', cursor: 'grab' }}
+                    style={{ left: `calc(${Math.min(100, maxDepth > 0 ? (resolvedSlider / maxDepth) * 100 : 0)}% - 10px)`, background: inputChanged ? '#7c3aed' : '#fff', boxShadow: '0 0 8px rgba(255,255,255,0.5)', cursor: 'grab' }}
                   />
                 </div>
               </div>

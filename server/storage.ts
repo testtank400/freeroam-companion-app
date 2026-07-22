@@ -67,7 +67,9 @@ async function localStoragePut(
   await fs.promises.writeFile(filePath, buffer);
 
   console.log(`[Storage] Local put → ${filePath} (${(buffer.length / 1024 / 1024).toFixed(2)} MB)`);
-  return { key, url: `/api/local-storage/${key}` };
+  // Use /manus-storage/ so local + Forge share one URL scheme; the proxy serves
+  // local files from data/local-storage when present (see storageProxy.ts).
+  return { key, url: `/manus-storage/${key}` };
 }
 
 async function localStorageGetSignedUrl(relKey: string): Promise<string> {
@@ -76,8 +78,8 @@ async function localStorageGetSignedUrl(relKey: string): Promise<string> {
   if (!fs.existsSync(filePath)) {
     throw new Error(`Local storage object not found: ${key}`);
   }
-  // Same-origin path the browser can download directly
-  return `/api/local-storage/${key}`;
+  // Prefer unified /manus-storage/ path (proxy falls back to local disk)
+  return `/manus-storage/${key}`;
 }
 
 export async function storagePut(
@@ -129,9 +131,7 @@ export async function storagePut(
 
 export async function storageGet(relKey: string): Promise<{ key: string; url: string }> {
   const key = normalizeKey(relKey);
-  if (!hasForgeConfig()) {
-    return { key, url: `/api/local-storage/${key}` };
-  }
+  // Always the same public path; proxy resolves Forge vs local disk
   return { key, url: `/manus-storage/${key}` };
 }
 

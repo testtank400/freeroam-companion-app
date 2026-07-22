@@ -98,15 +98,23 @@ export default function DeleteCollectionDialog({
                 src={collection.coverImage}
                 alt={collection.name}
                 className="w-10 h-12 object-cover object-top rounded-sm flex-shrink-0"
+                onError={(e) => {
+                  const el = e.target as HTMLImageElement;
+                  el.style.display = 'none';
+                  const fallback = el.nextElementSibling as HTMLElement | null;
+                  if (fallback) fallback.style.display = 'flex';
+                }}
               />
-            ) : (
-              <div
-                className="w-10 h-12 rounded-sm flex-shrink-0 flex items-center justify-center"
-                style={{ background: 'oklch(0.18 0.01 264)' }}
-              >
-                <FolderOpen size={18} style={{ color: 'oklch(0.35 0.01 264)' }} />
-              </div>
-            )}
+            ) : null}
+            <div
+              className="w-10 h-12 rounded-sm flex-shrink-0 flex items-center justify-center"
+              style={{
+                background: 'oklch(0.18 0.01 264)',
+                display: collection.coverImage ? 'none' : 'flex',
+              }}
+            >
+              <FolderOpen size={18} style={{ color: 'oklch(0.35 0.01 264)' }} />
+            </div>
             <div className="min-w-0">
               <p
                 className="font-bold truncate"

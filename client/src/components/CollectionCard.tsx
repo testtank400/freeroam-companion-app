@@ -6,6 +6,7 @@
 import { Collection } from '@/hooks/useCollections';
 import { ApiCharacter } from '@/pages/Home';
 import { FolderOpen, Pencil, Trash2 } from 'lucide-react';
+import { useEffect, useState } from 'react';
 
 interface CollectionCardProps {
   collection: Collection;
@@ -39,9 +40,33 @@ function HeadshotGrid({ characters }: { characters: ApiCharacter[] }) {
   );
 }
 
+function EmptyFolderPlaceholder() {
+  return (
+    <div
+      className="absolute inset-0 flex flex-col items-center justify-center gap-2"
+      style={{ background: 'oklch(0.15 0.01 264)' }}
+    >
+      <FolderOpen size={32} style={{ color: 'oklch(0.3 0.01 264)' }} />
+      <span
+        className="text-[10px] uppercase tracking-widest"
+        style={{ fontFamily: 'Rajdhani, sans-serif', color: 'oklch(0.35 0.01 264)' }}
+      >
+        Empty
+      </span>
+    </div>
+  );
+}
+
 export default function CollectionCard({ collection, characters, subCollectionCount = 0, onClick, onEdit, onDelete }: CollectionCardProps) {
-  const hasCover = !!collection.coverImage;
-  const coverImageSrc = collection.coverImage ?? undefined;
+  const coverImageSrc = collection.coverImage || undefined;
+  const [coverFailed, setCoverFailed] = useState(false);
+
+  // Reset when cover URL changes (e.g. after re-upload)
+  useEffect(() => {
+    setCoverFailed(false);
+  }, [coverImageSrc]);
+
+  const showCover = !!coverImageSrc && !coverFailed;
 
   return (
     <div
@@ -54,28 +79,17 @@ export default function CollectionCard({ collection, characters, subCollectionCo
     >
       {/* Image area */}
       <div className="relative w-full" style={{ paddingBottom: '115%' }}>
-        {hasCover ? (
+        {showCover ? (
           <img
             src={coverImageSrc}
             alt={collection.name}
             className="absolute inset-0 w-full h-full object-cover object-top"
-            onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+            onError={() => setCoverFailed(true)}
           />
         ) : characters.length > 0 ? (
           <HeadshotGrid characters={characters} />
         ) : (
-          <div
-            className="absolute inset-0 flex flex-col items-center justify-center gap-2"
-            style={{ background: 'oklch(0.15 0.01 264)' }}
-          >
-            <FolderOpen size={32} style={{ color: 'oklch(0.3 0.01 264)' }} />
-            <span
-              className="text-[10px] uppercase tracking-widest"
-              style={{ fontFamily: 'Rajdhani, sans-serif', color: 'oklch(0.35 0.01 264)' }}
-            >
-              Empty
-            </span>
-          </div>
+          <EmptyFolderPlaceholder />
         )}
 
         {/* Gradient overlay */}

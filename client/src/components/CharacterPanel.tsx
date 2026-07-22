@@ -9,7 +9,7 @@
 import { trpc } from '@/lib/trpc';
 import { getFreeroamAuthHeaders } from '@/lib/freeroamHeaders';
 import { useCollections, type Collection } from '@/hooks/useCollections';
-import { X, Plus, ArrowLeft, Search, Loader2, Save, FolderOpen, Star } from 'lucide-react';
+import { X, Plus, ArrowLeft, Search, Loader2, Save, FolderOpen, Star, Check, ChevronRight, Info } from 'lucide-react';
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { toast } from 'sonner';
 
@@ -65,6 +65,197 @@ const LIBRARY_FILTERS: { id: LibraryFilter; label: string }[] = [
   { id: 'collections', label: 'Collections' },
 ];
 
+type HeadshotPair = { headshot_url: string; display_headshot_url: string | null };
+
+function hasHeadshotUrl(c: { headshot_url?: string | null; display_headshot_url?: string | null }): boolean {
+  return !!(c.display_headshot_url || c.headshot_url);
+}
+
+function toHeadshotPair(
+  headshot_url?: string | null,
+  display_headshot_url?: string | null
+): HeadshotPair | null {
+  const primary = display_headshot_url || headshot_url || '';
+  if (!primary) return null;
+  return {
+    headshot_url: headshot_url || display_headshot_url || '',
+    display_headshot_url: display_headshot_url || headshot_url || null,
+  };
+}
+
+/** Warm the browser image cache so story cards paint immediately after add. */
+function prefetchHeadshot(url: string | null | undefined) {
+  if (!url || typeof window === 'undefined') return;
+  const img = new Image();
+  img.decoding = 'async';
+  img.src = url;
+}
+
+/**
+ * Collection list row with cover thumbnail. Falls back to a headshot mosaic or
+ * folder icon when the cover URL is missing or fails (common for migrated
+ * `/manus-storage/...` covers when local Forge files are absent).
+ */
+function CollectionFolderRow({
+  name,
+  count,
+  coverImage,
+  previewChars,
+  onOpen,
+}: {
+  name: string;
+  count: number;
+  coverImage?: string | null;
+  previewChars: LibraryCharacter[];
+  onOpen: () => void;
+}) {
+  const [coverFailed, setCoverFailed] = useState(false);
+  useEffect(() => {
+    setCoverFailed(false);
+  }, [coverImage]);
+
+  const showCover = !!coverImage && !coverFailed;
+
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      className="flex items-center gap-3 p-3 rounded-2xl w-full text-left transition-all hover:brightness-125"
+      style={{
+        background: 'rgba(255,255,255,0.05)',
+        border: '1px solid rgba(255,255,255,0.08)',
+      }}
+    >
+      <div
+        className="flex-shrink-0 rounded-xl overflow-hidden flex items-center justify-center"
+        style={{
+          width: '56px',
+          height: '56px',
+          background: 'rgba(255,255,255,0.06)',
+          border: '1px solid rgba(255,255,255,0.08)',
+        }}
+      >
+        {showCover ? (
+          <img
+            src={coverImage!}
+            alt=""
+            className="w-full h-full"
+            style={{ objectFit: 'cover' }}
+            onError={() => setCoverFailed(true)}
+          />
+        ) : previewChars.length > 0 ? (
+          <div className="grid grid-cols-2 w-full h-full">
+            {[0, 1, 2, 3].map((i) => (
+              <div key={i} style={{ background: 'rgba(255,255,255,0.04)', overflow: 'hidden' }}>
+                {previewChars[i]?.headshot_url && (
+                  <img
+                    src={previewChars[i]!.headshot_url!}
+                    alt=""
+                    className="w-full h-full"
+                    style={{ objectFit: 'cover', objectPosition: 'center top' }}
+                  />
+                )}
+              </div>
+            ))}
+          </div>
+        ) : (
+          <FolderOpen size={22} style={{ color: 'rgba(255,255,255,0.25)' }} />
+        )}
+      </div>
+      <div className="flex-1 min-w-0">
+        <p style={{ fontFamily: 'Outfit, sans-serif', fontSize: '15px', fontWeight: 600, color: '#fff', lineHeight: 1.3 }} className="truncate">
+          {name}
+        </p>
+        <p style={{ fontFamily: 'Outfit, sans-serif', fontSize: '12px', color: 'rgba(255,255,255,0.4)', marginTop: '2px' }}>
+          {count === 0 ? 'Empty' : `${count} character${count === 1 ? '' : 's'} · open folder`}
+        </p>
+      </div>
+      <ChevronRight size={18} style={{ color: 'rgba(255,255,255,0.3)', flexShrink: 0 }} />
+    </button>
+  );
+}
+
+/**
+ * Portrait headshot with placeholder until load, plus fallback between
+ * display_headshot_url and headshot_url when one URL fails.
+ */
+function StoryCharHeadshot({
+  name,
+  headshotUrl,
+  displayHeadshotUrl,
+}: {
+  name: string;
+  headshotUrl: string;
+  displayHeadshotUrl: string | null;
+}) {
+  const primary = displayHeadshotUrl || headshotUrl || '';
+  const secondary =
+    headshotUrl && headshotUrl !== primary
+      ? headshotUrl
+      : displayHeadshotUrl && displayHeadshotUrl !== primary
+        ? displayHeadshotUrl
+        : '';
+
+  const [src, setSrc] = useState(primary);
+  const [loaded, setLoaded] = useState(false);
+  const [failed, setFailed] = useState(!primary);
+  const imgRef = useRef<HTMLImageElement>(null);
+
+  useEffect(() => {
+    setSrc(primary);
+    setLoaded(false);
+    setFailed(!primary);
+  }, [primary]);
+
+  // Cached images often skip onLoad — detect already-complete frames
+  useEffect(() => {
+    const el = imgRef.current;
+    if (el?.complete && el.naturalWidth > 0) setLoaded(true);
+  }, [src]);
+
+  const showPlaceholder = failed || !src || !loaded;
+
+  return (
+    <div className="absolute inset-0">
+      {showPlaceholder && (
+        <div
+          className="absolute inset-0 flex items-center justify-center"
+          style={{ background: 'rgba(255,255,255,0.05)' }}
+        >
+          <span style={{ fontFamily: 'Outfit, sans-serif', fontSize: '32px', color: 'rgba(255,255,255,0.2)' }}>
+            {(name.replace(/-/g, ' ')[0] || '?').toUpperCase()}
+          </span>
+        </div>
+      )}
+      {src && !failed && (
+        <img
+          ref={imgRef}
+          src={src}
+          alt={name}
+          className="absolute inset-0 w-full h-full"
+          style={{
+            objectFit: 'cover',
+            objectPosition: 'center top',
+            opacity: loaded ? 1 : 0,
+            transition: 'opacity 0.15s ease',
+          }}
+          loading="eager"
+          decoding="async"
+          onLoad={() => setLoaded(true)}
+          onError={() => {
+            if (secondary && src !== secondary) {
+              setSrc(secondary);
+              setLoaded(false);
+            } else {
+              setFailed(true);
+            }
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
 export default function CharacterPanel({
   isOpen,
   onClose,
@@ -89,6 +280,8 @@ export default function CharacterPanel({
   const [isLoadingLibrary, setIsLoadingLibrary] = useState(false);
   /** When set, library shows that collection's members instead of the collection list */
   const [selectedCollectionId, setSelectedCollectionId] = useState<number | null>(null);
+  /** Multi-select queue while browsing the library / a collection folder */
+  const [librarySelection, setLibrarySelection] = useState<Set<string>>(() => new Set());
 
   // Detail state (library character)
   const [detailChar, setDetailChar] = useState<LibraryCharacter | null>(null);
@@ -98,19 +291,139 @@ export default function CharacterPanel({
   const utils = trpc.useUtils();
   const { collections, isLoading: isLoadingCollections } = useCollections();
 
+  /**
+   * Session cache of known headshots. Freeroam's panel-characters endpoint often
+   * returns newly batch-added cast without headshot URLs for a while; we keep URLs
+   * from the library / prior loads so cards don't go blank.
+   */
+  const headshotCacheRef = useRef<Map<string, HeadshotPair>>(new Map());
+  const headshotBackfillGen = useRef(0);
+  const libraryCharsRef = useRef(libraryChars);
+  libraryCharsRef.current = libraryChars;
+
+  const rememberHeadshot = useCallback((
+    externalId: string,
+    headshot_url?: string | null,
+    display_headshot_url?: string | null
+  ) => {
+    const pair = toHeadshotPair(headshot_url, display_headshot_url);
+    if (!pair) return;
+    headshotCacheRef.current.set(externalId, pair);
+  }, []);
+
+  const applyHeadshotSources = useCallback((
+    chars: StoryCharacter[],
+    libraryByIdMap?: Map<string, LibraryCharacter>
+  ): StoryCharacter[] => {
+    return chars.map((c) => {
+      if (hasHeadshotUrl(c)) {
+        rememberHeadshot(c.external_id, c.headshot_url, c.display_headshot_url);
+        return c;
+      }
+      const fromLib = libraryByIdMap?.get(c.external_id);
+      if (fromLib?.headshot_url) {
+        rememberHeadshot(c.external_id, fromLib.headshot_url, fromLib.headshot_url);
+        return {
+          ...c,
+          headshot_url: fromLib.headshot_url,
+          display_headshot_url: fromLib.headshot_url,
+        };
+      }
+      const cached = headshotCacheRef.current.get(c.external_id);
+      if (cached) {
+        return { ...c, ...cached };
+      }
+      return c;
+    });
+  }, [rememberHeadshot]);
+
   // Load story characters when panel opens
   const loadStoryChars = useCallback(async () => {
     if (!panelId) return;
+    const gen = ++headshotBackfillGen.current;
     setIsLoadingChars(true);
     try {
       const data = await utils.worlds.getPanelCharacters.fetch({ worldId, panelId });
-      setStoryChars([...data.story_characters, ...data.world_characters]);
+      let chars: StoryCharacter[] = [
+        ...data.story_characters,
+        ...data.world_characters,
+      ] as StoryCharacter[];
+
+      // Prefer already-loaded library for immediate backfill
+      let libMap = new Map(libraryCharsRef.current.map((c) => [c.external_id, c]));
+      chars = applyHeadshotSources(chars, libMap);
+
+      // If any still missing headshots, fetch library (may already be cached by tRPC)
+      const missingAfterCache = chars.filter((c) => !hasHeadshotUrl(c));
+      if (missingAfterCache.length > 0) {
+        try {
+          const lib = await utils.characters.library.fetch();
+          if (gen !== headshotBackfillGen.current) return;
+          const mapped: LibraryCharacter[] = lib.map((c) => ({
+            external_id: c.external_id,
+            name: c.name,
+            headshot_url: c.headshot_url ?? c.display_headshot_url ?? null,
+            backstory: c.backstory ?? c.description ?? '',
+            appearance: '',
+            is_yours: c.is_yours,
+            is_saved: c.is_saved,
+          }));
+          setLibraryChars((prev) => (prev.length > 0 ? prev : mapped));
+          libMap = new Map(mapped.map((c) => [c.external_id, c]));
+          for (const c of mapped) {
+            if (c.headshot_url) rememberHeadshot(c.external_id, c.headshot_url, c.headshot_url);
+          }
+          chars = applyHeadshotSources(chars, libMap);
+        } catch {
+          // Non-fatal — continue with what we have
+        }
+      }
+
+      if (gen !== headshotBackfillGen.current) return;
+      setStoryChars(chars);
+
+      // Background: fill remaining gaps via characters.get (Freeroam detail has headshots
+      // even when the panel cast payload is still incomplete after a batch add).
+      const stillMissing = chars.filter((c) => !hasHeadshotUrl(c));
+      if (stillMissing.length > 0) {
+        void Promise.all(
+          stillMissing.map(async (c) => {
+            try {
+              const full = await utils.characters.get.fetch({ characterId: c.external_id });
+              const pair = toHeadshotPair(full.headshot_url, full.display_headshot_url);
+              if (!pair) return null;
+              rememberHeadshot(c.external_id, pair.headshot_url, pair.display_headshot_url);
+              prefetchHeadshot(pair.display_headshot_url || pair.headshot_url);
+              return { id: c.external_id, ...pair } as const;
+            } catch {
+              return null;
+            }
+          })
+        ).then((results) => {
+          if (gen !== headshotBackfillGen.current) return;
+          const updates = new Map(
+            results.filter((r): r is { id: string } & HeadshotPair => !!r).map((r) => [r.id, r])
+          );
+          if (updates.size === 0) return;
+          setStoryChars((prev) =>
+            prev.map((c) => {
+              const u = updates.get(c.external_id);
+              if (!u || hasHeadshotUrl(c)) return c;
+              return {
+                ...c,
+                headshot_url: u.headshot_url,
+                display_headshot_url: u.display_headshot_url,
+              };
+            })
+          );
+        });
+      }
     } catch {
       // Non-fatal
     } finally {
-      setIsLoadingChars(false);
+      if (gen === headshotBackfillGen.current) setIsLoadingChars(false);
     }
-  }, [worldId, panelId, utils]);
+  }, [worldId, panelId, utils, applyHeadshotSources, rememberHeadshot]);
 
   useEffect(() => {
     if (isOpen) {
@@ -120,6 +433,7 @@ export default function CharacterPanel({
       setLibraryFilter('all');
       setLibrarySearch('');
       setSelectedCollectionId(null);
+      setLibrarySelection(new Set());
       loadStoryChars();
     }
   }, [isOpen, loadStoryChars]);
@@ -129,7 +443,7 @@ export default function CharacterPanel({
     setIsLoadingLibrary(true);
     try {
       const chars = await utils.characters.library.fetch();
-      setLibraryChars(chars.map((c) => ({
+      const mapped = chars.map((c) => ({
         external_id: c.external_id,
         name: c.name,
         headshot_url: c.headshot_url ?? c.display_headshot_url ?? null,
@@ -137,19 +451,24 @@ export default function CharacterPanel({
         appearance: '',
         is_yours: c.is_yours,
         is_saved: c.is_saved,
-      })));
+      }));
+      for (const c of mapped) {
+        if (c.headshot_url) rememberHeadshot(c.external_id, c.headshot_url, c.headshot_url);
+      }
+      setLibraryChars(mapped);
     } catch {
       // Non-fatal
     } finally {
       setIsLoadingLibrary(false);
     }
-  }, [utils]);
+  }, [utils, rememberHeadshot]);
 
   const handleOpenLibrary = () => {
     setView('library');
     setLibraryFilter('all');
     setLibrarySearch('');
     setSelectedCollectionId(null);
+    setLibrarySelection(new Set());
     if (libraryChars.length === 0) loadLibrary();
   };
 
@@ -162,6 +481,11 @@ export default function CharacterPanel({
   const selectedCollection = useMemo(
     () => collections.find((c) => c.id === selectedCollectionId) ?? null,
     [collections, selectedCollectionId]
+  );
+
+  const storyCharIds = useMemo(
+    () => new Set(storyChars.map((sc) => sc.external_id)),
+    [storyChars]
   );
 
   /** Resolve collection member IDs against the library (placeholders for unresolved). */
@@ -186,25 +510,33 @@ export default function CharacterPanel({
     setView('detail');
   };
 
-  const toPendingStoryChar = (char: LibraryCharacter): StoryCharacter => ({
-    id: 0,
-    external_id: char.external_id,
-    name: char.name,
-    backstory: char.backstory,
-    appearance: char.appearance,
-    headshot_url: char.headshot_url ?? '',
-    display_headshot_url: null,
-    removable: true,
-    is_main_character: false,
-    is_saved: char.is_saved ?? false,
-    is_yours: char.is_yours ?? false,
-    creator_name: '',
-  });
+  const toPendingStoryChar = (char: LibraryCharacter): StoryCharacter => {
+    const url = char.headshot_url ?? '';
+    // Remember + prefetch so the card paints immediately and survives panel reopen
+    // before Freeroam's cast endpoint includes the headshot.
+    if (url) {
+      rememberHeadshot(char.external_id, url, url);
+      prefetchHeadshot(url);
+    }
+    return {
+      id: 0,
+      external_id: char.external_id,
+      name: char.name,
+      backstory: char.backstory,
+      appearance: char.appearance,
+      headshot_url: url,
+      display_headshot_url: url || null,
+      removable: true,
+      is_main_character: false,
+      is_saved: char.is_saved ?? false,
+      is_yours: char.is_yours ?? false,
+      creator_name: '',
+    };
+  };
 
   const handleAddFromLibrary = (char: LibraryCharacter) => {
     // Check if already in story
-    const alreadyInStory = storyChars.some(sc => sc.external_id === char.external_id);
-    if (alreadyInStory) {
+    if (storyCharIds.has(char.external_id)) {
       toast.info('Character is already in the story');
       setView('main');
       return;
@@ -214,10 +546,17 @@ export default function CharacterPanel({
     newPending.set(char.external_id, 'add');
     setPendingChanges(newPending);
     setStoryChars(prev => [...prev, toPendingStoryChar(char)]);
+    setLibrarySelection((prev) => {
+      if (!prev.has(char.external_id)) return prev;
+      const next = new Set(prev);
+      next.delete(char.external_id);
+      return next;
+    });
     setView('main');
     toast.success(`${char.name.replace(/-/g, ' ')} added — click Save Changes to confirm`);
   };
 
+  /** Open a collection as a folder of selectable members (no bulk add-all). */
   const handleSelectCollection = (col: Collection) => {
     if (!col.characterIds.length) {
       toast.info('This collection is empty');
@@ -225,22 +564,61 @@ export default function CharacterPanel({
     }
     setSelectedCollectionId(col.id);
     setLibrarySearch('');
+    setLibrarySelection(new Set());
+    // Members resolve against the library — ensure it is loaded
+    if (libraryChars.length === 0) loadLibrary();
   };
 
-  /** Batch-add every member of a collection. Skips characters already in the story. No cap. */
-  const handleAddCollectionToStory = (col: Collection) => {
-    if (!col.characterIds.length) {
-      toast.info('This collection is empty');
+  const toggleLibrarySelection = (char: LibraryCharacter) => {
+    if (storyCharIds.has(char.external_id)) {
+      toast.info('Character is already in the story');
+      return;
+    }
+    setLibrarySelection((prev) => {
+      const next = new Set(prev);
+      if (next.has(char.external_id)) next.delete(char.external_id);
+      else next.add(char.external_id);
+      return next;
+    });
+  };
+
+  /** Resolve selected IDs to character records (library first, then open collection placeholders). */
+  const resolveSelectedLibraryChars = useCallback((): LibraryCharacter[] => {
+    const collectionMembers = selectedCollection
+      ? resolveCollectionMembers(selectedCollection)
+      : [];
+    const memberById = new Map(collectionMembers.map((c) => [c.external_id, c]));
+    const out: LibraryCharacter[] = [];
+    Array.from(librarySelection).forEach((id) => {
+      const known = libraryById.get(id) ?? memberById.get(id);
+      if (known) out.push(known);
+      else {
+        out.push({
+          external_id: id,
+          name: id,
+          headshot_url: null,
+          backstory: '',
+          appearance: '',
+        });
+      }
+    });
+    return out;
+  }, [librarySelection, libraryById, selectedCollection, resolveCollectionMembers]);
+
+  /** Multi-select add: queue every selected character that is not already in the story. */
+  const handleAddSelectedToStory = () => {
+    const selected = resolveSelectedLibraryChars();
+    if (selected.length === 0) {
+      toast.info('Select at least one character');
       return;
     }
 
-    const inStory = new Set(storyChars.map((sc) => sc.external_id));
-    const members = resolveCollectionMembers(col);
+    const inStory = new Set(storyCharIds);
     const newPending = new Map(pendingChanges);
     const toAdd: StoryCharacter[] = [];
     let skipped = 0;
 
-    for (const char of members) {
+    for (const char of selected) {
       if (inStory.has(char.external_id) || newPending.get(char.external_id) === 'add') {
         skipped += 1;
         continue;
@@ -253,28 +631,44 @@ export default function CharacterPanel({
     if (toAdd.length === 0) {
       toast.info(
         skipped > 0
-          ? `All ${skipped} character${skipped === 1 ? '' : 's'} already in the story`
-          : 'This collection is empty'
+          ? `All selected character${skipped === 1 ? ' is' : 's are'} already in the story`
+          : 'No characters to add'
       );
+      setLibrarySelection(new Set());
       return;
     }
 
     setPendingChanges(newPending);
     setStoryChars((prev) => [...prev, ...toAdd]);
+    setLibrarySelection(new Set());
     setSelectedCollectionId(null);
     setView('main');
 
-    const name = col.name;
     if (skipped > 0) {
       toast.success(
-        `Added ${toAdd.length} from “${name}” (${skipped} already in story) — click Save Changes to confirm`
+        `Added ${toAdd.length} character${toAdd.length === 1 ? '' : 's'} (${skipped} already in story) — click Save Changes to confirm`
       );
     } else {
       toast.success(
-        `Added ${toAdd.length} character${toAdd.length === 1 ? '' : 's'} from “${name}” — click Save Changes to confirm`
+        `Added ${toAdd.length} character${toAdd.length === 1 ? '' : 's'} — click Save Changes to confirm`
       );
     }
   };
+
+  const selectAllVisible = (chars: LibraryCharacter[]) => {
+    const selectable = chars.filter((c) => !storyCharIds.has(c.external_id));
+    if (selectable.length === 0) {
+      toast.info('All visible characters are already in the story');
+      return;
+    }
+    setLibrarySelection((prev) => {
+      const next = new Set(prev);
+      for (const c of selectable) next.add(c.external_id);
+      return next;
+    });
+  };
+
+  const clearLibrarySelection = () => setLibrarySelection(new Set());
 
   const handleToggleRemove = (char: StoryCharacter) => {
     const newPending = new Map(pendingChanges);
@@ -361,6 +755,106 @@ export default function CharacterPanel({
       )
     : [];
 
+  /** Character grid currently shown for multi-select (All / Favorites / open collection folder). */
+  const selectableLibraryChars = selectedCollection ? collectionMembers : filteredLibrary;
+  const selectionCount = librarySelection.size;
+  const visibleSelectableCount = selectableLibraryChars.filter((c) => !storyCharIds.has(c.external_id)).length;
+
+  const renderLibraryCharCard = (char: LibraryCharacter) => {
+    const inStory = storyCharIds.has(char.external_id);
+    const isSelected = librarySelection.has(char.external_id);
+    return (
+      <div
+        key={char.external_id}
+        className="relative flex flex-col items-center gap-2 p-4 rounded-2xl transition-all text-left"
+        style={{
+          background: isSelected ? 'rgba(124,58,237,0.18)' : 'rgba(255,255,255,0.05)',
+          border: `1px solid ${
+            inStory
+              ? 'rgba(34,197,94,0.35)'
+              : isSelected
+                ? 'rgba(124,58,237,0.65)'
+                : 'rgba(255,255,255,0.08)'
+          }`,
+          opacity: inStory ? 0.7 : 1,
+        }}
+      >
+        <button
+          type="button"
+          onClick={() => toggleLibrarySelection(char)}
+          disabled={inStory}
+          className="flex flex-col items-center gap-2 w-full transition-all hover:brightness-125 disabled:hover:brightness-100"
+          style={{ border: 'none', background: 'transparent', padding: 0, cursor: inStory ? 'default' : 'pointer' }}
+        >
+          {char.headshot_url ? (
+            <img
+              src={char.headshot_url}
+              alt={char.name}
+              className="rounded-full"
+              style={{ width: '72px', height: '72px', objectFit: 'cover' }}
+            />
+          ) : (
+            <div
+              className="rounded-full flex items-center justify-center"
+              style={{ width: '72px', height: '72px', background: 'rgba(255,255,255,0.08)', fontSize: '28px', color: 'rgba(255,255,255,0.3)' }}
+            >
+              {(char.name[0] || '?').toUpperCase()}
+            </div>
+          )}
+          <p style={{ fontFamily: 'Outfit, sans-serif', fontSize: '13px', fontWeight: 600, color: '#fff', textAlign: 'center', lineHeight: 1.3 }}>
+            {char.name.replace(/-/g, ' ')}
+          </p>
+          <p style={{ fontFamily: 'Outfit, sans-serif', fontSize: '11px', color: inStory ? 'rgba(34,197,94,0.9)' : isSelected ? 'rgba(167,139,250,0.95)' : 'rgba(255,255,255,0.4)' }}>
+            {inStory ? 'in story' : isSelected ? 'selected' : 'tap to select'}
+          </p>
+          {!inStory && char.is_saved && (
+            <p className="inline-flex items-center gap-1" style={{ fontFamily: 'Outfit, sans-serif', fontSize: '11px', color: 'rgba(250,204,21,0.85)' }}>
+              <Star size={10} fill="currentColor" strokeWidth={0} />
+              favorite
+            </p>
+          )}
+        </button>
+        {/* Multi-select circle — top-right of the card square */}
+        {!inStory && (
+          <div
+            className="absolute top-2 right-2 flex items-center justify-center rounded-full pointer-events-none"
+            style={{
+              width: '24px',
+              height: '24px',
+              background: isSelected ? '#7c3aed' : 'rgba(0,0,0,0.45)',
+              border: `1.5px solid ${isSelected ? '#a78bfa' : 'rgba(255,255,255,0.35)'}`,
+            }}
+            aria-hidden
+          >
+            {isSelected && <Check size={12} strokeWidth={3} color="#fff" />}
+          </div>
+        )}
+        {/* Optional detail peek without leaving multi-select */}
+        {!inStory && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              handleOpenDetail(char);
+            }}
+            className="absolute top-2 left-2 flex items-center justify-center rounded-full transition-all hover:brightness-125"
+            style={{
+              width: '24px',
+              height: '24px',
+              background: 'rgba(0,0,0,0.45)',
+              border: '1px solid rgba(255,255,255,0.12)',
+              color: 'rgba(255,255,255,0.55)',
+            }}
+            title="View details"
+            aria-label={`View details for ${char.name}`}
+          >
+            <Info size={12} strokeWidth={2.5} />
+          </button>
+        )}
+      </div>
+    );
+  };
+
   if (!isOpen) return null;
 
   return (
@@ -433,7 +927,6 @@ export default function CharacterPanel({
                     const pending = pendingChanges.get(char.external_id);
                     const isRemoving = pending === 'remove';
                     const isAdding = pending === 'add';
-                    const imgUrl = char.display_headshot_url || char.headshot_url;
 
                     return (
                       <div
@@ -457,21 +950,12 @@ export default function CharacterPanel({
                           transition: 'all 0.2s',
                         }}
                       >
-                        {/* Headshot */}
-                        {imgUrl ? (
-                          <img
-                            src={imgUrl}
-                            alt={char.name}
-                            className="w-full h-full"
-                            style={{ objectFit: 'cover', objectPosition: 'center top' }}
-                          />
-                        ) : (
-                          <div className="w-full h-full flex items-center justify-center" style={{ background: 'rgba(255,255,255,0.05)' }}>
-                            <span style={{ fontFamily: 'Outfit, sans-serif', fontSize: '32px', color: 'rgba(255,255,255,0.2)' }}>
-                              {char.name[0]}
-                            </span>
-                          </div>
-                        )}
+                        {/* Headshot — placeholder until paint; falls back between URL fields */}
+                        <StoryCharHeadshot
+                          name={char.name}
+                          headshotUrl={char.headshot_url}
+                          displayHeadshotUrl={char.display_headshot_url}
+                        />
 
                         {/* Gradient overlay */}
                         <div
@@ -609,7 +1093,9 @@ export default function CharacterPanel({
                     if (selectedCollectionId !== null) {
                       setSelectedCollectionId(null);
                       setLibrarySearch('');
+                      setLibrarySelection(new Set());
                     } else {
+                      setLibrarySelection(new Set());
                       setView('main');
                     }
                   }}
@@ -627,6 +1113,11 @@ export default function CharacterPanel({
                 {/* Spacer to balance back button */}
                 <div style={{ width: '52px' }} />
               </div>
+              {selectedCollection && (
+                <p className="text-center mb-3" style={{ fontFamily: 'Outfit, sans-serif', fontSize: '12px', color: 'rgba(255,255,255,0.4)' }}>
+                  Select characters to add to the story
+                </p>
+              )}
 
               {/* Create New Character — only on top-level library */}
               {!selectedCollection && (
@@ -677,7 +1168,7 @@ export default function CharacterPanel({
                 />
               </div>
 
-              {/* Filter chips — hidden while browsing a collection's members */}
+              {/* Filter chips — hidden while browsing a collection folder */}
               {!selectedCollection && (
                 <div className="flex gap-2 flex-wrap">
                   {LIBRARY_FILTERS.map((f) => (
@@ -687,6 +1178,7 @@ export default function CharacterPanel({
                         setLibraryFilter(f.id);
                         setSelectedCollectionId(null);
                         setLibrarySearch('');
+                        setLibrarySelection(new Set());
                       }}
                       className="px-4 py-1.5 rounded-full transition-all inline-flex items-center gap-1.5"
                       style={{
@@ -705,11 +1197,58 @@ export default function CharacterPanel({
                   ))}
                 </div>
               )}
+
+              {/* Multi-select toolbar for character grids (All / Favorites / collection folder) */}
+              {(selectedCollection || libraryFilter !== 'collections') && selectableLibraryChars.length > 0 && (
+                <div className="flex items-center justify-between gap-2 mt-3">
+                  <p style={{ fontFamily: 'Outfit, sans-serif', fontSize: '12px', color: 'rgba(255,255,255,0.4)' }}>
+                    {selectionCount > 0
+                      ? `${selectionCount} selected`
+                      : 'Tap to multi-select'}
+                  </p>
+                  <div className="flex items-center gap-2">
+                    {selectionCount > 0 && (
+                      <button
+                        type="button"
+                        onClick={clearLibrarySelection}
+                        className="px-3 py-1 rounded-full transition-all hover:brightness-125"
+                        style={{
+                          fontFamily: 'Outfit, sans-serif',
+                          fontSize: '12px',
+                          fontWeight: 600,
+                          color: 'rgba(255,255,255,0.55)',
+                          background: 'rgba(255,255,255,0.06)',
+                          border: '1px solid rgba(255,255,255,0.1)',
+                        }}
+                      >
+                        Clear
+                      </button>
+                    )}
+                    {visibleSelectableCount > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => selectAllVisible(selectableLibraryChars)}
+                        className="px-3 py-1 rounded-full transition-all hover:brightness-125"
+                        style={{
+                          fontFamily: 'Outfit, sans-serif',
+                          fontSize: '12px',
+                          fontWeight: 600,
+                          color: 'rgba(255,255,255,0.75)',
+                          background: 'rgba(255,255,255,0.08)',
+                          border: '1px solid rgba(255,255,255,0.14)',
+                        }}
+                      >
+                        Select all
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Library body */}
             <div className="flex-1 overflow-y-auto px-6 pb-6">
-              {/* Collection members */}
+              {/* Collection folder members */}
               {selectedCollection ? (
                 isLoadingLibrary ? (
                   <div className="flex items-center justify-center py-12">
@@ -721,47 +1260,11 @@ export default function CharacterPanel({
                   </p>
                 ) : (
                   <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))' }}>
-                    {collectionMembers.map((char) => {
-                      const inStory = storyChars.some((sc) => sc.external_id === char.external_id);
-                      return (
-                        <button
-                          key={char.external_id}
-                          onClick={() => handleOpenDetail(char)}
-                          className="flex flex-col items-center gap-2 p-4 rounded-2xl transition-all hover:brightness-125 text-left"
-                          style={{
-                            background: 'rgba(255,255,255,0.05)',
-                            border: `1px solid ${inStory ? 'rgba(34,197,94,0.35)' : 'rgba(255,255,255,0.08)'}`,
-                            opacity: inStory ? 0.7 : 1,
-                          }}
-                        >
-                          {char.headshot_url ? (
-                            <img
-                              src={char.headshot_url}
-                              alt={char.name}
-                              className="rounded-full"
-                              style={{ width: '72px', height: '72px', objectFit: 'cover' }}
-                            />
-                          ) : (
-                            <div
-                              className="rounded-full flex items-center justify-center"
-                              style={{ width: '72px', height: '72px', background: 'rgba(255,255,255,0.08)', fontSize: '28px', color: 'rgba(255,255,255,0.3)' }}
-                            >
-                              {(char.name[0] || '?').toUpperCase()}
-                            </div>
-                          )}
-                          <p style={{ fontFamily: 'Outfit, sans-serif', fontSize: '13px', fontWeight: 600, color: '#fff', textAlign: 'center', lineHeight: 1.3 }}>
-                            {char.name.replace(/-/g, ' ')}
-                          </p>
-                          <p style={{ fontFamily: 'Outfit, sans-serif', fontSize: '11px', color: inStory ? 'rgba(34,197,94,0.9)' : 'rgba(255,255,255,0.4)' }}>
-                            {inStory ? 'in story' : 'tap to add'}
-                          </p>
-                        </button>
-                      );
-                    })}
+                    {collectionMembers.map((char) => renderLibraryCharCard(char))}
                   </div>
                 )
               ) : libraryFilter === 'collections' ? (
-                /* Collections list */
+                /* Collections list — open as folders (no add-all) */
                 isLoadingCollections ? (
                   <div className="flex items-center justify-center py-12">
                     <Loader2 size={24} className="animate-spin" style={{ color: 'rgba(255,255,255,0.4)' }} />
@@ -774,86 +1277,24 @@ export default function CharacterPanel({
                   <div className="flex flex-col gap-2">
                     {filteredCollections.map((col) => {
                       const count = col.characterIds.length;
-                      const previewIds = col.characterIds.slice(0, 3);
+                      const previewIds = col.characterIds.slice(0, 4);
                       const previewChars = previewIds
                         .map((id) => libraryById.get(id))
                         .filter(Boolean) as LibraryCharacter[];
                       return (
-                        <div
+                        <CollectionFolderRow
                           key={col.id}
-                          className="flex items-center gap-3 p-3 rounded-2xl w-full"
-                          style={{
-                            background: 'rgba(255,255,255,0.05)',
-                            border: '1px solid rgba(255,255,255,0.08)',
-                          }}
-                        >
-                          {/* Cover / folder preview — opens collection */}
-                          <button
-                            type="button"
-                            onClick={() => handleSelectCollection(col)}
-                            className="flex items-center gap-3 flex-1 min-w-0 text-left transition-all hover:brightness-125"
-                          >
-                            <div
-                              className="flex-shrink-0 rounded-xl overflow-hidden flex items-center justify-center"
-                              style={{
-                                width: '56px',
-                                height: '56px',
-                                background: 'rgba(255,255,255,0.06)',
-                                border: '1px solid rgba(255,255,255,0.08)',
-                              }}
-                            >
-                              {col.coverImage ? (
-                                <img src={col.coverImage} alt="" className="w-full h-full" style={{ objectFit: 'cover' }} />
-                              ) : previewChars.length > 0 ? (
-                                <div className="grid grid-cols-2 w-full h-full">
-                                  {[0, 1, 2, 3].map((i) => (
-                                    <div key={i} style={{ background: 'rgba(255,255,255,0.04)', overflow: 'hidden' }}>
-                                      {previewChars[i]?.headshot_url && (
-                                        <img
-                                          src={previewChars[i]!.headshot_url!}
-                                          alt=""
-                                          className="w-full h-full"
-                                          style={{ objectFit: 'cover', objectPosition: 'center top' }}
-                                        />
-                                      )}
-                                    </div>
-                                  ))}
-                                </div>
-                              ) : (
-                                <FolderOpen size={22} style={{ color: 'rgba(255,255,255,0.25)' }} />
-                              )}
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <p style={{ fontFamily: 'Outfit, sans-serif', fontSize: '15px', fontWeight: 600, color: '#fff', lineHeight: 1.3 }} className="truncate">
-                                {col.name}
-                              </p>
-                              <p style={{ fontFamily: 'Outfit, sans-serif', fontSize: '12px', color: 'rgba(255,255,255,0.4)', marginTop: '2px' }}>
-                                {count === 0 ? 'Empty' : `${count} character${count === 1 ? '' : 's'}`}
-                              </p>
-                            </div>
-                          </button>
-                          {/* Quick add-all */}
-                          <button
-                            type="button"
-                            onClick={() => handleAddCollectionToStory(col)}
-                            className="flex-shrink-0 px-3 py-1.5 rounded-full transition-all hover:brightness-125"
-                            style={{
-                              fontFamily: 'Outfit, sans-serif',
-                              fontSize: '12px',
-                              fontWeight: 600,
-                              color: count === 0 ? 'rgba(255,255,255,0.3)' : '#fff',
-                              background: count === 0 ? 'rgba(255,255,255,0.04)' : 'rgba(255,255,255,0.12)',
-                              border: `1px solid ${count === 0 ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.18)'}`,
-                            }}
-                          >
-                            Add all
-                          </button>
-                        </div>
+                          name={col.name}
+                          count={count}
+                          coverImage={col.coverImage}
+                          previewChars={previewChars}
+                          onOpen={() => handleSelectCollection(col)}
+                        />
                       );
                     })}
                   </div>
                 )
-              ) : /* All / Favorites character grid */
+              ) : /* All / Favorites multi-select grid */
               isLoadingLibrary ? (
                 <div className="flex items-center justify-center py-12">
                   <Loader2 size={24} className="animate-spin" style={{ color: 'rgba(255,255,255,0.4)' }} />
@@ -868,63 +1309,29 @@ export default function CharacterPanel({
                 </p>
               ) : (
                 <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))' }}>
-                  {filteredLibrary.map((char) => (
-                    <button
-                      key={char.external_id}
-                      onClick={() => handleOpenDetail(char)}
-                      className="flex flex-col items-center gap-2 p-4 rounded-2xl transition-all hover:brightness-125 text-left"
-                      style={{
-                        background: 'rgba(255,255,255,0.05)',
-                        border: '1px solid rgba(255,255,255,0.08)',
-                      }}
-                    >
-                      {char.headshot_url ? (
-                        <img
-                          src={char.headshot_url}
-                          alt={char.name}
-                          className="rounded-full"
-                          style={{ width: '72px', height: '72px', objectFit: 'cover' }}
-                        />
-                      ) : (
-                        <div
-                          className="rounded-full flex items-center justify-center"
-                          style={{ width: '72px', height: '72px', background: 'rgba(255,255,255,0.08)', fontSize: '28px', color: 'rgba(255,255,255,0.3)' }}
-                        >
-                          {char.name[0]}
-                        </div>
-                      )}
-                      <p style={{ fontFamily: 'Outfit, sans-serif', fontSize: '13px', fontWeight: 600, color: '#fff', textAlign: 'center', lineHeight: 1.3 }}>
-                        {char.name.replace(/-/g, ' ')}
-                      </p>
-                      {char.is_saved && (
-                        <p className="inline-flex items-center gap-1" style={{ fontFamily: 'Outfit, sans-serif', fontSize: '11px', color: 'rgba(250,204,21,0.85)' }}>
-                          <Star size={10} fill="currentColor" strokeWidth={0} />
-                          favorite
-                        </p>
-                      )}
-                    </button>
-                  ))}
+                  {filteredLibrary.map((char) => renderLibraryCharCard(char))}
                 </div>
               )}
             </div>
 
-            {/* Add all footer when browsing a collection */}
-            {selectedCollection && selectedCollection.characterIds.length > 0 && (
+            {/* Multi-select add footer */}
+            {selectionCount > 0 && (
               <div className="px-6 py-4 flex-shrink-0" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
                 <button
-                  onClick={() => handleAddCollectionToStory(selectedCollection)}
+                  type="button"
+                  onClick={handleAddSelectedToStory}
                   className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl transition-all hover:brightness-125"
                   style={{
                     fontFamily: 'Outfit, sans-serif',
                     fontSize: '15px',
                     fontWeight: 600,
                     color: '#fff',
-                    background: 'rgba(255,255,255,0.1)',
-                    border: '1px solid rgba(255,255,255,0.18)',
+                    background: '#7c3aed',
+                    border: '1px solid rgba(167,139,250,0.45)',
                   }}
                 >
                   <Plus size={16} strokeWidth={2.5} />
-                  Add all to story ({selectedCollection.characterIds.length})
+                  Add {selectionCount} to story
                 </button>
               </div>
             )}

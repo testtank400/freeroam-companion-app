@@ -124,6 +124,11 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
     };
   }, []);
   const [isNavigating, setIsNavigating] = useState(false);
+  /** Sync lock — React state alone is too slow for rapid back/forward taps. */
+  const navInFlightRef = useRef(false);
+  /** Timestamp of last user-initiated nav; blocks auto-advance from fighting manual back. */
+  const lastManualNavAtRef = useRef(0);
+  const MANUAL_NAV_GRACE_MS = 800;
   const [isPolling, setIsPolling] = useState(false);
   const [isImagePolling, setIsImagePolling] = useState(false); // true when polling for image generation specifically
   const [visible, setVisible] = useState(false);
@@ -407,6 +412,8 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
   // Session maps so navigating away and back restores the right NSFW art (not only "last sticky")
   const nsfwByPanelIdRef = useRef<Map<string, string>>(new Map());
   const nsfwByArtKeyRef = useRef<Map<string, string>>(new Map()); // Freeroam prompt|url → NSFW url
+  /** Last Freeroam art identity we applied display for — used to avoid NSFW null-flash on same art. */
+  const lastFreeroamArtRef = useRef<{ prompt: string | null; url: string | null }>({ prompt: null, url: null });
   /**
    * Freeroam only sends character_references on panels where the art was (re)generated.
    * Later panels reuse the same art with empty refs. We remember refs by art key for the
@@ -431,8 +438,30 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
   const { data: unrestrictedImagesSettingData } = trpc.voice.getSetting.useQuery({ key: 'unrestricted_images' });
   const unrestrictedImagesEnabled = unrestrictedImagesSettingData === 'true';
 
+  /** Primary art key (prefer prompt; fall back to URL). */
   const freeroamArtKey = (prompt?: string | null, url?: string | null) =>
     (prompt?.trim() || url || '').trim();
+
+  /** All keys we should index/lookup for the same Freeroam art (prompt and URL can both matter). */
+  const freeroamArtKeys = (prompt?: string | null, url?: string | null): string[] => {
+    const keys: string[] = [];
+    const p = prompt?.trim();
+    const u = url?.trim();
+    if (p) keys.push(p);
+    if (u && u !== p) keys.push(u);
+    return keys;
+  };
+
+  const sameFreeroamArt = (
+    a: { prompt?: string | null; url?: string | null } | null | undefined,
+    prompt?: string | null,
+    url?: string | null,
+  ) => {
+    if (!a) return false;
+    if (url && a.url && a.url === url) return true;
+    if (prompt?.trim() && a.prompt?.trim() && a.prompt.trim() === prompt.trim()) return true;
+    return false;
+  };
 
   /** Local NSFW files reuse the same path per panel; strip query for map keys. */
   const nsfwUrlBase = (url: string) => url.split('?')[0];
@@ -443,31 +472,74 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
   const nsfwUrlForDisplay = (url: string, cacheBust: boolean) =>
     cacheBust ? `${nsfwUrlBase(url)}?v=${Date.now()}` : nsfwUrlBase(url);
 
-  const rememberNsfwImage = (panelId: string, artKey: string, url: string, cacheBust = false) => {
+  /**
+   * Store NSFW result in session maps and paint if the user is still viewing this panel
+   * OR any panel that shares the same Freeroam art (same image URL or prompt).
+   */
+  const rememberNsfwImage = (
+    panelId: string,
+    artKey: string,
+    url: string,
+    cacheBust = false,
+    freeroamImageUrl?: string | null,
+    freeroamImagePrompt?: string | null,
+  ) => {
     const base = nsfwUrlBase(url);
     nsfwByPanelIdRef.current.set(panelId, base);
-    if (artKey) {
-      nsfwByArtKeyRef.current.set(artKey, base);
-      // Seed every panel we already know that shares this Freeroam art so next-panel
-      // navigation restores NSFW without a full reader remount.
-      Array.from(panelCache.current.entries()).forEach(([pid, p]) => {
-        const pImg = p.panel_content?.images?.[0];
-        if (freeroamArtKey(pImg?.prompt, pImg?.url) === artKey) {
-          nsfwByPanelIdRef.current.set(pid, base);
-          nsfwProcessedPanelsRef.current.add(pid);
-        }
-      });
+    // Index under prompt AND url so later panels that only share one still restore
+    for (const k of freeroamArtKeys(freeroamImagePrompt ?? artKey, freeroamImageUrl)) {
+      nsfwByArtKeyRef.current.set(k, base);
     }
+    if (artKey) nsfwByArtKeyRef.current.set(artKey, base);
+
+    // Seed every panel we already know that shares this Freeroam art
+    Array.from(panelCache.current.entries()).forEach(([pid, p]) => {
+      const pImg = p.panel_content?.images?.[0];
+      if (sameFreeroamArt(pImg, freeroamImagePrompt ?? artKey, freeroamImageUrl)) {
+        nsfwByPanelIdRef.current.set(pid, base);
+        nsfwProcessedPanelsRef.current.add(pid);
+      } else if (artKey && freeroamArtKey(pImg?.prompt, pImg?.url) === artKey) {
+        nsfwByPanelIdRef.current.set(pid, base);
+        nsfwProcessedPanelsRef.current.add(pid);
+      }
+    });
     nsfwProcessedPanelsRef.current.add(panelId);
-    // Only paint if user is still on this panel (avoid stale writes after navigation)
-    if (currentPanelIdRef.current === panelId) {
+
+    const curId = currentPanelIdRef.current;
+    if (!curId) return;
+    if (curId === panelId) {
+      setNsfwImageUrl(nsfwUrlForDisplay(base, cacheBust));
+      return;
+    }
+    // Gen finished after user moved to another panel with the SAME Freeroam art — still show it
+    const curPanel = panelCache.current.get(curId);
+    const cImg = curPanel?.panel_content?.images?.[0];
+    if (sameFreeroamArt(cImg, freeroamImagePrompt ?? artKey, freeroamImageUrl)
+      || (artKey && freeroamArtKey(cImg?.prompt, cImg?.url) === artKey)) {
+      nsfwByPanelIdRef.current.set(curId, base);
+      nsfwProcessedPanelsRef.current.add(curId);
       setNsfwImageUrl(nsfwUrlForDisplay(base, cacheBust));
     }
   };
 
-  const lookupSessionNsfw = (panelId: string, artKey: string): string | null =>
-    nsfwByPanelIdRef.current.get(panelId)
-    ?? (artKey ? nsfwByArtKeyRef.current.get(artKey) ?? null : null);
+  const lookupSessionNsfw = (
+    panelId: string,
+    artKey: string,
+    freeroamImageUrl?: string | null,
+    freeroamImagePrompt?: string | null,
+  ): string | null => {
+    const byPanel = nsfwByPanelIdRef.current.get(panelId);
+    if (byPanel) return byPanel;
+    for (const k of freeroamArtKeys(freeroamImagePrompt ?? artKey, freeroamImageUrl)) {
+      const hit = nsfwByArtKeyRef.current.get(k);
+      if (hit) return hit;
+    }
+    if (artKey) {
+      const hit = nsfwByArtKeyRef.current.get(artKey);
+      if (hit) return hit;
+    }
+    return null;
+  };
 
   /** Always hit the server — React Query can cache an early not_found and never show a later ready. */
   const fetchImageCacheFresh = (input: {
@@ -742,11 +814,17 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
     if (!nextPanelId) return;
     if (!autoAdvanceEnabledRef.current || autoAdvancePausedRef.current) return;
     if (currentPanelIdRef.current !== fromPanelId) return;
+    // Don't arm auto-advance right after the user manually navigated (esp. back) —
+    // otherwise a short reading delay can immediately jump forward and feel like
+    // "I tapped back and it went forward".
+    if (Date.now() - lastManualNavAtRef.current < MANUAL_NAV_GRACE_MS) return;
     cancelAutoAdvance();
     autoAdvanceTimerRef.current = setTimeout(() => {
       autoAdvanceTimerRef.current = null;
       if (currentPanelIdRef.current !== fromPanelId) return;
       if (!autoAdvanceEnabledRef.current || autoAdvancePausedRef.current) return;
+      if (navInFlightRef.current) return;
+      if (Date.now() - lastManualNavAtRef.current < MANUAL_NAV_GRACE_MS) return;
       loadPanelRef.current?.(nextPanelId, world.external_id);
     }, Math.max(0, delayMs));
   }, [cancelAutoAdvance, world.external_id]);
@@ -767,6 +845,12 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
   }, [readingDelayMsForText, scheduleAutoAdvance]);
 
   const loadPanel = useCallback(async (panelId: string, worldId: string) => {
+    // Synchronous lock so rapid taps can't start overlapping navigations.
+    // (React isNavigating state updates too late for double-taps.)
+    if (navInFlightRef.current) return;
+    navInFlightRef.current = true;
+    setIsNavigating(true);
+
     stopPolling();
     cancelAutoAdvance();
     ttsInFlightRef.current = false;
@@ -780,71 +864,76 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
     //       If you change this logic, update those sites too.
     const isPanelContentValid = (pc: PanelData['panel_content']) =>
       pc != null && typeof pc.type === 'string' && pc.type !== '[Max Depth]';
-    const cached = panelCache.current.get(panelId);
-    if (cached && isPanelContentValid(cached.panel_content)) {
-      // Don't serve cached panels with forward_state=generating — they may be stale
-      // (cached when the panel was first created, before Freeroam updated it to ready).
-      // Always re-fetch generating panels to get the latest state.
-      if (cached.forward_state === 'generating') {
-        panelCache.current.delete(panelId);
-      } else {
-        setCurrentPanel(cached); currentPanelIdRef.current = (cached)?.panel_id ?? null;
-        setPanelMutation.mutate({ worldId, panelId });
-        setIsLoading(false);
-        return;
-      }
-    } else if (cached) {
-      // Remove broken cached entry (null or [Max Depth] strings) and fetch fresh
-      panelCache.current.delete(panelId);
-    }
-    setIsNavigating(true);
-    // Retry up to 10 times with a 2s delay — Freeroam sometimes returns a panel_id
-    // before the panel actually exists, and server-side fetches can fail transiently.
-    // More retries with longer gaps gives the panel time to become available.
-    let lastErr: unknown;
-    for (let attempt = 0; attempt < 10; attempt++) {
-      try {
-        if (attempt > 0) await new Promise(resolve => setTimeout(resolve, 2000));
-        const data = await utils.worlds.getPanel.fetch({ worldId, panelId });
-        const panel = data as PanelData;
-        // Only cache if panel_content has real data (not [Max Depth] strings)
-        if (isPanelContentValid(panel.panel_content)) {
-          panelCache.current.set(panelId, panel);
-          // Also cache the embedded next_panel if present and valid
-          if (panel.next_panel) {
-            const next = panel.next_panel as PanelData;
-            if (next.panel_id && isPanelContentValid(next.panel_content)) panelCache.current.set(next.panel_id, next);
-          }
+
+    try {
+      const cached = panelCache.current.get(panelId);
+      if (cached && isPanelContentValid(cached.panel_content)) {
+        // Don't serve cached panels with forward_state=generating — they may be stale
+        // (cached when the panel was first created, before Freeroam updated it to ready).
+        // Always re-fetch generating panels to get the latest state.
+        if (cached.forward_state === 'generating') {
+          panelCache.current.delete(panelId);
+        } else {
+          setCurrentPanel(cached); currentPanelIdRef.current = (cached)?.panel_id ?? null;
+          setPanelMutation.mutate({ worldId, panelId });
+          setIsLoading(false);
+          return;
         }
-        setCurrentPanel(panel); currentPanelIdRef.current = (panel)?.panel_id ?? null;
-        setPanelMutation.mutate({ worldId, panelId });
-        lastErr = null;
-        break; // success
-      } catch (err) {
-        lastErr = err;
+      } else if (cached) {
+        // Remove broken cached entry (null or [Max Depth] strings) and fetch fresh
+        panelCache.current.delete(panelId);
       }
-    }
-    if (lastErr) {
-      // The panel fetch failed all retries. If the source panel is an action panel
-      // (generating or ready), the target panel may not be available yet.
-      // Use startDirectPanelPolling to keep retrying getPanel every 500ms
-      // with the spinner showing, until the panel becomes available.
-      const currentPanelId = currentPanelIdRef.current;
-      const sourcePanelData = currentPanelId ? panelCache.current.get(currentPanelId) : null;
-      const shouldFallbackToPoll =
-        sourcePanelData?.forward_state === 'generating' ||
-        (sourcePanelData?.forward_state === 'ready' && sourcePanelData?.is_action);
-      if (shouldFallbackToPoll) {
-        // Poll getPanel directly since we already know the target panel_id
-        startDirectPanelPolling(panelId);
-        return; // Don't clear isNavigating — let polling handle it
-      } else {
-        toast.error(lastErr instanceof Error ? lastErr.message : 'Failed to load panel');
+      // Retry up to 10 times with a 2s delay — Freeroam sometimes returns a panel_id
+      // before the panel actually exists, and server-side fetches can fail transiently.
+      // More retries with longer gaps gives the panel time to become available.
+      let lastErr: unknown;
+      for (let attempt = 0; attempt < 10; attempt++) {
+        try {
+          if (attempt > 0) await new Promise(resolve => setTimeout(resolve, 2000));
+          const data = await utils.worlds.getPanel.fetch({ worldId, panelId });
+          const panel = data as PanelData;
+          // Only cache if panel_content has real data (not [Max Depth] strings)
+          if (isPanelContentValid(panel.panel_content)) {
+            panelCache.current.set(panelId, panel);
+            // Also cache the embedded next_panel if present and valid
+            if (panel.next_panel) {
+              const next = panel.next_panel as PanelData;
+              if (next.panel_id && isPanelContentValid(next.panel_content)) panelCache.current.set(next.panel_id, next);
+            }
+          }
+          setCurrentPanel(panel); currentPanelIdRef.current = (panel)?.panel_id ?? null;
+          setPanelMutation.mutate({ worldId, panelId });
+          lastErr = null;
+          break; // success
+        } catch (err) {
+          lastErr = err;
+        }
       }
+      if (lastErr) {
+        // The panel fetch failed all retries. If the source panel is an action panel
+        // (generating or ready), the target panel may not be available yet.
+        // Use startDirectPanelPolling to keep retrying getPanel every 500ms
+        // with the spinner showing, until the panel becomes available.
+        const currentPanelId = currentPanelIdRef.current;
+        const sourcePanelData = currentPanelId ? panelCache.current.get(currentPanelId) : null;
+        const shouldFallbackToPoll =
+          sourcePanelData?.forward_state === 'generating' ||
+          (sourcePanelData?.forward_state === 'ready' && sourcePanelData?.is_action);
+        if (shouldFallbackToPoll) {
+          // Poll getPanel directly since we already know the target panel_id.
+          // Release nav lock in finally so the poll loop can call loadPanel again.
+          startDirectPanelPolling(panelId);
+          return;
+        } else {
+          toast.error(lastErr instanceof Error ? lastErr.message : 'Failed to load panel');
+        }
+      }
+      setIsLoading(false);
+    } finally {
+      navInFlightRef.current = false;
+      setIsNavigating(false);
     }
-    setIsNavigating(false);
-    setIsLoading(false);
-  }, [utils, setPanelMutation, stopPolling, showChoiceIdeasByDefault, startPolling, startDirectPanelPolling]);
+  }, [utils, setPanelMutation, stopPolling, showChoiceIdeasByDefault, startPolling, startDirectPanelPolling, cancelAutoAdvance]);
 
   // Load voice_enabled setting
   const { data: voiceEnabledSetting } = trpc.voice.getSetting.useQuery({ key: 'voice_enabled' });
@@ -1237,23 +1326,38 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
     // to prevent re-processing panels when currentPanel object reference changes for the same panel ID
     // Restore NSFW art for this panel (session map → fresh server cache). Never leave a
     // previously generated panel on Freeroam art just because we navigated away and back.
+    //
+    // IMPORTANT (ambient flash): do NOT setNsfwImageUrl(null) when Freeroam art is unchanged —
+    // that briefly swaps NSFW → Freeroam → NSFW and flashes the blurred ambient backdrop.
+    // Only clear NSFW when the Freeroam image identity actually changes.
     if (unrestrictedImagesEnabled) {
       const img = currentPanel.panel_content?.images?.[0];
       const panelId = currentPanel.panel_id;
       const freeroamImageUrl = img?.url ?? undefined;
       const freeroamImagePrompt = img?.prompt ?? undefined;
       const artKey = freeroamArtKey(freeroamImagePrompt, freeroamImageUrl);
-      const sessionHit = lookupSessionNsfw(panelId, artKey);
+      const prevFr = lastFreeroamArtRef.current;
+      const freeroamArtChanged = !sameFreeroamArt(
+        prevFr.prompt || prevFr.url ? prevFr : null,
+        freeroamImagePrompt,
+        freeroamImageUrl,
+      );
+      lastFreeroamArtRef.current = {
+        prompt: freeroamImagePrompt ?? null,
+        url: freeroamImageUrl ?? null,
+      };
+
+      const sessionHit = lookupSessionNsfw(panelId, artKey, freeroamImageUrl, freeroamImagePrompt);
       if (sessionHit) {
         // Stable URL (no cache-bust) so ambient/main don't flash on every nav
-        // Seed this panel id so future visits hit panel map first
-        nsfwByPanelIdRef.current.set(panelId, nsfwUrlBase(sessionHit));
-        nsfwProcessedPanelsRef.current.add(panelId);
-        setNsfwImageUrl(nsfwUrlBase(sessionHit));
+        rememberNsfwImage(panelId, artKey, sessionHit, false, freeroamImageUrl, freeroamImagePrompt);
       } else if (img?.prompt || freeroamImageUrl) {
-        // Clear previous panel's NSFW immediately so ambient doesn't show wrong art,
-        // then restore if server has ready for this panel/art (prompt OR url is enough).
-        setNsfwImageUrl(null);
+        if (freeroamArtChanged) {
+          // New Freeroam art — drop previous NSFW so we don't paint the wrong scene.
+          // Ambient layer holds the previous frame until the new image preloads (see ambient effect).
+          setNsfwImageUrl(null);
+        }
+        // Same Freeroam art: keep current NSFW sticky while we confirm cache for this panel.
         (async () => {
           try {
             const cached = await fetchImageCacheFresh({
@@ -1261,15 +1365,22 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
               freeroamImageUrl,
               freeroamImagePrompt,
             });
-            if (currentPanelIdRef.current !== panelId) return;
+            if (currentPanelIdRef.current !== panelId) {
+              if (cached.status === 'ready' && cached.imageUrl) {
+                rememberNsfwImage(panelId, artKey, cached.imageUrl, false, freeroamImageUrl, freeroamImagePrompt);
+              }
+              return;
+            }
             if (cached.status === 'ready' && cached.imageUrl) {
-              rememberNsfwImage(panelId, artKey, cached.imageUrl, false);
+              rememberNsfwImage(panelId, artKey, cached.imageUrl, false, freeroamImageUrl, freeroamImagePrompt);
+            } else if (freeroamArtChanged && cached.status !== 'ready') {
+              // Confirmed no replacement for the new art — stay on Freeroam (already null NSFW)
             }
           } catch {
-            // leave Freeroam art
+            // leave current display
           }
         })();
-      } else {
+      } else if (freeroamArtChanged) {
         setNsfwImageUrl(null);
       }
     } else {
@@ -1322,9 +1433,9 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
 
     // Session hit for this panel or same Freeroam art — restore, never re-generate
     // (unless user just hit regenerate — maps were cleared)
-    const sessionHit = lookupSessionNsfw(panelId, artKey);
+    const sessionHit = lookupSessionNsfw(panelId, artKey, freeroamImageUrl, freeroamImagePrompt);
     if (sessionHit && !forceRegen) {
-      rememberNsfwImage(panelId, artKey, sessionHit);
+      rememberNsfwImage(panelId, artKey, sessionHit, false, freeroamImageUrl, freeroamImagePrompt);
       nsfwProcessedPanelsRef.current.add(panelId);
       return;
     }
@@ -1342,14 +1453,14 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
     if (nsfwProcessedPanelsRef.current.has(panelId) && !forceRegen) {
       (async () => {
         try {
-          const sessionAgain = lookupSessionNsfw(panelId, artKey);
+          const sessionAgain = lookupSessionNsfw(panelId, artKey, freeroamImageUrl, freeroamImagePrompt);
           if (sessionAgain) {
-            rememberNsfwImage(panelId, artKey, sessionAgain);
+            rememberNsfwImage(panelId, artKey, sessionAgain, false, freeroamImageUrl, freeroamImagePrompt);
             return;
           }
           const cached = await fetchImageCacheFresh({ panelId, freeroamImageUrl, freeroamImagePrompt });
           if (cached.status === 'ready' && cached.imageUrl) {
-            rememberNsfwImage(panelId, artKey, cached.imageUrl);
+            rememberNsfwImage(panelId, artKey, cached.imageUrl, false, freeroamImageUrl, freeroamImagePrompt);
             return;
           }
           if (cached.status === 'skipped') {
@@ -1364,8 +1475,9 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
           }
           if (cached.status === 'not_found') {
             // Only re-run if we truly have no session image for this art
-            if (lookupSessionNsfw(panelId, artKey)) {
-              rememberNsfwImage(panelId, artKey, lookupSessionNsfw(panelId, artKey)!);
+            const again = lookupSessionNsfw(panelId, artKey, freeroamImageUrl, freeroamImagePrompt);
+            if (again) {
+              rememberNsfwImage(panelId, artKey, again, false, freeroamImageUrl, freeroamImagePrompt);
               return;
             }
             nsfwProcessedPanelsRef.current.delete(panelId);
@@ -1396,7 +1508,7 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
 
         // After regenerate we clear cache — still allow reuse only when NOT forcing
         if (cached.status === 'ready' && cached.imageUrl && !forceRegen) {
-          rememberNsfwImage(panelId, artKey, cached.imageUrl);
+          rememberNsfwImage(panelId, artKey, cached.imageUrl, false, freeroamImageUrl, freeroamImagePrompt);
           nsfwProcessedPanelsRef.current.add(panelId);
           return;
         }
@@ -1419,20 +1531,26 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
           setIsGeneratingNsfwImage(false);
         };
 
-        // Match server Seedream wait (server/nsfwImageCache.ts SEEDREAM_POLL_* ≈ 5 min)
+        // Match server Seedream wait (server/nsfwImageCache.ts SEEDREAM_POLL_* ≈ 5 min).
+        // IMPORTANT: keep polling even if this effect was cancelled (Strict Mode / brief remount).
+        // Aborting poll on cancel was the main "Atlas finished but story never updated" bug —
+        // Seedream kept running server-side while the client stopped adopting the ready URL.
         const pollUntilSettled = async () => {
           for (let i = 0; i < 200; i++) { // 200 × 1.5s ≈ 5 min
-            if (!isActiveRun()) return null;
             await new Promise(r => setTimeout(r, 1500));
-            const poll = await fetchImageCacheFresh({
-              panelId,
-              freeroamImageUrl,
-              freeroamImagePrompt,
-            });
-            applyStatusBadges(poll.status);
-            if (poll.status === 'ready' && poll.imageUrl) return poll;
-            if (poll.status === 'skipped') return poll;
-            if (poll.status === 'not_found') return poll;
+            try {
+              const poll = await fetchImageCacheFresh({
+                panelId,
+                freeroamImageUrl,
+                freeroamImagePrompt,
+              });
+              applyStatusBadges(poll.status);
+              if (poll.status === 'ready' && poll.imageUrl) return poll;
+              if (poll.status === 'skipped') return poll;
+              if (poll.status === 'not_found') return poll;
+            } catch {
+              // keep trying
+            }
           }
           return null;
         };
@@ -1441,8 +1559,14 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
           // Always store in session maps even if this React run was cancelled (Strict Mode),
           // so a remount / sibling run can restore immediately.
           // Cache-bust only on force regenerate (same file path overwritten on disk).
-          rememberNsfwImage(panelId, artKey, url, forceRegen);
+          rememberNsfwImage(panelId, artKey, url, forceRegen, freeroamImageUrl, freeroamImagePrompt);
           nsfwProcessedPanelsRef.current.add(panelId);
+          console.log('[NSFW] Adopted ready image', {
+            panelId,
+            forceRegen,
+            stillOnPanel: currentPanelIdRef.current === panelId,
+            url: url.slice(0, 80),
+          });
         };
 
         // Seedream already running (or another tab) — show IMG and wait
@@ -1596,10 +1720,22 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
               adoptReady(poll.imageUrl);
             } else if (poll?.status === 'skipped') {
               nsfwProcessedPanelsRef.current.add(panelId);
+            } else if (!poll && isActiveRun()) {
+              // Timed out while still on panel — one last cache check
+              try {
+                const last = await fetchImageCacheFresh({ panelId, freeroamImageUrl, freeroamImagePrompt });
+                if (last.status === 'ready' && last.imageUrl) adoptReady(last.imageUrl);
+              } catch { /* ignore */ }
             }
-            // poll null (cancelled / navigated away) or still in progress: leave unprocessed
           } else if (result.imageUrl) {
+            // Includes normal ready and "aborted" returns that still have a re-hosted URL
             adoptReady(result.imageUrl);
+          } else if ((result as { aborted?: boolean }).aborted) {
+            // Server finished Atlas but lost claim — try cache once more
+            try {
+              const last = await fetchImageCacheFresh({ panelId, freeroamImageUrl, freeroamImagePrompt });
+              if (last.status === 'ready' && last.imageUrl) adoptReady(last.imageUrl);
+            } catch { /* ignore */ }
           } else if (isActiveRun()) {
             // notNsfw / no image — mark this panel (and same-art panels we know) so remount
             // does not re-run Seedream after a forced regenerate of a skipped panel.
@@ -1827,59 +1963,81 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
   }, [isNavigating]);
 
   const handleNavigate = useCallback(async (direction: 'prev' | 'next') => {
+    // Sync lock first — isNavigating React state lags behind rapid taps
+    if (navInFlightRef.current) return;
+
+    // Prefer live panel from ref/cache over React state (state is stale mid double-tap)
+    const panel =
+      (currentPanelIdRef.current
+        ? panelCache.current.get(currentPanelIdRef.current)
+        : undefined)
+      ?? currentPanel;
+    if (!panel) return;
+
     // Allow backward navigation even while polling; only block forward when actively polling
-    if (!currentPanel || isNavigating) return;
     if (direction === 'next' && isPolling) return;
-    const targetId = direction === 'prev' ? currentPanel.prev_panel_id : currentPanel.next_panel_id;
+
+    const targetId = direction === 'prev' ? panel.prev_panel_id : panel.next_panel_id;
     if (!targetId) return;
+
+    // Mark manual nav so auto-advance cannot immediately undo a back tap
+    lastManualNavAtRef.current = Date.now();
+    cancelAutoAdvance();
+
     // For action panels going forward: check cache first, then poll if not cached
-    if (direction === 'next' && currentPanel.is_action) {
+    if (direction === 'next' && panel.is_action) {
       // If next panel is already cached, use it instantly
       if (targetId && panelCache.current.has(targetId)) {
         await loadPanel(targetId, world.external_id);
         return;
       }
       // Not cached — start polling next-ready
-      startPolling(currentPanel.panel_id);
+      startPolling(panel.panel_id);
       return;
     }
     // For forward navigation: use the embedded next_panel data if available (instant, no fetch)
-    if (direction === 'next' && currentPanel.next_panel) {
-      const embedded = currentPanel.next_panel as PanelData;
-      stopPolling();
-      cancelAutoAdvance();
-      // Stop any playing audio so it doesn't bleed into the next panel
-      audioRef.current?.pause();
-      audioRef.current = null;
-      setIsPlayingAudio(false);
-      setCurrentAudioUrl(null);
+    if (direction === 'next' && panel.next_panel) {
+      if (navInFlightRef.current) return;
+      navInFlightRef.current = true;
       setIsNavigating(true);
-      setChoiceIdeasVisible(showChoiceIdeasByDefault);
-      const embeddedPanel = { ...embedded, next_panel: embedded.next_panel ?? null } as PanelData;
-      // Store in cache for backward navigation
-      panelCache.current.set(embedded.panel_id, embeddedPanel);
-      // Also cache the embedded panel's next_panel if present
-      if (embedded.next_panel) {
-        const next2 = embedded.next_panel as PanelData;
-        if (next2.panel_id) panelCache.current.set(next2.panel_id, next2);
-      }
-      setCurrentPanel(embeddedPanel); currentPanelIdRef.current = (embeddedPanel)?.panel_id ?? null;
-      setPanelMutation.mutate({ worldId: world.external_id, panelId: embedded.panel_id });
-      setIsNavigating(false);
-      setIsLoading(false);
-      // If the embedded panel is still generating, start polling.
-      // NOTE: This condition mirrors the polling effect at line ~991.
-      //       If you change it here, update that effect too.
-      // NOTE: Do NOT use forward_state=ready here — see comment in the polling effect.
-      // Poll on all generating panels, even if next_panel_id is already set
-      // (mirrors the polling effect condition above)
-      if (embedded.forward_state === 'generating') {
-        startPolling(embedded.panel_id);
+      try {
+        const embedded = panel.next_panel as PanelData;
+        stopPolling();
+        cancelAutoAdvance();
+        // Stop any playing audio so it doesn't bleed into the next panel
+        audioRef.current?.pause();
+        audioRef.current = null;
+        setIsPlayingAudio(false);
+        setCurrentAudioUrl(null);
+        setChoiceIdeasVisible(showChoiceIdeasByDefault);
+        const embeddedPanel = { ...embedded, next_panel: embedded.next_panel ?? null } as PanelData;
+        // Store in cache for backward navigation
+        panelCache.current.set(embedded.panel_id, embeddedPanel);
+        // Also cache the embedded panel's next_panel if present
+        if (embedded.next_panel) {
+          const next2 = embedded.next_panel as PanelData;
+          if (next2.panel_id) panelCache.current.set(next2.panel_id, next2);
+        }
+        setCurrentPanel(embeddedPanel); currentPanelIdRef.current = (embeddedPanel)?.panel_id ?? null;
+        setPanelMutation.mutate({ worldId: world.external_id, panelId: embedded.panel_id });
+        setIsLoading(false);
+        // If the embedded panel is still generating, start polling.
+        // NOTE: This condition mirrors the polling effect at line ~991.
+        //       If you change it here, update that effect too.
+        // NOTE: Do NOT use forward_state=ready here — see comment in the polling effect.
+        // Poll on all generating panels, even if next_panel_id is already set
+        // (mirrors the polling effect condition above)
+        if (embedded.forward_state === 'generating') {
+          startPolling(embedded.panel_id);
+        }
+      } finally {
+        navInFlightRef.current = false;
+        setIsNavigating(false);
       }
       return;
     }
     await loadPanel(targetId, world.external_id);
-  }, [currentPanel, isNavigating, isPolling, loadPanel, startPolling, world.external_id, stopPolling, showChoiceIdeasByDefault, setPanelMutation]);
+  }, [currentPanel, isPolling, loadPanel, startPolling, world.external_id, stopPolling, showChoiceIdeasByDefault, setPanelMutation, cancelAutoAdvance]);
 
   const handleChoice = useCallback(async (choiceText: string) => {
     // Send the choice as an action to Freeroam — this triggers generation of the action panel
@@ -1976,34 +2134,42 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
   // Only use NSFW replacement when unrestricted images is enabled
   const imageUrl = (unrestrictedImagesEnabled && nsfwImageUrl) ? nsfwImageUrl : originalImageUrl;
 
-  // Ambient: keep previous background until the next image is decoded, so panel changes
-  // don't flash black / freeroam while a (local) NSFW URL loads. Freeroam CDN is usually
-  // warm-cached; local /api/nsfw-images was reloading every visit because of ?v= busting.
+  // Ambient backdrop: hold the last fully-decoded frame until the next one is ready.
+  // With unrestricted images, imageUrl can briefly flip NSFW → Freeroam → NSFW; we must
+  // NOT clear ambient on null/intermediate URLs or compare full strings with ?v= busts.
   const [ambientUrl, setAmbientUrl] = useState<string | null>(null);
   const ambientUrlRef = useRef<string | null>(null);
   useEffect(() => {
     if (!imageUrl) {
-      setAmbientUrl(null);
-      ambientUrlRef.current = null;
+      // Keep previous ambient while imageUrl is temporarily null (NSFW restore in flight)
       return;
     }
-    if (imageUrl === ambientUrlRef.current) return;
+    const nextBase = nsfwUrlBase(imageUrl);
+    const prevBase = ambientUrlRef.current ? nsfwUrlBase(ambientUrlRef.current) : null;
+    // Same underlying file (ignore cache-bust query) — no ambient update, no flash
+    if (prevBase && nextBase === prevBase) return;
+
     let cancelled = false;
     const pre = new window.Image();
     pre.onload = () => {
       if (cancelled) return;
-      ambientUrlRef.current = imageUrl;
-      setAmbientUrl(imageUrl);
+      // Prefer stable base URL for CSS background so ambient doesn't thrash on ?v=
+      const stable = nsfwUrlBase(imageUrl);
+      ambientUrlRef.current = stable;
+      setAmbientUrl(stable);
     };
     pre.onerror = () => {
       if (cancelled) return;
-      ambientUrlRef.current = imageUrl;
-      setAmbientUrl(imageUrl);
+      // Still adopt so we don't get stuck on a stale ambient forever
+      const stable = nsfwUrlBase(imageUrl);
+      ambientUrlRef.current = stable;
+      setAmbientUrl(stable);
     };
     pre.src = imageUrl;
     return () => { cancelled = true; };
   }, [imageUrl]);
-  const ambientBg = ambientUrl ?? imageUrl;
+  // Prefer sticky decoded ambient; only fall back to imageUrl on first paint (no ambient yet)
+  const ambientBg = ambientUrl ?? (imageUrl ? nsfwUrlBase(imageUrl) : null);
 
   const speechBubble = content?.speech_bubbles?.[0] ?? null;
   const narration = content?.narration ?? null;
@@ -2037,11 +2203,18 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
 
   // Touch long-press = Save Image (native); must not also fire advance.
   // Desktop: left-click always advances (middle/right of art = next); right-click = browser Save Image.
-  const panelImgPressRef = useRef<{ x: number; y: number; t: number; pointerType: string } | null>(null);
+  // `navDir` is captured on pointerdown so a layout shift / second event mid-tap can't invert direction.
+  const panelImgPressRef = useRef<{
+    x: number;
+    y: number;
+    t: number;
+    pointerType: string;
+    navDir: 'prev' | 'next';
+  } | null>(null);
 
   /** Freeroam desktop: click center of art advances; right-click saves. Mobile: short tap advances, long-press saves. */
   const handlePanelImageNavigate = useCallback((e: ReactMouseEvent<HTMLImageElement>) => {
-    if (isNavigating) return;
+    if (navInFlightRef.current || isNavigating) return;
     // Right-click / middle-click: let the browser handle (context menu for Save Image)
     if (e.button !== 0) return;
 
@@ -2069,16 +2242,29 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
       if (overLogo || overMenuPill || overRightChrome) return;
     }
 
-    // Left = back, right of that = forward. Back zone is intentionally wide (~half the
-    // panel) so taps on leftish dialogue (e.g. around "For now, we…") still go previous,
-    // not next. Forward starts near mid-panel (about where that "w" sits on typical copy).
+    // Prefer zone from pointerdown (stable). Fall back to click position.
+    // Left = back (~45% width), right of that = forward.
     const leftZone = rect.width * 0.45;
-    if (x < leftZone) {
-      if (canGoBack) void handleNavigate('prev');
-    } else if (canGoForward && !isPolling && !isRegeneratePolling) {
-      void handleNavigate('next');
+    const navDir = start?.navDir ?? (x < leftZone ? 'prev' : 'next');
+    if (navDir === 'prev') {
+      // Resolve canGoBack from live panel so we don't use a stale false and no-op
+      const live =
+        (currentPanelIdRef.current
+          ? panelCache.current.get(currentPanelIdRef.current)
+          : undefined)
+        ?? currentPanel;
+      if (live?.prev_panel_id) void handleNavigate('prev');
+    } else if (!isPolling && !isRegeneratePolling) {
+      const live =
+        (currentPanelIdRef.current
+          ? panelCache.current.get(currentPanelIdRef.current)
+          : undefined)
+        ?? currentPanel;
+      if (live?.next_panel_id && live.forward_state !== 'awaiting_choice') {
+        void handleNavigate('next');
+      }
     }
-  }, [isNavigating, canGoBack, canGoForward, isPolling, isRegeneratePolling, handleNavigate]);
+  }, [isNavigating, isPolling, isRegeneratePolling, handleNavigate, currentPanel]);
 
   /** Unrestricted image regen is available only on panels with character_references (source art). */
   const canRegenerateNsfwImage =
@@ -2095,7 +2281,19 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
     nsfwByPanelIdRef.current.delete(panelId);
     const img0 = currentPanel.panel_content?.images?.[0];
     const artKey = freeroamArtKey(img0?.prompt, img0?.url);
+    // Clear every session index for this Freeroam art (prompt key and URL key)
+    for (const k of freeroamArtKeys(img0?.prompt, img0?.url)) {
+      nsfwByArtKeyRef.current.delete(k);
+    }
     if (artKey) nsfwByArtKeyRef.current.delete(artKey);
+    // Also drop sibling panel session entries for the same art so we don't restore stale NSFW
+    Array.from(panelCache.current.entries()).forEach(([pid, p]) => {
+      const pImg = p.panel_content?.images?.[0];
+      if (sameFreeroamArt(pImg, img0?.prompt, img0?.url)) {
+        nsfwByPanelIdRef.current.delete(pid);
+        nsfwProcessedPanelsRef.current.delete(pid);
+      }
+    });
     setNsfwImageUrl(null);
     setIsClassifyingNsfwImage(true);
     setIsGeneratingNsfwImage(false);
@@ -2156,7 +2354,7 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
             width: 'max(0px, calc((100vw - min(100vw, 100dvh * 9 / 16)) / 2))',
             cursor: 'pointer',
           }}
-          onClick={() => handleNavigate('prev')}
+          onClick={() => { if (!navInFlightRef.current) void handleNavigate('prev'); }}
           aria-label="Previous panel"
         />
       )}
@@ -2167,7 +2365,7 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
             width: 'max(0px, calc((100vw - min(100vw, 100dvh * 9 / 16)) / 2))',
             cursor: 'pointer',
           }}
-          onClick={() => handleNavigate('next')}
+          onClick={() => { if (!navInFlightRef.current) void handleNavigate('next'); }}
           aria-label="Next panel"
         />
       )}
@@ -2208,7 +2406,7 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
         </div>
       )}
       <button
-        onClick={() => handleNavigate('prev')}
+        onClick={() => { if (!navInFlightRef.current) void handleNavigate('prev'); }}
         disabled={!canGoBack || isNavigating}
         className="absolute left-0 z-[35] flex items-center justify-start pl-2 sm:pl-4 disabled:opacity-0 disabled:pointer-events-none transition-opacity"
         style={{
@@ -2228,7 +2426,7 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
       </button>
 
       <button
-        onClick={() => handleNavigate('next')}
+        onClick={() => { if (!navInFlightRef.current) void handleNavigate('next'); }}
         disabled={(!canGoForward && !isPolling && !isRegeneratePolling) || isNavigating}
         className="absolute right-0 z-[35] flex items-center justify-end pr-2 sm:pr-4 disabled:opacity-0 disabled:pointer-events-none transition-opacity"
         style={{
@@ -2590,11 +2788,16 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
               // Touch long-press: Save Image; short tap: navigate (long-press suppressed in handler).
               onPointerDown={(e) => {
                 if (e.button !== 0) return;
+                const rect = e.currentTarget.getBoundingClientRect();
+                const px = e.clientX - rect.left;
+                // Capture zone at press time so a re-layout / second event can't flip back→forward
+                const navDir: 'prev' | 'next' = px < rect.width * 0.45 ? 'prev' : 'next';
                 panelImgPressRef.current = {
                   x: e.clientX,
                   y: e.clientY,
                   t: Date.now(),
                   pointerType: e.pointerType || 'mouse',
+                  navDir,
                 };
               }}
               onPointerCancel={() => { panelImgPressRef.current = null; }}

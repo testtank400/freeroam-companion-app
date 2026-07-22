@@ -22,7 +22,9 @@ The app is a companion reader and character/world manager for [Freeroam](https:/
 | `client/src/components/StoryReader.tsx` | Full story reader — panel navigation, TTS, auto-advance, polling, action bar |
 | `client/src/components/StoryMenu.tsx` | Slide-down story menu — page scrubber, bookmarks, journal, preferences |
 | `client/src/components/VoicePicker.tsx` | Voice assignment modal — browse ElevenLabs voices, set stability/similarity/style/language |
-| `client/src/components/CharacterPanel.tsx` | In-reader character panel — view/edit story cast; library browser with All / Favorites / Collections filters and batch-add from local character collections |
+| `client/src/components/CharacterPanel.tsx` | In-reader character panel — view/edit story cast; library multi-select add; collections open as folders (not add-all); headshot backfill after batch add |
+| `server/_core/storageProxy.ts` | Serves `/manus-storage/*` — local disk first, then Forge signed redirect when configured |
+| `server/nsfwLocalStorage.ts` | Local NSFW image files under `data/nsfw-images/` at `/api/nsfw-images/*` |
 | `client/src/components/CharacterProfile.tsx` | Full-screen character detail — tabs for About, Appearance, Full Backstory, Full Appearance |
 | `client/src/components/CharacterCard.tsx` | Character card in the roster grid |
 | `client/src/components/WorldCard.tsx` | World card in the worlds grid |
@@ -93,7 +95,16 @@ Character collections are user-owned groups stored in the local database (`colle
 
 The `CollectionsStrip` component renders a horizontal scrollable strip of collection cards above the character grid. Clicking a collection filters the grid to show only its members.
 
-These same local character collections are what the in-reader CharacterPanel **Collections** chip uses for search and batch-add (see [Character Panel](#character-panel-in-reader) below).
+These same local character collections are what the in-reader CharacterPanel **Collections** chip uses (open as folder → multi-select members; see [Character Panel](#character-panel-in-reader) below).
+
+### Collection cover images (storage)
+
+Cover uploads go through `collections.uploadCoverImage` → `storagePut`:
+
+- **Forge configured** → file on Manus S3; public path `/manus-storage/{key}` (proxy redirects to signed URL).
+- **Forge not configured (typical local/docker)** → file under `data/local-storage/`; public path also **`/manus-storage/{key}`** so one URL scheme works everywhere. `storageProxy` serves the local file when present.
+
+**Migrated Manus DB rows** often still point at `/manus-storage/collection-covers/...` without the binary files on disk and without Forge. Those covers **404** until the user re-uploads or files are copied into `data/local-storage/collection-covers/`. UI (roster cards, CharacterPanel folder list, delete dialog) falls back to headshot mosaic / folder icon on load error — not a permanent broken-image icon.
 
 ### NSFW Flags
 
@@ -161,15 +172,30 @@ That message comes from `server/storage.ts` (Manus template storage). Local runs
 
 ## World Browser (Worlds Mode)
 
-Switching to Worlds mode loads all of the user's Freeroam worlds via `worlds.listAll`. Worlds support filtering by privacy status, draft status, and text search, plus sorting by Most Recent / Oldest First / Popular.
+Switching to Worlds mode loads all of the user's Freeroam worlds via `worlds.listAll` (paginated Freeroam fetch, full roster assembled server-side). Worlds support filtering by privacy status, draft status, and text search, plus sorting by **Most Recent / Oldest First / Popular**.
+
+### World sort (important)
+
+Freeroam's list payload has **no `created_at`**. Sorting still works because Freeroam honors `sort=recent|oldest|popular` on:
+
+```
+GET /api/user/{username}/worlds?limit=…&sort=…&cursor=…
+```
+
+- **Most Recent / Oldest** — Freeroam order matches sequential numeric `world.id` from the detail endpoint (not the random UUID `external_id`).
+- **Popular** — by `interaction_count`.
+- **Do not** re-sort the full list by UUID `external_id` (that was tried and scrambles real order).
+- `worlds.listAll` **preserves Freeroam's list order** for the requested sort after concatenating pages.
 
 ### World Collections
 
-World collections are Freeroam's own collection system for grouping worlds. The app proxies them via `worldCollections.*` procedures. A key problem: **Freeroam's API hides private worlds from collection responses**. The app solves this by:
+World collections are Freeroam's own collection system for grouping worlds. The app proxies them via `worldCollections.*` procedures. Key quirks:
 
-1. Storing world-to-collection membership locally in `world_collection_members`
-2. When loading a collection, fetching from both the Freeroam API and the local DB
-3. Merging the results — private worlds that Freeroam omits are re-added from local storage
+1. **Freeroam often returns `worlds: []`** on collection detail for private collections even when `world_count > 0`.
+2. **Private worlds** are omitted from Freeroam collection payloads in general.
+3. App stores membership in local `world_collection_members`, loads IDs via `worldCollections.getMembers`, resolves full cards from the main **`allWorlds` roster**, and merges any API worlds.
+
+**Sort inside a collection:** Freeroam's collection detail does **not** apply the roster sort. The UI orders collection members with `orderWorldsByRoster(members, allWorlds)` so Most Recent / Oldest / Popular match the main archives. When the user changes sort while a collection is open, `fetchAllWorlds` reloads the roster and re-orders open collection members.
 
 The `CollectionsStrip` component (shared with character collections) shows world collections above the world grid.
 
@@ -220,7 +246,26 @@ Navigation is handled by `handleNavigate('prev' | 'next')`. The embedded next pa
 2. Retries up to 10 times with 2s delay (Freeroam sometimes returns panel IDs before panels exist)
 3. Falls back to `startDirectPanelPolling` if all retries fail on an action panel
 
-Invisible tap zones: the left **45%** of the panel advances back; the remainder advances forward (see `StoryReader` hit-zone math). Visible chevron icons sit at the edges for discoverability.
+Invisible tap zones: the left **45%** of the panel advances back; the remainder advances forward (see `StoryReader` hit-zone math). Visible chevron icons sit at the edges for discoverability. Desktop gutters outside the portrait column also navigate.
+
+#### Rapid-tap / back-zone race (fixed)
+
+**Bug:** Rapid taps on the back zone could feel like a **forward** jump (or skip). Causes included:
+
+1. Cached `loadPanel` never set a **sync** nav lock — React `isNavigating` was too slow for double-taps.
+2. Target prev/next resolved from **stale** `currentPanel` state instead of `currentPanelIdRef` + `panelCache`.
+3. **Auto-advance** could arm immediately after a manual back and undo it.
+4. Zone decided from **click** position after layout change, not from **pointerdown**.
+
+**Mitigations in `StoryReader.tsx`:**
+
+| Mechanism | Role |
+|---|---|
+| `navInFlightRef` | Synchronous lock around every `loadPanel` (including cache hits) and embedded-next path |
+| Live panel resolve | `panelCache.get(currentPanelIdRef)` preferred over React `currentPanel` |
+| `lastManualNavAtRef` + ~800ms grace | Blocks `scheduleAutoAdvance` right after user prev/next |
+| `panelImgPressRef.navDir` | Back vs forward captured on pointerdown; click uses that direction |
+| Guarded chevrons/gutters | Ignore clicks while `navInFlightRef` is set |
 
 ### Polling State Machine
 
@@ -292,15 +337,26 @@ Auto-advance is **paused** when any of these are open: action input (Act/Direct/
 | `autoAdvancePausedRef` | `true` when auto-advance is paused (action input open, Characters panel open, story menu open). |
 | `autoAdvanceEnabledRef` | Mirror of `autoAdvanceEnabled` state — used in async closures to avoid stale state. |
 | `autoAdvanceMinDelayRef` | Mirror of `autoAdvanceMinDelay` state — used in async closures. |
+| `navInFlightRef` | Sync navigation lock (rapid tap). |
+| `lastManualNavAtRef` | Timestamp of last user prev/next; blocks auto-advance for ~800ms. |
+| `currentPanelIdRef` | Live panel id for nav targets and NSFW paint guards. |
+| `nsfwByPanelIdRef` / `nsfwByArtKeyRef` | Session NSFW URL maps (panel + prompt/URL art keys). |
+| `nsfwCharRefsByArtKeyRef` | Borrowed cast for same Freeroam art across panels. |
+| `lastFreeroamArtRef` | Last Freeroam art identity — avoid clearing NSFW on same-art nav. |
+| `ambientUrlRef` | Last decoded ambient backdrop URL (sticky frame). |
 
 ### Story Menu
 
-`StoryMenu.tsx` is a slide-down overlay triggered by tapping the pill handle at the top of the reader. It uses `translateY(-100% → 0)` animation at 0.25s (not `max-height`) for a direct, natural slide-down matching Freeroam's behavior. No backdrop overlay — the reader shows through behind it.
+`StoryMenu.tsx` is a slide-down overlay triggered by tapping the pill handle at the top of the reader. It uses `translateY(-100% → 0)` animation at 0.25s (not `max-height`) for a direct, natural slide-down matching Freeroam's behavior. Frosted full-viewport glass is a separate layer so `backdrop-filter` still samples the story art.
 
 The menu contains:
 - **Story tab:** Page scrubber (custom touch-drag slider), bookmarks, chapter list, related worlds
 - **Journal tab:** Summary, State, Threads, Preferences sub-tabs
 - **Preferences:** Voice on/off, auto-play on/off, auto-advance on/off + delay slider, show choice ideas by default, debug mode toggle
+
+#### Page number input (scrubber)
+
+Controlled page field allows **empty string while typing** so the user can clear and retype (e.g. change `25` → `15`). Do **not** clamp with `Math.max(1, …)` on every keystroke — that blocks erasing the first digit. Clamp / restore on **blur** and on **Go** / Enter. Scrubber thumb uses a resolved numeric value when the field is empty.
 
 ### Debug Mode
 
@@ -313,11 +369,11 @@ A debug overlay is available in preferences (Voice Settings → Debug Mode). Whe
 | View | Purpose |
 |---|---|
 | Main | Current story cast — headshots, Play as, remove/restore, pending add/remove borders |
-| Library | Browse the user's Freeroam library and local collections to queue adds |
-| Detail | Library character detail → **Add to Story** |
+| Library | Multi-select from Freeroam library / collection folders → **Add N to story** |
+| Detail | Optional character detail (info button) → single **Add to Story** |
 | Story detail | Edit in-story character personality/appearance/photo |
 
-Changes are **pending** until the user taps **Save Changes**, which calls StoryReader's `onSaveChanges` / `onPlayAs` / `onEditCharacter` (Freeroam batch character update via `sendAction`).
+Changes are **pending** until the user taps **Save Changes**, which calls StoryReader's `onSaveChanges` / `onPlayAs` / `onEditCharacter` (Freeroam `batch_character_update` via `sendAction`).
 
 #### Library chips
 
@@ -331,19 +387,31 @@ There is **no "Yours" chip** — the library already shows the signed-in user's 
 
 Search is client-side: character name under All/Favorites; collection name under Collections; member name when a collection is open.
 
-#### Collections flow
+#### Multi-select add (All / Favorites / open collection)
 
-1. **Collections** chip lists local collections (cover image, headshot mosaic, or folder icon; member count).
-2. Tapping a collection:
-   - **Empty** → toast *"This collection is empty"* (same for **Add all** on empty).
-   - **Non-empty** → member grid (resolved against the loaded library when possible; unresolved IDs still add by `external_id`).
-3. **Add all** (list row or collection footer) batch-queues every member for story add:
-   - **No batch size cap** (for now).
-   - Characters **already in the story** (or already pending add) are **skipped**.
-   - Toast reports added vs skipped counts; user still must **Save Changes** to commit to Freeroam.
-4. Individual members can still be opened and added one at a time (same pending-add path as All/Favorites).
+- **Tap card** → toggle selection (checkbox at **top-right of the card**, not on the avatar).
+- Characters already in the story show **in story** and are not selectable.
+- Toolbar: **Select all** / **Clear**; footer **Add N to story** when selection > 0.
+- Small **info** button (top-left of card) opens Detail without leaving multi-select.
+- Selection clears on filter change, leave folder, leave library, panel close, or successful multi-add.
 
-Opening the panel or library resets filter/search/selected collection; auto-advance is paused while the panel is open.
+#### Collections flow (folder model — not add-all)
+
+1. **Collections** chip lists local collections (cover, mosaic, or folder; member count; chevron “open folder”).
+2. Tapping a collection opens it as a **folder of members** (same multi-select grid as All/Favorites).
+3. **No “Add all”** on the list row or collection footer (removed by product decision).
+4. Empty collection → toast; does not open.
+5. Library is loaded when opening a collection so members resolve to names/headshots when possible.
+
+#### Headshots missing after batch / cast add (fixed)
+
+Freeroam's panel cast API (`worlds.getPanelCharacters`) often returns **newly batch-added** story characters **without** `headshot_url` for a while. Mitigations in CharacterPanel:
+
+1. **Session headshot cache** — remember + prefetch on add from library.
+2. On cast load: backfill from cache → library → background `characters.get`.
+3. **`StoryCharHeadshot`** — letter placeholder until image loads; fallback between `display_headshot_url` and `headshot_url`; handle browser-cached images that skip `onLoad`.
+
+Opening the panel or library resets filter/search/selected collection/selection; auto-advance is paused while the panel is open.
 
 ---
 
@@ -487,18 +555,42 @@ Cache lookup order in `checkImageReady` / `generateNsfwImage`:
 2. `freeroamImageUrl` match (same source file)
 3. `freeroamImagePrompt` match (same art / prompt across panels)
 
-Client also keeps a **sticky** NSFW URL keyed by image prompt so navigating panels with unchanged Freeroam art does not flash or re-run the pipeline.
+Client also keeps **sticky session maps** for NSFW URLs keyed by `panelId` and Freeroam art keys (**both** image prompt and image URL, not prompt alone). Same-art panels restore without re-running Seedream when possible.
 
-The `generateNsfwImage` procedure also checks the cache in the same order before starting generation. A `'generating'` placeholder row is inserted before any API calls to prevent duplicate generation if the user navigates away and back.
+The `generateNsfwImage` procedure also checks the cache in the same order before starting generation. A `'classifying'` claim row is inserted before any API calls (promoted to `'generating'` only after DeepSeek confirms NSFW) to prevent duplicate generation if the user navigates away and back.
 
-### Flash Prevention
+### Flash Prevention (main panel + ambient)
 
-**The critical implementation detail:** The cache check must happen *before* the panel image is rendered, not in a separate `useEffect` that fires after render. The fix lives in the panel-change effect in `StoryReader.tsx`:
+**Goal:** Avoid a visible **NSFW → Freeroam → NSFW** (or ambient black/flicker) hop when Unrestricted Images is on.
 
-- On every panel change, instead of immediately resetting `nsfwImageUrl` to `null`, an async IIFE fires `checkImageReady` with the new panel's `freeroamImageUrl`.
-- If the cache returns `ready` + an image URL, `setNsfwImageUrl(cached.imageUrl)` is called before the component re-renders — the Freeroam image is never shown.
-- Only on a cache miss does it fall back to `null`, letting the NSFW generation effect handle new generation.
-- The previous `nsfwImageUrl` value is held until the lookup resolves, so there is no intermediate flash of the Freeroam image.
+#### Main panel image (`nsfwImageUrl`)
+
+Lives in the panel-change effect in `StoryReader.tsx`:
+
+- Prefer **session hit** (panel id or same Freeroam art key) and apply NSFW immediately — no intermediate `null`.
+- **Only clear** `nsfwImageUrl` when Freeroam **art identity actually changed** (prompt and/or source URL differ from the previous panel). Same-art story stretches keep the sticky NSFW replacement.
+- On art change (or first visit without a session hit), async `checkImageReady` may still restore a cached replacement for the new art; until then Freeroam art shows for the **main** portrait (correct for a new scene).
+
+#### Ambient backdrop (blurred sides)
+
+The desktop ambient layer is a **single** blurred `backgroundImage` of the current panel art (Freeroam-style `storyAmbientLayer` + drift animation). It is **not** a dual-layer crossfade.
+
+Mitigations in place:
+
+- Hold the **last fully decoded** ambient URL; do **not** clear ambient when `imageUrl` is briefly `null` mid-restore.
+- Compare images by **path base** (strip `?v=` cache-bust) so regenerate query params do not thrash ambient.
+- Only switch ambient after the next image has **preloaded** (`Image.onload`); until then keep the previous frame.
+
+#### Known remaining flash (local / Unrestricted on)
+
+Even with the above, **some ambient flash can still occur** when Unrestricted Images is enabled:
+
+1. **Hard URL swap** — one ambient layer; browser re-paints `backgroundImage` + expensive `blur(44px)` / scale / drift when the stable URL finally changes.
+2. **True art changes** — main panel switches to new Freeroam (or new NSFW); ambient follows after preload (one intentional cut, not a double hop).
+3. **CDN vs local NSFW URL** — Freeroam CDN vs `/api/nsfw-images/...` (or `/manus-storage/...`) are different bases even for “the same” scene after first generation; that forces an ambient update.
+4. **Dev vs deploy** — local hosting (Vite, local disk NSFW files, no Forge) often makes reloads and blur recomposites more visible. **Production** (stable CDN/Forge URLs, warmer browser cache, less Strict Mode churn) may be milder, but this is **not guaranteed** until verified on the deployment host.
+
+**Not yet implemented (if flash remains unacceptable):** dual ambient layers with a short opacity crossfade; or keep ambient on Freeroam-only art identity and never point ambient at `/api/nsfw-images` (trade-off: ambient may not match explicit main art).
 
 ### Action Text Handling
 
@@ -514,11 +606,29 @@ Triggered client-side in `StoryReader` when **all** of:
 2. Current panel has `images[0].prompt`  
 3. No session hit for this panel / art key, and no `ready` / `skipped` cache for this panel, freeroam image URL, or freeroam image prompt  
 4. Panel not already processed this session  
-5. **Non-empty `character_references`** after resolve (this panel **or** borrowed from a cached panel with the same freeroam image URL/prompt). **No refs → no classify/Seedream** (keep Freeroam art). Prevents mid-stretch generates with empty cast/headshots.
+5. **Non-empty `character_references`** after resolve (this panel **or** borrowed from a cached panel / session art map with the same freeroam image URL/prompt). **No refs → no classify/Seedream** (keep Freeroam art). Prevents mid-stretch generates with empty cast/headshots.
 
 **Reuse (no new Seedream):** same Freeroam **image prompt** or **image URL** as a previous `ready` generation (server cache + client sticky maps). Story can advance across many panels with the **same** Freeroam art — we keep the same NSFW replacement until Freeroam’s image prompt/URL changes.
 
 **Important Freeroam quirk:** `character_references` is typically present only on the panel where Freeroam **first generated/changed** that image. Later panels that reuse the same art often have **empty** `character_references`. Client resolves refs by searching `panelCache` for another panel with the same freeroam image URL or prompt that still has refs (usually the first panel that had that art). If neither has refs, generation is skipped until a panel with refs is loaded (or cache already has `ready` for that art).
+
+**Intentional:** gen/reuse can run on a panel that **itself** has empty refs if cast was borrowed for that art. The regenerate button still requires **own** refs on the current panel (source-art panel only).
+
+**Image prompt + Freeroam keeps the same art:** Freeroam may still attach `character_references` on the next panel. Same freeroam URL/prompt → art key reuse applies; not inherently broken. Trade-off: sticky NSFW follows Freeroam art identity, not the user’s failed “change image” intent.
+
+### Atlas generated but image not shown (fixed)
+
+**Symptom:** Atlas Cloud shows a completed Seedream job, but the reader still shows Freeroam art.
+
+**Causes addressed:**
+
+1. **Client poll aborted on effect cancel** — React Strict Mode / remount set `cancelled` and stopped `pollUntilSettled` while Seedream kept running; ready was never adopted. **Fix:** keep polling until ready/skipped/not_found even if the effect was cancelled; always `adoptReady` on success.
+2. **Art keys only used prompt** — session restore missed panels that only shared URL. **Fix:** index/lookup by **prompt and URL**.
+3. **Paint only if `panelId` matched** — gen finished after navigate/remount left maps filled but UI stuck. **Fix:** also paint if current panel shares the same Freeroam art.
+4. **Server lost claim after Seedream** — returned URL without writing `ready`. **Fix:** re-insert `ready` when possible; still return `imageUrl` so the client can display this session.
+5. **Regenerate session cleanup** — clear prompt + URL keys and same-art sibling panel entries so stale NSFW is not restored.
+
+Debug: main `<img onError>` logs `[NSFW] Failed to load replacement image` and reverts to Freeroam art if the URL 404s.
 
 ### Character References
 
@@ -596,7 +706,7 @@ Claim is inserted as `classifying`, then promoted to `generating` only after Dee
 
 ### Regenerate Button
 
-When a NSFW image is showing, a circular refresh icon appears in the reader top bar. Clicking it removes the panel from the processed set, clears the cached image, and triggers a new generation. The button only appears when `unrestrictedImagesEnabled` is true and `nsfwImageUrl` is set.
+When Unrestricted Images is on, a circular refresh icon appears in the reader top bar **only if the current panel has its own `character_references`** (source-art panel). Clicking it clears session maps + `image_cache` for that panel **and** same Freeroam art (URL/prompt siblings), then re-runs classify/Seedream. Panels that only **reuse** NSFW via art key do not show the button (by design).
 
 ### Badge Indicators
 
@@ -604,7 +714,7 @@ When a NSFW image is showing, a circular refresh icon appears in the reader top 
 - **IMG badge** (amber `#f59e0b`) — only while `status === 'generating'` (Seedream / Atlas image job).
 - **GEN badge** (amber) — ElevenLabs TTS generation (unrelated to images).
 
-Local dev without Manus Forge storage falls back to the Atlas CDN output URL so generated images still display.
+Local dev without Manus Forge storage re-hosts Seedream output under `data/nsfw-images/` and serves `/api/nsfw-images/*` (see `server/nsfwLocalStorage.ts`). Atlas raw CDN URLs are downloaded server-side first so the browser does not depend on short-lived/hotlink-blocked OSS links.
 
 ### Cache Management
 
@@ -641,7 +751,7 @@ The app uses the **Outfit** font family throughout, matching Freeroam's typograp
 
 The story reader uses `min(100vw, calc(100dvh * 9/16))` for the center panel width. On mobile (portrait, < ~600px viewport), `100vw` wins and the reader fills the full screen. On desktop, the 9:16 portrait column is used with an ambient blurred backdrop on the sides.
 
-The ambient backdrop uses Freeroam's exact CSS: a blurred, scaled copy of the panel image with a drift animation (`storyAmbientLayer`).
+The ambient backdrop uses Freeroam's exact CSS: a blurred, scaled copy of the panel image with a drift animation (`storyAmbientLayer`). With **Unrestricted Images** off, ambient usually tracks Freeroam CDN art and is relatively stable. With **Unrestricted Images** on, ambient is driven by the same display URL as the main panel (including local `/api/nsfw-images/...` replacements); see **Flash Prevention** under NSFW Image Generation for sticky-frame mitigations and known remaining flash.
 
 The bottom text clearance is a fixed `112px` — sized to clear the action bar (pill row + safe area) without the text position changing when the input row appears.
 
@@ -660,6 +770,9 @@ The choice panel is `absolute bottom-0` and uses `display: block` (not `flex fle
 
 ## Known Issues / Future Work
 
+- **Ambient backdrop flash with Unrestricted Images** — Confirmed more noticeable when unrestricted images are on (local/dev especially). Mitigations: sticky NSFW on same Freeroam art, hold last decoded ambient frame, ignore `?v=` when comparing, preload before ambient swap. **Still can flash** on hard `backgroundImage` + heavy blur repaint, true art changes, or Freeroam CDN ↔ local NSFW URL switches. May be milder on deployment (warmer CDN/cache) but verify there. Future fix if needed: dual ambient layers + short opacity crossfade. See NSFW **Flash Prevention**.
+- **Migrated collection covers without binaries** — DB may store `/manus-storage/collection-covers/...` from Manus without local files or Forge. UI falls back to mosaic/folder; re-upload covers (or copy files into `data/local-storage/`) to restore art. See Character Roster **Collection cover images**.
+- **World `external_id` is not creation order** — UUID freeroam world ids are not sequential; roster sort relies on Freeroam `sort=` API order (and numeric detail `id`), not client UUID sort.
 - **Text to Dialogue API** — ElevenLabs v3 supports a multi-turn dialogue endpoint that could improve delivery continuity. Currently blocked because it returns one combined audio file with no per-turn splitting. Would require ffmpeg or the timestamps endpoint to extract individual clips.
 - **Thumbs up/down** — UI exists in the reader rail but not wired to Freeroam's feedback endpoints.
 - **Narrator voice picker** — narrator voice is set via a raw voice ID in settings. A proper browse-and-assign dialog (same as character voice picker) would improve UX.
@@ -672,6 +785,18 @@ The choice panel is `absolute bottom-0` and uses `display: block` (not `flex fle
 
 ---
 
+## Storage paths (summary)
+
+| Public URL | When | Backend |
+|---|---|---|
+| `/manus-storage/{key}` | Collection covers, exports, TTS, NSFW when Forge on; **also** local `storagePut` path scheme | Forge signed GET via `storageProxy`, or file under `data/local-storage/` |
+| `/api/local-storage/{key}` | Legacy local-only URLs (still served) | `data/local-storage/` |
+| `/api/nsfw-images/{file}` | NSFW Seedream output without Forge | `data/nsfw-images/` |
+
+`storagePut` without Forge writes local disk and returns `/manus-storage/{key}` so migrated Manus URLs and new uploads share one scheme. Proxy always tries local file first.
+
+---
+
 ## Dev Environment
 
 The sandbox cannot make authenticated requests to Freeroam's API directly (IP-based blocking). The dev environment uses:
@@ -679,5 +804,6 @@ The sandbox cannot make authenticated requests to Freeroam's API directly (IP-ba
 - **`FREEROAM_DEV_COOKIE`** — full Freeroam session cookie (copied from browser DevTools) stored as a server env var. Must be the complete cookie string (not just the `session=` value). Used as fallback when no user cookie is in the `x-freeroam-cookie` header.
 - **`hasUserCookie` dev bypass** — in `NODE_ENV=development`, `hasUserCookie()` returns `true` when `FREEROAM_DEV_COOKIE` is set, so world/character endpoints don't gate on missing user cookie.
 - **Cookie expiry** — Freeroam session cookies expire. When the dev environment stops loading worlds (404 errors), update `FREEROAM_DEV_COOKIE` with a fresh cookie from DevTools and restart the dev server.
+- **No Forge env** — without `BUILT_IN_FORGE_API_URL` / `BUILT_IN_FORGE_API_KEY`, storage is local disk only; Manus-migrated `/manus-storage/` objects 404 until re-uploaded or files are copied into `data/local-storage/`.
 - **Production logs** — the production server runs on separate Manus infrastructure. Server-side `console.log` output is not accessible from the sandbox. For production debugging, use the database log approach or Atlas Cloud dashboard to observe API calls.
 

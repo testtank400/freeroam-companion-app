@@ -925,6 +925,10 @@ export const appRouter = router({
           cursor = data.next_cursor ?? "";
         }
 
+        // Preserve Freeroam's list order for the requested sort.
+        // The list payload has no created_at, but sort=recent|oldest|popular are
+        // honored server-side (recent matches sequential numeric world.id from
+        // the detail endpoint). Do NOT re-sort by external_id — those are random UUIDs.
         return allWorlds;
       }),
 
@@ -3444,19 +3448,33 @@ Respond with ONLY this JSON: {"prompt": "..."}`,
             finalUrl = await saveNsfwImageLocally(input.panelId, imgBuffer, ext);
           }
 
-          // Only write ready if we still own the generating claim (regenerate may have cleared it)
-          if (!(await stillOwnClaim('generating'))) {
-            console.warn(`[NSFW] Lost generating claim for ${input.panelId} after Seedream — not writing ready`);
-            return { imageUrl: finalUrl, fromCache: false, generating: false, aborted: true };
+          // Prefer updating our generating claim. If regenerate cleared it mid-flight, still
+          // persist ready so the client (and later panels) can adopt the Atlas output we paid for.
+          if (await stillOwnClaim('generating')) {
+            await db.update(imageCache).set({
+              status: 'ready',
+              imageUrl: finalUrl,
+              freeroamImageUrl: input.imageUrl ?? null,
+              freeroamImagePrompt: input.prompt || null,
+            }).where(eq(imageCache.panelId, input.panelId));
+          } else {
+            console.warn(`[NSFW] Lost generating claim for ${input.panelId} after Seedream — re-inserting ready`);
+            try {
+              await db.delete(imageCache).where(eq(imageCache.panelId, input.panelId));
+              await db.insert(imageCache).values({
+                panelId: input.panelId,
+                worldId: input.worldId,
+                status: 'ready',
+                imageUrl: finalUrl,
+                freeroamImageUrl: input.imageUrl ?? null,
+                freeroamImagePrompt: input.prompt || null,
+              });
+            } catch (persistErr) {
+              console.error('[NSFW] Failed to persist ready after lost claim:', persistErr);
+              // Still return the URL so the client can display it this session
+              return { imageUrl: finalUrl, fromCache: false, generating: false, aborted: true };
+            }
           }
-
-          // Update cache to ready — freeroamImageUrl + freeroamImagePrompt enable cross-panel reuse
-          await db.update(imageCache).set({
-            status: 'ready',
-            imageUrl: finalUrl,
-            freeroamImageUrl: input.imageUrl ?? null,
-            freeroamImagePrompt: input.prompt || null,
-          }).where(eq(imageCache.panelId, input.panelId));
 
           return { imageUrl: finalUrl, fromCache: false, generating: false };
         } catch (err) {

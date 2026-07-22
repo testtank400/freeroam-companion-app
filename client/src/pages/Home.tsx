@@ -61,6 +61,23 @@ const WORLD_SORT_OPTIONS: SortOption[] = [
   { value: 'popular',  label: 'Popular', description: 'Most interactions' },
 ];
 
+/**
+ * Order a subset of worlds to match the main roster order.
+ * Freeroam's collection detail endpoint does not honor sort (and often returns
+ * an empty worlds array for private collections). We resolve members against
+ * allWorlds, which is already ordered by the active worlds sort.
+ */
+function orderWorldsByRoster(worlds: ApiWorld[], roster: ApiWorld[]): ApiWorld[] {
+  if (worlds.length <= 1 || roster.length === 0) return worlds;
+  const rank = new Map(roster.map((w, i) => [w.external_id, i]));
+  return [...worlds].sort((a, b) => {
+    const ra = rank.has(a.external_id) ? rank.get(a.external_id)! : Number.MAX_SAFE_INTEGER;
+    const rb = rank.has(b.external_id) ? rank.get(b.external_id)! : Number.MAX_SAFE_INTEGER;
+    if (ra !== rb) return ra - rb;
+    return a.name.localeCompare(b.name);
+  });
+}
+
 export type ViewMode = 'characters' | 'worlds';
 
 export default function Home() {
@@ -87,8 +104,12 @@ export default function Home() {
     setIsLoadingWorlds(true);
     setAllWorlds([]);
     try {
-      const result = await utils.worlds.listAll.fetch({ sort: sortToUse });
-      setAllWorlds(result as ApiWorld[]);
+      const result = (await utils.worlds.listAll.fetch({ sort: sortToUse })) as ApiWorld[];
+      setAllWorlds(result);
+      // If a world collection is open, re-order its members to match the new sort
+      setWorldCollectionWorlds((prev) =>
+        prev.length > 0 ? orderWorldsByRoster(prev, result) : prev
+      );
     } catch (err) {
       const msg = err instanceof Error ? err.message : '';
       if (msg.includes('401') || msg.includes('SESSION_EXPIRED') || msg.includes('Unauthorized')) {
@@ -168,27 +189,33 @@ export default function Home() {
 
   // Fetch worlds inside a specific collection when one is selected.
   // Uses local DB membership to include private worlds that Freeroam hides.
+  // Order follows the main roster (allWorlds), which respects the active sort.
   const openWorldCollection = useCallback(async (collectionId: string) => {
     setActiveWorldCollectionId(collectionId);
     setIsLoadingCollectionWorlds(true);
     setWorldCollectionWorlds([]);
     try {
-      // Fetch from Freeroam API (may omit private worlds)
+      // Fetch from Freeroam API (often returns [] for private collections)
       const result = await utils.worldCollections.get.fetch({ collectionId });
       const apiWorlds = result.worlds as ApiWorld[];
-      const returnedIds = new Set(apiWorlds.map(w => w.external_id));
 
       // Fetch local membership (includes private world IDs)
       const localMemberIds = await utils.worldCollections.getMembers.fetch({ collectionId });
 
-      // Find private worlds that are in our local DB but not in the API response
-      const missingPrivateWorlds = localMemberIds
-        .filter(id => !returnedIds.has(id))
-        .map(id => allWorlds.find(w => w.external_id === id))
-        .filter((w): w is ApiWorld => w !== undefined);
+      // Build membership set from local DB + any API worlds
+      const memberIds = new Set<string>([
+        ...localMemberIds,
+        ...apiWorlds.map((w) => w.external_id),
+      ]);
 
-      // Combine: API worlds + locally-tracked private worlds
-      setWorldCollectionWorlds([...apiWorlds, ...missingPrivateWorlds]);
+      // Prefer roster order (already sorted by worldsSort via listAll)
+      const fromRoster = allWorlds.filter((w) => memberIds.has(w.external_id));
+      const fromRosterIds = new Set(fromRoster.map((w) => w.external_id));
+
+      // API-only worlds not in the current roster (edge case)
+      const fromApiOnly = apiWorlds.filter((w) => !fromRosterIds.has(w.external_id));
+
+      setWorldCollectionWorlds(orderWorldsByRoster([...fromRoster, ...fromApiOnly], allWorlds));
     } catch {
       toast.error('Failed to load collection worlds.');
     } finally {
@@ -1043,11 +1070,13 @@ export default function Home() {
                 )}
                 {!isLoadingCollectionWorlds && worldCollectionWorlds.length > 0 && (
                   <div className="grid grid-cols-1 min-[400px]:grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-4">
-                    {worldCollectionWorlds
-                      .filter(w => {
+                    {orderWorldsByRoster(
+                      worldCollectionWorlds.filter(w => {
                         const q = worldsSearchQuery.trim().toLowerCase();
                         return !q || w.name.toLowerCase().includes(q) || w.logline.toLowerCase().includes(q);
-                      })
+                      }),
+                      allWorlds
+                    )
                       .map(world => (
                          <WorldCard
                           key={world.external_id}
@@ -1278,6 +1307,7 @@ export default function Home() {
                 style={selectedWorldIds.size > 0 ? { userSelect: 'none' } : undefined}
               >
                 {(() => {
+                  // Keep Freeroam list order (sort is applied when fetching listAll)
                   const visibleWorlds = allWorlds.filter(w => {
                     const q = worldsSearchQuery.trim().toLowerCase();
                     const matchesPrivacy = !worldsPrivacyFilter || w.privacy_status === worldsPrivacyFilter;
