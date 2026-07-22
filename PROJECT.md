@@ -101,10 +101,12 @@ These same local character collections are what the in-reader CharacterPanel **C
 
 Cover uploads go through `collections.uploadCoverImage` → `storagePut`:
 
-- **Forge configured** → file on Manus S3; public path `/manus-storage/{key}` (proxy redirects to signed URL).
-- **Forge not configured (typical local/docker)** → file under `data/local-storage/`; public path also **`/manus-storage/{key}`** so one URL scheme works everywhere. `storageProxy` serves the local file when present.
+- **Forge configured** → file on Manus S3; public path `/manus-storage/{key}` (`storageProxy` tries local disk first, else signed S3 redirect).
+- **Forge not configured (typical local/docker)** → file under `data/local-storage/`; public path **`/api/local-storage/{key}`** (same as before the mid-2026 storage URL experiment).
 
-**Migrated Manus DB rows** often still point at `/manus-storage/collection-covers/...` without the binary files on disk and without Forge. Those covers **404** until the user re-uploads or files are copied into `data/local-storage/collection-covers/`. UI (roster cards, CharacterPanel folder list, delete dialog) falls back to headshot mosaic / folder icon on load error — not a permanent broken-image icon.
+**Migrated Manus DB rows** often still point at `/manus-storage/collection-covers/...`. With Forge, the proxy can still serve them from S3. Without Forge (or missing objects), those covers **404** until re-upload or files exist under `data/local-storage/collection-covers/` (proxy local-first). UI falls back to headshot mosaic / folder icon on load error.
+
+**Note:** A brief experiment returned `/manus-storage/` for local-only `storagePut` too; that was **reverted**. It could not drop MySQL collection rows, but local URL scheme is restored for max compatibility with pre-existing installs.
 
 ### NSFW Flags
 
@@ -789,11 +791,11 @@ The choice panel is `absolute bottom-0` and uses `display: block` (not `flex fle
 
 | Public URL | When | Backend |
 |---|---|---|
-| `/manus-storage/{key}` | Collection covers, exports, TTS, NSFW when Forge on; **also** local `storagePut` path scheme | Forge signed GET via `storageProxy`, or file under `data/local-storage/` |
-| `/api/local-storage/{key}` | Legacy local-only URLs (still served) | `data/local-storage/` |
+| `/manus-storage/{key}` | Forge uploads (covers, exports, TTS, etc.); DB rows from Manus migration | `storageProxy`: local `data/local-storage/{key}` if present, else Forge signed redirect |
+| `/api/local-storage/{key}` | Local `storagePut` when Forge is **not** configured | `data/local-storage/` via `registerLocalStorageRoutes` |
 | `/api/nsfw-images/{file}` | NSFW Seedream output without Forge | `data/nsfw-images/` |
 
-`storagePut` without Forge writes local disk and returns `/manus-storage/{key}` so migrated Manus URLs and new uploads share one scheme. Proxy always tries local file first.
+Do **not** unify local puts onto `/manus-storage/` unless both proxy and local routes are verified on every deploy target — local installs historically used `/api/local-storage/`.
 
 ---
 
