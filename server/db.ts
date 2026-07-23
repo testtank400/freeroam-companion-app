@@ -1,15 +1,42 @@
 import { and, eq, inArray } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
+import { createPool } from "mysql2";
 import { characterExtended, characterNsfw, collectionMembers, collections, freeroamUsers, InsertUser, users, worldCollectionMembers } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
 let _db: ReturnType<typeof drizzle> | null = null;
 
+/**
+ * TiDB Cloud requires TLS. A bare DATABASE_URL (no ssl) fails on first query with
+ * "Connections using insecure transport are prohibited" — which drizzle surfaces
+ * as a generic "Failed query: insert into freeroam_users...".
+ * Enabling ssl in the URL as ?ssl={"rejectUnauthorized":true} is fragile in Railway.
+ * Force SSL for TiDB (and when DATABASE_SSL=true), and strip any ssl= query fragment.
+ */
+function createDbPool(databaseUrl: string) {
+  const needsSsl =
+    /tidbcloud\.com/i.test(databaseUrl) ||
+    /[?&]ssl=/i.test(databaseUrl) ||
+    process.env.DATABASE_SSL === "1" ||
+    process.env.DATABASE_SSL === "true";
+
+  const uri = databaseUrl
+    .replace(/([?&])ssl=[^&]*/gi, "$1")
+    .replace(/[?&]$/, "")
+    .replace(/\?&/, "?")
+    .replace(/&&+/g, "&");
+
+  return createPool({
+    uri,
+    ...(needsSsl ? { ssl: { rejectUnauthorized: true } } : {}),
+  });
+}
+
 // Lazily create the drizzle instance so local tooling can run without a DB.
 export async function getDb() {
   if (!_db && process.env.DATABASE_URL) {
     try {
-      _db = drizzle(process.env.DATABASE_URL);
+      _db = drizzle(createDbPool(process.env.DATABASE_URL));
     } catch (error) {
       console.warn("[Database] Failed to connect:", error);
       _db = null;
