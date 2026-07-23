@@ -54,6 +54,19 @@ function hasUserCookie(ctx: { req: { headers: Record<string, string | string[] |
 }
 
 /**
+ * Paid API spend (ElevenLabs / Atlas / Grok image gen) requires a *user-provided*
+ * Freeroam cookie header — never the server env fallback alone. Stops site-password
+ * holders without a connected Freeroam session from burning credits.
+ */
+function requireUserFreeroamCookie(ctx: { req: { headers: Record<string, string | string[] | undefined> } }): void {
+  const userCookie = ctx.req.headers['x-freeroam-cookie'];
+  if (userCookie && typeof userCookie === 'string' && userCookie.trim()) return;
+  // Local dev convenience only — production never spends on env cookie alone
+  if (process.env.NODE_ENV === 'development' && process.env.FREEROAM_DEV_COOKIE) return;
+  throw new Error('Freeroam cookie required — connect your session in Settings before using this feature');
+}
+
+/**
  * Get the Freeroam account ID from the x-freeroam-account-id header.
  * Returns null if not present or invalid.
  */
@@ -2193,7 +2206,8 @@ export const appRouter = router({
   // ─── ElevenLabs Voice ───────────────────────────────────────────────────────
   voice: router({
     /** List all available ElevenLabs voices for the user */
-    listVoices: publicProcedure.query(async () => {
+    listVoices: publicProcedure.query(async ({ ctx }) => {
+      requireUserFreeroamCookie(ctx);
       const apiKey = process.env.ELEVEN_LABS_API_KEY;
       if (!apiKey) throw new Error('ElevenLabs API key not configured');
       const res = await fetch('https://api.elevenlabs.io/v2/voices?page_size=100', {
@@ -2215,7 +2229,8 @@ export const appRouter = router({
         audioMimeType: z.string().default('audio/mpeg'),
         audioFileName: z.string().default('sample.mp3'),
       }))
-      .mutation(async ({ input }) => {
+      .mutation(async ({ input, ctx }) => {
+        requireUserFreeroamCookie(ctx);
         const apiKey = process.env.ELEVEN_LABS_API_KEY;
         if (!apiKey) throw new Error('ElevenLabs API key not configured');
 
@@ -2331,7 +2346,7 @@ export const appRouter = router({
         characterName: z.string(), // 'narrator' for narration
         characterId: z.string().optional(), // Freeroam character external_id — required for spoken dialogue
         text: z.string(),
-        voiceId: z.string(),
+        voiceId: z.string(), // ElevenLabs voice id
         stability: z.string().optional().default('0.5'),
         similarityBoost: z.string().optional().default('0.75'),
         style: z.string().optional().default('0'),
@@ -2341,7 +2356,8 @@ export const appRouter = router({
         nextText: z.string().nullable().optional(), // Next panel dialogue for context
         nextVoiceId: z.string().nullable().optional(), // Next panel voice ID
       }))
-      .mutation(async ({ input }) => {
+      .mutation(async ({ input, ctx }) => {
+        requireUserFreeroamCookie(ctx);
         const { getDb } = await import('./db');
         const { ttsCache } = await import('../drizzle/schema');
         const { eq, and } = await import('drizzle-orm');
@@ -2591,7 +2607,8 @@ export const appRouter = router({
         style: z.string().optional().default('0'),
         languageCode: z.string().nullable().optional(),
       }))
-      .mutation(async ({ input }) => {
+      .mutation(async ({ input, ctx }) => {
+        requireUserFreeroamCookie(ctx);
         const apiKey = process.env.ELEVEN_LABS_API_KEY;
         if (!apiKey) throw new Error('ElevenLabs API key not configured');
         const testBody: Record<string, unknown> = {
@@ -2668,6 +2685,7 @@ export const appRouter = router({
         debug: z.boolean().optional().default(false),
       }))
       .mutation(async ({ input, ctx }) => {
+        requireUserFreeroamCookie(ctx);
         const { getDb } = await import('./db');
         const { imageCache } = await import('../drizzle/schema');
         const { eq } = await import('drizzle-orm');

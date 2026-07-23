@@ -251,6 +251,16 @@ export default function SettingsModal({ open, onClose, characters = [], characte
     setTimeout(() => window.location.reload(), 300);
   };
 
+  const handleSiteSignOut = async () => {
+    try {
+      await fetch('/api/site-auth/logout', { method: 'POST', credentials: 'include' });
+    } catch {
+      // still force gate even if network fails
+    }
+    window.dispatchEvent(new Event('site-auth-required'));
+    onClose();
+  };
+
   const handleBackdropClick = (e: React.MouseEvent<HTMLDivElement>) => {
     if (e.target === e.currentTarget) onClose();
   };
@@ -547,22 +557,37 @@ export default function SettingsModal({ open, onClose, characters = [], characte
 
         {/* Footer */}
         <div
-          className="flex items-center justify-between px-5 py-4"
+          className="flex items-center justify-between px-5 py-4 gap-2 flex-wrap"
           style={{ borderTop: '1px solid oklch(1 0 0 / 0.07)' }}
         >
-          <button
-            onClick={handleClear}
-            disabled={!hasCookie || status === 'verifying'}
-            className="px-3 py-1.5 rounded-sm text-xs font-semibold tracking-wider uppercase transition-all disabled:opacity-30"
-            style={{
-              fontFamily: 'Rajdhani, sans-serif',
-              background: 'transparent',
-              border: '1px solid oklch(0.65 0.22 25 / 0.4)',
-              color: 'oklch(0.65 0.22 25)',
-            }}
-          >
-            Disconnect
-          </button>
+          <div className="flex gap-2 flex-wrap">
+            <button
+              onClick={handleClear}
+              disabled={!hasCookie || status === 'verifying'}
+              className="px-3 py-1.5 rounded-sm text-xs font-semibold tracking-wider uppercase transition-all disabled:opacity-30"
+              style={{
+                fontFamily: 'Rajdhani, sans-serif',
+                background: 'transparent',
+                border: '1px solid oklch(0.65 0.22 25 / 0.4)',
+                color: 'oklch(0.65 0.22 25)',
+              }}
+            >
+              Disconnect Freeroam
+            </button>
+            <button
+              onClick={handleSiteSignOut}
+              className="px-3 py-1.5 rounded-sm text-xs font-semibold tracking-wider uppercase transition-all hover:brightness-110"
+              style={{
+                fontFamily: 'Rajdhani, sans-serif',
+                background: 'transparent',
+                border: '1px solid oklch(1 0 0 / 0.15)',
+                color: 'oklch(0.55 0.01 264)',
+              }}
+              title="Sign out of this site (keeps Freeroam cookie in browser until you Disconnect Freeroam)"
+            >
+              Site sign out
+            </button>
+          </div>
           <div className="flex gap-2">
             <button
               onClick={handleSave}

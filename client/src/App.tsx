@@ -1,5 +1,6 @@
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import SiteAuthGate from "@/components/SiteAuthGate";
 import NotFound from "@/pages/NotFound";
 import { Route, Switch } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
@@ -33,7 +34,9 @@ function App() {
               },
             }}
           />
-          <Router />
+          <SiteAuthGate>
+            <Router />
+          </SiteAuthGate>
         </TooltipProvider>
       </ThemeProvider>
     </ErrorBoundary>

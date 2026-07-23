@@ -8,6 +8,12 @@ import { registerStorageProxy } from "./storageProxy";
 import { registerExportRoute } from "../exportRoute";
 import { registerNsfwImageRoutes } from "../nsfwLocalStorage";
 import { registerLocalStorageRoutes } from "../storage";
+import {
+  isSiteAuthRequired,
+  registerSiteAuthRoutes,
+  siteAuthApiMiddleware,
+  siteAuthStorageMiddleware,
+} from "../siteAuth";
 
 import { appRouter } from "../routers";
 import { createContext } from "./context";
@@ -38,6 +44,13 @@ async function startServer() {
   // Configure body parser with larger size limit for file uploads
   app.use(express.json({ limit: "50mb" }));
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
+
+  // Site auth: login/status/logout (public) then gate all other /api/*
+  registerSiteAuthRoutes(app);
+  app.use("/api", siteAuthApiMiddleware);
+  // Storage paths are not under /api for manus-storage
+  app.use("/manus-storage", siteAuthStorageMiddleware);
+
   registerStorageProxy(app);
   registerOAuthRoutes(app);
   registerExportRoute(app);
@@ -68,6 +81,11 @@ async function startServer() {
 
   server.listen(port, () => {
     console.log(`Server running on http://localhost:${port}/`);
+    if (isSiteAuthRequired()) {
+      console.log("[SiteAuth] Enabled — APIs require companion_site_session cookie");
+    } else {
+      console.log("[SiteAuth] Disabled (no SITE_PASSWORD; non-production)");
+    }
   });
 }
 

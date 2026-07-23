@@ -7,4 +7,8 @@ export const ENV = {
   isProduction: process.env.NODE_ENV === "production",
   forgeApiUrl: process.env.BUILT_IN_FORGE_API_URL ?? "",
   forgeApiKey: process.env.BUILT_IN_FORGE_API_KEY ?? "",
+  /** Shared site password — when set (or in production), gates the whole app */
+  sitePassword: process.env.SITE_PASSWORD ?? "",
+  /** Signs companion_site_session JWT; falls back to JWT_SECRET if unset */
+  siteSessionSecret: process.env.SITE_SESSION_SECRET ?? process.env.JWT_SECRET ?? "",
 };

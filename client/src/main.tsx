@@ -5,26 +5,33 @@ import { httpBatchLink, TRPCClientError } from "@trpc/client";
 import { createRoot } from "react-dom/client";
 import superjson from "superjson";
 import App from "./App";
-import { getLoginUrl } from "./const";
 import "./index.css";
 
 const queryClient = new QueryClient();
 
-const redirectToLoginIfUnauthorized = (error: unknown) => {
-  if (!(error instanceof TRPCClientError)) return;
+/** Site session expired / missing — show login gate (not Manus OAuth). */
+const showSiteLoginIfUnauthorized = (error: unknown) => {
   if (typeof window === "undefined") return;
 
-  const isUnauthorized = error.message === UNAUTHED_ERR_MSG;
-
-  if (!isUnauthorized) return;
-
-  window.location.href = getLoginUrl();
+  // Express site-auth middleware returns JSON 401 on /api/*
+  if (error instanceof TRPCClientError) {
+    const msg = error.message || "";
+    const data = error.data as { httpStatus?: number; code?: string } | undefined;
+    const isSiteAuth =
+      data?.httpStatus === 401 ||
+      msg.includes("SITE_AUTH_REQUIRED") ||
+      msg.includes("Site authentication required") ||
+      msg === UNAUTHED_ERR_MSG;
+    if (isSiteAuth) {
+      window.dispatchEvent(new Event("site-auth-required"));
+    }
+  }
 };
 
 queryClient.getQueryCache().subscribe(event => {
   if (event.type === "updated" && event.action.type === "error") {
     const error = event.query.state.error;
-    redirectToLoginIfUnauthorized(error);
+    showSiteLoginIfUnauthorized(error);
     console.error("[API Query Error]", error);
   }
 });
@@ -32,7 +39,7 @@ queryClient.getQueryCache().subscribe(event => {
 queryClient.getMutationCache().subscribe(event => {
   if (event.type === "updated" && event.action.type === "error") {
     const error = event.mutation.state.error;
-    redirectToLoginIfUnauthorized(error);
+    showSiteLoginIfUnauthorized(error);
     console.error("[API Mutation Error]", error);
   }
 });

@@ -43,23 +43,42 @@ The app is a companion reader and character/world manager for [Freeroam](https:/
 
 ## Authentication & Session Management
 
-The app uses **two separate auth layers**:
+The app uses **two live auth layers** (plus dormant Manus OAuth scaffolding that is not used for product login):
 
-1. **Manus OAuth** — standard OAuth flow for the app itself. Each visitor can log in with their Manus account. The `ctx.user` object is available in all tRPC procedures.
+### Layer 1 — Site access (shared password)
 
-2. **Freeroam session cookie** — a separate cookie from `getfreeroam.com` that the user pastes into the Settings modal. This cookie is stored in `localStorage` (never in the database) and sent as the `x-freeroam-cookie` request header on every API call. The server uses it to proxy requests to Freeroam's API on behalf of the user.
+Gates who may use the deployed app at all (stops random visitors from hitting APIs / burning paid keys).
 
-### Cookie Flow
+| Piece | Detail |
+|-------|--------|
+| Env | `SITE_PASSWORD` (shared invite secret), `SITE_SESSION_SECRET` (JWT signing; may fall back to `JWT_SECRET`) |
+| Cookie | httpOnly `companion_site_session` (30 days, `SameSite=Lax`) |
+| Routes | `GET /api/site-auth/status`, `POST /api/site-auth/login`, `POST /api/site-auth/logout` |
+| Enforcement | Express middleware on `/api/*` (except site-auth) and `/manus-storage`; login UI via `SiteAuthGate` |
+| When required | If `SITE_PASSWORD` is set, **or** always in production (`NODE_ENV=production`) |
+| Local dev | Leave `SITE_PASSWORD` unset → auth disabled |
 
-The server function `getFreeroamCookie(ctx)` checks for the `x-freeroam-cookie` header first, then falls back to the owner's environment cookie (`process.env.cookie`). This means the app owner can pre-configure a default cookie so the app works out of the box, while individual users can override it with their own.
+Settings → **Site sign out** clears the site session (does not clear Freeroam localStorage).
 
-`hasUserCookie(ctx)` returns `true` only when a user-provided cookie is present. Character-loading endpoints gate on this — users without a cookie see an empty roster rather than the owner's characters.
+### Layer 2 — Freeroam session cookie
+
+Which Freeroam account’s library and local DB rows to use.
+
+- User pastes cookie from `getfreeroam.com` into Settings.
+- Stored in `localStorage` (`freeroam_cookie`, `freeroam_account_id`, `freeroam_username`).
+- Sent as `x-freeroam-cookie` + `x-freeroam-account-id` on every tRPC call.
+- Server `getFreeroamCookie(ctx)` prefers the header, then falls back to `FREEROAM_DEV_COOKIE` / `cookie` env (owner convenience).
+- `hasUserCookie(ctx)` is true when a **user-provided** header cookie is present (or env cookie in **development** only).
+- Character/world lists gate on `hasUserCookie` so strangers do not see the owner’s Freeroam roster.
+- **Paid spend** (ElevenLabs `voice.*` TTS/clone/test, NSFW image gen) also requires a user-provided Freeroam cookie via `requireUserFreeroamCookie` — site password alone is not enough to burn credits.
 
 ### Identity Persistence
 
-When a user saves their cookie, `verifySession` is called to validate it and retrieve the user's stable `accountId` from Freeroam. This `accountId` is stored alongside the cookie in `localStorage` and sent as `x-freeroam-account-id`. All user data (collections, NSFW flags, world collection memberships) is keyed by `accountId` rather than by username or cookie value, so data persists across cookie expiry and username changes.
+When a user saves their cookie, `verifySession` validates it and upserts `freeroam_users` with Freeroam `accountId`. Collections, NSFW flags, and world-collection memberships are keyed by `accountId`.
 
-The `freeroam_users` table stores a mapping of `accountId → username` for display purposes.
+### Manus OAuth (unused)
+
+`users` table, `app_session_id` JWT, and `/api/oauth/callback` remain in the codebase but are **not** the product login path. Do not set `VITE_OAUTH_PORTAL_URL` expecting a gate — use `SITE_PASSWORD` instead.
 
 ---
 
