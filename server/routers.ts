@@ -5,7 +5,7 @@ import { publicProcedure, router } from "./_core/trpc";
 import { z } from "zod";
 import { ENV } from "./_core/env";
 import { storagePut } from "./storage";
-import { saveNsfwImageLocally } from "./nsfwLocalStorage";
+import { isNsfwCachedUrlReachable, saveNsfwImageLocally } from "./nsfwLocalStorage";
 import {
   addCharacterToCollection,
   addWorldToCollectionLocal,
@@ -3138,6 +3138,19 @@ export const appRouter = router({
 
         let existing = await readPanelCache();
         if (existing && (await releaseIfStale(existing))) existing = null;
+        // Drop ready rows whose blob is gone (common after TiDB→local migrate: /manus-storage/* missing)
+        if (
+          existing &&
+          existing.status === "ready" &&
+          existing.imageUrl &&
+          !isNsfwCachedUrlReachable(existing.imageUrl)
+        ) {
+          console.warn(
+            `[NSFW] Dropping dead ready cache for panel ${input.panelId}: ${existing.imageUrl.slice(0, 120)}`,
+          );
+          await db.delete(imageCache).where(eq(imageCache.panelId, input.panelId));
+          existing = null;
+        }
         if (existing) {
           if (existing.status === 'ready' && existing.imageUrl) {
             return { imageUrl: existing.imageUrl, fromCache: true, generating: false };
@@ -3159,6 +3172,12 @@ export const appRouter = router({
         // Freeroam often advances story panels without changing the art; prompt is the reliable "image changed" signal.
         const tryReuseReady = async (row: { status: string; imageUrl: string | null; freeroamImageUrl?: string | null }) => {
           if (row.status !== 'ready' || !row.imageUrl) return null;
+          if (!isNsfwCachedUrlReachable(row.imageUrl)) {
+            console.warn(
+              `[NSFW] Skipping dead reuse URL for panel ${input.panelId}: ${row.imageUrl.slice(0, 120)}`,
+            );
+            return null;
+          }
           await db.insert(imageCache).values({
             panelId: input.panelId,
             worldId: input.worldId,
@@ -3942,7 +3961,20 @@ Respond with ONLY this JSON: {"prompt": "..."}`,
         // Check by panelId first
         const rows = await db.select().from(imageCache).where(eq(imageCache.panelId, input.panelId)).limit(1);
         if (rows.length) {
-          return { status: rows[0].status, imageUrl: rows[0].imageUrl || null };
+          const row = rows[0];
+          if (
+            row.status === "ready" &&
+            row.imageUrl &&
+            !isNsfwCachedUrlReachable(row.imageUrl)
+          ) {
+            console.warn(
+              `[NSFW] checkImageReady: dead blob for panel ${input.panelId}, clearing cache row`,
+            );
+            await db.delete(imageCache).where(eq(imageCache.panelId, input.panelId));
+            // fall through to URL/prompt reuse checks
+          } else {
+            return { status: row.status, imageUrl: row.imageUrl || null };
+          }
         }
         // Same Freeroam source image URL
         if (input.freeroamImageUrl) {
@@ -3951,7 +3983,11 @@ Respond with ONLY this JSON: {"prompt": "..."}`,
             .limit(1);
           if (urlRows.length) {
             if (urlRows[0].status === 'ready' && urlRows[0].imageUrl) {
-              return { status: 'ready', imageUrl: urlRows[0].imageUrl };
+              if (!isNsfwCachedUrlReachable(urlRows[0].imageUrl)) {
+                // Don't return a known-404 path; leave row for generate path to reclaim
+              } else {
+                return { status: 'ready', imageUrl: urlRows[0].imageUrl };
+              }
             }
             if (urlRows[0].status === 'generating' || urlRows[0].status === 'classifying' || urlRows[0].status === 'skipped') {
               return { status: urlRows[0].status, imageUrl: urlRows[0].imageUrl || null };
@@ -3965,7 +4001,9 @@ Respond with ONLY this JSON: {"prompt": "..."}`,
             .limit(1);
           if (promptRows.length) {
             if (promptRows[0].status === 'ready' && promptRows[0].imageUrl) {
-              return { status: 'ready', imageUrl: promptRows[0].imageUrl };
+              if (isNsfwCachedUrlReachable(promptRows[0].imageUrl)) {
+                return { status: 'ready', imageUrl: promptRows[0].imageUrl };
+              }
             }
             if (promptRows[0].status === 'generating' || promptRows[0].status === 'classifying' || promptRows[0].status === 'skipped') {
               return { status: promptRows[0].status, imageUrl: promptRows[0].imageUrl || null };
@@ -3998,6 +4036,96 @@ Respond with ONLY this JSON: {"prompt": "..."}`,
           await db.delete(imageCache).where(eq(imageCache.freeroamImageUrl, input.freeroamImageUrl));
         }
         return { ok: true };
+      }),
+
+    /**
+     * Manually seed image_cache with a user-uploaded image for this panel.
+     * Use when a good Seedream result was lost (migration, cache clear, bug) and
+     * you still have the file — skips Atlas and writes a ready cache row.
+     */
+    uploadNsfwImageCache: publicProcedure
+      .input(
+        z.object({
+          panelId: z.string().min(1),
+          worldId: z.string().min(1),
+          /** Raw base64 (no data: URL prefix) */
+          fileBase64: z.string().min(1),
+          mimeType: z.string().default("image/jpeg"),
+          freeroamImageUrl: z.string().nullable().optional(),
+          freeroamImagePrompt: z.string().nullable().optional(),
+        })
+      )
+      .mutation(async ({ input, ctx }) => {
+        requireUserFreeroamCookie(ctx);
+        const { getDb } = await import("./db");
+        const { imageCache } = await import("../drizzle/schema");
+        const { eq } = await import("drizzle-orm");
+        const db = await getDb();
+        if (!db) throw new Error("Database not available");
+
+        const mime = (input.mimeType || "image/jpeg").toLowerCase();
+        if (!mime.startsWith("image/")) {
+          throw new Error("Only image files can be uploaded to the NSFW cache");
+        }
+        const buffer = Buffer.from(input.fileBase64, "base64");
+        if (buffer.length < 32) throw new Error("Image data is empty or invalid");
+        // Soft cap ~12MB decoded
+        if (buffer.length > 12 * 1024 * 1024) {
+          throw new Error("Image too large (max ~12 MB)");
+        }
+
+        const ext = mime.includes("png")
+          ? "png"
+          : mime.includes("webp")
+            ? "webp"
+            : mime.includes("gif")
+              ? "gif"
+              : "jpeg";
+
+        let finalUrl: string;
+        const { ENV } = await import("./_core/env");
+        if (ENV.forgeApiUrl && ENV.forgeApiKey) {
+          try {
+            const { storagePut } = await import("./storage");
+            const { url } = await storagePut(
+              `nsfw-images/${input.panelId}.${ext}`,
+              buffer,
+              mime,
+            );
+            finalUrl = url;
+          } catch (err) {
+            console.error("[NSFW] uploadNsfwImageCache forge failed, local fallback:", err);
+            finalUrl = await saveNsfwImageLocally(input.panelId, buffer, ext);
+          }
+        } else {
+          finalUrl = await saveNsfwImageLocally(input.panelId, buffer, ext);
+        }
+
+        const prompt = input.freeroamImagePrompt?.trim() || null;
+        const freeroamUrl = input.freeroamImageUrl?.trim() || null;
+
+        // Clear this panel + same Freeroam art keys so we don't leave skipped/dead rows
+        await db.delete(imageCache).where(eq(imageCache.panelId, input.panelId));
+        if (prompt) {
+          await db.delete(imageCache).where(eq(imageCache.freeroamImagePrompt, prompt));
+        }
+        if (freeroamUrl) {
+          await db.delete(imageCache).where(eq(imageCache.freeroamImageUrl, freeroamUrl));
+        }
+
+        await db.insert(imageCache).values({
+          panelId: input.panelId,
+          worldId: input.worldId,
+          status: "ready",
+          imageUrl: finalUrl,
+          freeroamImageUrl: freeroamUrl,
+          freeroamImagePrompt: prompt,
+        });
+
+        console.log(
+          `[NSFW] Manual cache upload for panel ${input.panelId} → ${finalUrl.slice(0, 100)}`,
+        );
+        return { imageUrl: finalUrl, fromCache: false, uploaded: true };
       }),
 
     /** Set an app setting */

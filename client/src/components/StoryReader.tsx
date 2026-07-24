@@ -15,8 +15,8 @@ import { ApiWorld } from '@/components/WorldCard';
 import StoryMenu from '@/components/StoryMenu';
 import CharacterPanel from '@/components/CharacterPanel';
 import { ActionBarComposer, ChoiceComposer } from '@/components/StoryActionComposers';
-import { Bookmark, ChevronLeft, ChevronRight, X, Loader2, ImageIcon, Home, ChevronDown, ChevronUp, Zap, Clapperboard, Users, Image as ImageLucide, Share2, RefreshCw } from 'lucide-react';
-import { useCallback, useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
+import { Bookmark, ChevronLeft, ChevronRight, X, Loader2, ImageIcon, Home, ChevronDown, ChevronUp, Zap, Clapperboard, Users, Image as ImageLucide, Share2, RefreshCw, Upload } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type ChangeEvent } from 'react';
 import { toast } from 'sonner';
 
 interface StoryReaderProps {
@@ -435,6 +435,9 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
   const nsfwRunIdRef = useRef(0);
   const generateNsfwImageMutation = trpc.voice.generateNsfwImage.useMutation();
   const clearImageCacheEntryMutation = trpc.voice.clearImageCacheEntry.useMutation();
+  const uploadNsfwImageCacheMutation = trpc.voice.uploadNsfwImageCache.useMutation();
+  const nsfwUploadInputRef = useRef<HTMLInputElement>(null);
+  const [isUploadingNsfwImage, setIsUploadingNsfwImage] = useState(false);
   const { data: unrestrictedImagesSettingData } = trpc.voice.getSetting.useQuery({ key: 'unrestricted_images' });
   const unrestrictedImagesEnabled = unrestrictedImagesSettingData === 'true';
 
@@ -2273,6 +2276,9 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
     && !!currentPanel
     && Object.keys(getPanelCharacterReferences(currentPanel)).length > 0;
 
+  /** Upload into cache only needs unrestricted mode + a panel (no character_refs required). */
+  const canUploadNsfwImage = unrestrictedImagesEnabled && !!currentPanel;
+
   const handleRegenerateNsfwImage = useCallback(async () => {
     if (!currentPanel) return;
     const panelId = currentPanel.panel_id;
@@ -2309,6 +2315,75 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
     }
     setNsfwRegenNonce(n => n + 1);
   }, [currentPanel, clearImageCacheEntryMutation, freeroamArtKey]);
+
+  /** Seed image_cache from a local file (no Atlas) and show it on this panel / same art. */
+  const handleUploadNsfwImageFile = useCallback(async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    // Allow re-selecting the same file later
+    e.target.value = '';
+    if (!file || !currentPanel) return;
+    if (!file.type.startsWith('image/')) {
+      toast.error('Please choose an image file');
+      return;
+    }
+    if (file.size > 12 * 1024 * 1024) {
+      toast.error('Image too large (max 12 MB)');
+      return;
+    }
+
+    const panelId = currentPanel.panel_id;
+    const img0 = currentPanel.panel_content?.images?.[0];
+    const artKey = freeroamArtKey(img0?.prompt, img0?.url);
+
+    setIsUploadingNsfwImage(true);
+    try {
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result ?? ''));
+        reader.onerror = () => reject(new Error('Failed to read file'));
+        reader.readAsDataURL(file);
+      });
+      const comma = dataUrl.indexOf(',');
+      const fileBase64 = comma >= 0 ? dataUrl.slice(comma + 1) : dataUrl;
+      if (!fileBase64) throw new Error('Empty image data');
+
+      const result = await uploadNsfwImageCacheMutation.mutateAsync({
+        panelId,
+        worldId: world.external_id,
+        fileBase64,
+        mimeType: file.type || 'image/jpeg',
+        freeroamImageUrl: img0?.url ?? null,
+        freeroamImagePrompt: img0?.prompt ?? null,
+      });
+
+      if (!result.imageUrl) throw new Error('Upload returned no URL');
+
+      // Session maps + paint (cache-bust so overwrite of same path reloads)
+      rememberNsfwImage(
+        panelId,
+        artKey,
+        result.imageUrl,
+        true,
+        img0?.url,
+        img0?.prompt,
+      );
+      setIsClassifyingNsfwImage(false);
+      setIsGeneratingNsfwImage(false);
+      nsfwInFlightRef.current.delete(panelId);
+      toast.success('Image saved to cache for this panel');
+    } catch (err) {
+      console.error('[NSFW] manual upload failed', err);
+      toast.error(err instanceof Error ? err.message : 'Upload failed');
+    } finally {
+      setIsUploadingNsfwImage(false);
+    }
+  }, [
+    currentPanel,
+    freeroamArtKey,
+    rememberNsfwImage,
+    uploadNsfwImageCacheMutation,
+    world.external_id,
+  ]);
 
   return (
     <div
@@ -2720,11 +2795,37 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
                   IMG
                 </span>
               )}
+              {/* Upload into NSFW image_cache (restore a good result without re-running Seedream) */}
+              {canUploadNsfwImage && (
+                <>
+                  <input
+                    ref={nsfwUploadInputRef}
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp,image/gif"
+                    className="hidden"
+                    onChange={(ev) => { void handleUploadNsfwImageFile(ev); }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => nsfwUploadInputRef.current?.click()}
+                    disabled={isUploadingNsfwImage || isClassifyingNsfwImage || isGeneratingNsfwImage}
+                    className="flex items-center justify-center rounded-full transition-all hover:bg-white/20 disabled:opacity-40"
+                    style={{ width: '28px', height: '28px', background: 'rgba(255,255,255,0.12)', color: 'rgba(255,255,255,0.75)' }}
+                    title="Upload image into cache for this panel (and same Freeroam art)"
+                  >
+                    {isUploadingNsfwImage ? (
+                      <Loader2 size={12} strokeWidth={2.5} className="animate-spin" />
+                    ) : (
+                      <Upload size={12} strokeWidth={2.5} />
+                    )}
+                  </button>
+                </>
+              )}
               {/* Regenerate unrestricted image — original top-bar placement (not story regenerate) */}
               {canRegenerateNsfwImage && (
                 <button
                   onClick={() => { void handleRegenerateNsfwImage(); }}
-                  disabled={isClassifyingNsfwImage || isGeneratingNsfwImage}
+                  disabled={isClassifyingNsfwImage || isGeneratingNsfwImage || isUploadingNsfwImage}
                   className="flex items-center justify-center rounded-full transition-all hover:bg-white/20 disabled:opacity-40"
                   style={{ width: '28px', height: '28px', background: 'rgba(255,255,255,0.12)', color: 'rgba(255,255,255,0.75)' }}
                   title="Regenerate unrestricted image for this panel (not the story)"
