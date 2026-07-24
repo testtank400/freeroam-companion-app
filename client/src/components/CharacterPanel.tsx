@@ -47,7 +47,8 @@ type CharacterPanelProps = {
   onPlayAs: (newMainId: string, oldMainId: string, newMainName: string) => Promise<void>;
   onEditCharacter: (
     charId: string,
-    charName: string,
+    oldName: string,
+    newName: string,
     oldBackstory: string,
     newBackstory: string,
     oldAppearance: string,
@@ -859,26 +860,29 @@ export default function CharacterPanel({
 
   return (
     <div
-      className="fixed inset-0 z-[300] flex items-center justify-center"
+      className="fixed inset-0 z-[300] flex items-end justify-center sm:items-center"
       style={{ background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(8px)' }}
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
       <div
-        className="relative flex flex-col"
+        className="relative flex flex-col w-full sm:w-[min(92vw,820px)] h-[min(94dvh,100%)] sm:h-auto sm:max-h-[88dvh] rounded-t-[22px] sm:rounded-[20px]"
         style={{
-          width: 'min(92vw, 780px)',
-          maxHeight: '85dvh',
           background: 'rgba(18,18,26,0.97)',
-          borderRadius: '20px',
           border: '1px solid rgba(255,255,255,0.08)',
           boxShadow: '0 24px 64px rgba(0,0,0,0.7)',
           overflow: 'hidden',
+          paddingBottom: 'env(safe-area-inset-bottom, 0px)',
         }}
       >
+        {/* Mobile sheet grab affordance */}
+        <div className="flex justify-center pt-2.5 pb-0.5 sm:hidden flex-shrink-0" aria-hidden>
+          <div style={{ width: '36px', height: '4px', borderRadius: '999px', background: 'rgba(255,255,255,0.18)' }} />
+        </div>
+
         {/* Close button */}
         <button
           onClick={onClose}
-          className="absolute top-4 right-4 z-10 flex items-center justify-center rounded-full transition-all hover:bg-white/10"
+          className="absolute top-3 right-3 sm:top-4 sm:right-4 z-10 flex items-center justify-center rounded-full transition-all hover:bg-white/10"
           style={{ width: '32px', height: '32px', color: 'rgba(255,255,255,0.5)' }}
         >
           <X size={16} strokeWidth={2} />
@@ -887,7 +891,7 @@ export default function CharacterPanel({
         {/* ── VIEW 1: MAIN ── */}
         {view === 'main' && (
           <>
-            <div className="px-6 pt-6 pb-4 text-center flex-shrink-0">
+            <div className="px-4 sm:px-6 pt-3 sm:pt-6 pb-3 text-center flex-shrink-0">
               <h2 style={{ fontFamily: 'Outfit, sans-serif', fontSize: '20px', fontWeight: 700, color: '#fff', marginBottom: '4px' }}>
                 Characters
               </h2>
@@ -897,7 +901,7 @@ export default function CharacterPanel({
             </div>
 
             {/* Add Character button */}
-            <div className="px-6 pb-4 flex-shrink-0">
+            <div className="px-4 sm:px-6 pb-3 flex-shrink-0">
               <button
                 onClick={handleOpenLibrary}
                 className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl transition-all hover:brightness-125"
@@ -915,14 +919,17 @@ export default function CharacterPanel({
               </button>
             </div>
 
-            {/* Character cards grid */}
-            <div className="flex-1 overflow-y-auto px-6 pb-4">
+            {/* Character cards grid — fluid 2-col on mobile, fills width like Freeroam */}
+            <div className={`flex-1 overflow-y-auto px-4 sm:px-6 ${hasPendingChanges ? 'pb-3' : 'pb-5 sm:pb-6'}`}>
               {isLoadingChars ? (
                 <div className="flex items-center justify-center py-12">
                   <Loader2 size={24} className="animate-spin" style={{ color: 'rgba(255,255,255,0.4)' }} />
                 </div>
               ) : (
-                <div className="flex flex-wrap gap-3">
+                <div
+                  className="grid gap-3"
+                  style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 148px), 1fr))' }}
+                >
                   {storyChars.map((char) => {
                     const pending = pendingChanges.get(char.external_id);
                     const isRemoving = pending === 'remove';
@@ -931,11 +938,10 @@ export default function CharacterPanel({
                     return (
                       <div
                         key={char.external_id}
-                        className="relative flex-shrink-0 cursor-pointer"
+                        className="relative w-full cursor-pointer"
                         onClick={() => { setStoryDetailChar(char); setView('story-detail'); }}
                         style={{
-                          width: '140px',
-                          height: '200px',
+                          aspectRatio: '7 / 10',
                           borderRadius: '14px',
                           overflow: 'hidden',
                           border: isRemoving
@@ -1023,7 +1029,7 @@ export default function CharacterPanel({
                         )}
 
                         {/* Name + label at bottom */}
-                        <div className="absolute bottom-0 left-0 right-0 px-2 pb-2">
+                        <div className="absolute bottom-0 left-0 right-0 px-2.5 pb-2.5">
                           <p style={{ fontFamily: 'Outfit, sans-serif', fontSize: '13px', fontWeight: 700, color: '#fff', lineHeight: 1.2 }}>
                             {char.name.replace(/-/g, ' ')}
                           </p>
@@ -1040,10 +1046,9 @@ export default function CharacterPanel({
                   {/* Empty slot */}
                   <button
                     onClick={handleOpenLibrary}
-                    className="flex-shrink-0 flex flex-col items-center justify-center gap-2 transition-all hover:brightness-125"
+                    className="relative w-full flex flex-col items-center justify-center gap-2 transition-all hover:brightness-125"
                     style={{
-                      width: '140px',
-                      height: '200px',
+                      aspectRatio: '7 / 10',
                       borderRadius: '14px',
                       border: '2px dashed rgba(255,255,255,0.18)',
                       background: 'rgba(255,255,255,0.03)',
@@ -1057,36 +1062,38 @@ export default function CharacterPanel({
               )}
             </div>
 
-            {/* Save Changes button */}
-            <div className="px-6 py-4 flex-shrink-0" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
-              <button
-                onClick={handleSave}
-                disabled={isSaving}
-                className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl transition-all hover:brightness-125 disabled:opacity-50"
-                style={{
-                  fontFamily: 'Outfit, sans-serif',
-                  fontSize: '15px',
-                  fontWeight: 600,
-                  color: hasPendingChanges ? '#fff' : 'rgba(255,255,255,0.5)',
-                  background: hasPendingChanges ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.05)',
-                  border: `1px solid ${hasPendingChanges ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.08)'}`,
-                }}
-              >
-                {isSaving ? (
-                  <Loader2 size={16} className="animate-spin" />
-                ) : (
-                  <Save size={16} strokeWidth={2} />
-                )}
-                {isSaving ? 'Saving...' : 'Save Changes'}
-              </button>
-            </div>
+            {/* Save Changes — only when there are pending adds/removes/play-as */}
+            {hasPendingChanges && (
+              <div className="px-4 sm:px-6 py-3 sm:py-4 flex-shrink-0" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+                <button
+                  onClick={handleSave}
+                  disabled={isSaving}
+                  className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl transition-all hover:brightness-125 disabled:opacity-50"
+                  style={{
+                    fontFamily: 'Outfit, sans-serif',
+                    fontSize: '15px',
+                    fontWeight: 600,
+                    color: '#fff',
+                    background: 'rgba(255,255,255,0.12)',
+                    border: '1px solid rgba(255,255,255,0.2)',
+                  }}
+                >
+                  {isSaving ? (
+                    <Loader2 size={16} className="animate-spin" />
+                  ) : (
+                    <Save size={16} strokeWidth={2} />
+                  )}
+                  {isSaving ? 'Saving...' : 'Save Changes'}
+                </button>
+              </div>
+            )}
           </>
         )}
 
         {/* ── VIEW 2: LIBRARY ── */}
         {view === 'library' && (
           <>
-            <div className="px-6 pt-6 pb-4 flex-shrink-0">
+            <div className="px-4 sm:px-6 pt-3 sm:pt-6 pb-3 sm:pb-4 flex-shrink-0">
               <div className="flex items-center gap-3 mb-4">
                 <button
                   onClick={() => {
@@ -1247,7 +1254,7 @@ export default function CharacterPanel({
             </div>
 
             {/* Library body */}
-            <div className="flex-1 overflow-y-auto px-6 pb-6">
+            <div className="flex-1 overflow-y-auto px-4 sm:px-6 pb-5 sm:pb-6">
               {/* Collection folder members */}
               {selectedCollection ? (
                 isLoadingLibrary ? (
@@ -1316,7 +1323,7 @@ export default function CharacterPanel({
 
             {/* Multi-select add footer */}
             {selectionCount > 0 && (
-              <div className="px-6 py-4 flex-shrink-0" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+              <div className="px-4 sm:px-6 py-3 sm:py-4 flex-shrink-0" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
                 <button
                   type="button"
                   onClick={handleAddSelectedToStory}
@@ -1341,7 +1348,7 @@ export default function CharacterPanel({
         {/* ── VIEW 3: DETAIL ── */}
         {view === 'detail' && detailChar && (
           <>
-            <div className="px-6 pt-6 pb-4 flex-shrink-0">
+            <div className="px-4 sm:px-6 pt-3 sm:pt-6 pb-3 sm:pb-4 flex-shrink-0">
               <div className="flex items-center gap-3 mb-4">
                 <button
                   onClick={() => setView('library')}
@@ -1357,7 +1364,7 @@ export default function CharacterPanel({
               </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto px-6 pb-4">
+            <div className="flex-1 overflow-y-auto px-4 sm:px-6 pb-4">
               <div className="flex gap-5">
                 {/* Portrait */}
                 <div className="flex-shrink-0">
@@ -1418,7 +1425,7 @@ export default function CharacterPanel({
             </div>
 
             {/* Add to Story button */}
-            <div className="px-6 py-4 flex-shrink-0" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+            <div className="px-4 sm:px-6 py-3 sm:py-4 flex-shrink-0" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
               <button
                 onClick={() => handleAddFromLibrary(detailChar)}
                 className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl transition-all hover:brightness-125"
@@ -1468,18 +1475,31 @@ function StoryDetailEditView({
     creator_name: string;
   };
   onBack: () => void;
-  onEditCharacter: (charId: string, charName: string, oldBackstory: string, newBackstory: string, oldAppearance: string, newAppearance: string, photoChanged?: boolean, newHeadshotUrl?: string) => Promise<void>;
+  onEditCharacter: (
+    charId: string,
+    oldName: string,
+    newName: string,
+    oldBackstory: string,
+    newBackstory: string,
+    oldAppearance: string,
+    newAppearance: string,
+    photoChanged?: boolean,
+    newHeadshotUrl?: string
+  ) => Promise<void>;
 }) {
+  const displayName = char.name.replace(/-/g, ' ');
+  const [editName, setEditName] = useState(displayName);
   const [editBackstory, setEditBackstory] = useState(char.backstory ?? '');
   const [editAppearance, setEditAppearance] = useState(char.appearance ?? '');
   const [isSaving, setIsSaving] = useState(false);
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
   const [newHeadshotUrl, setNewHeadshotUrl] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const nameChanged = editName.trim() !== displayName.trim();
   const backstoryChanged = editBackstory.trim() !== (char.backstory ?? '').trim();
   const appearanceChanged = editAppearance.trim() !== (char.appearance ?? '').trim();
   const photoChanged = !!newHeadshotUrl;
-  const hasChanges = backstoryChanged || appearanceChanged || photoChanged;
+  const hasChanges = nameChanged || backstoryChanged || appearanceChanged || photoChanged;
 
   const handlePhotoSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -1526,7 +1546,7 @@ function StoryDetailEditView({
 
   return (
     <>
-      <div className="px-6 pt-6 pb-4 flex-shrink-0">
+      <div className="px-4 sm:px-6 pt-3 sm:pt-6 pb-3 sm:pb-4 flex-shrink-0">
         <div className="flex items-center gap-3 mb-4">
           <button
             onClick={onBack}
@@ -1537,12 +1557,12 @@ function StoryDetailEditView({
             Back
           </button>
           <h2 style={{ fontFamily: 'Outfit, sans-serif', fontSize: '18px', fontWeight: 700, color: '#fff', flex: 1, textAlign: 'center' }}>
-            {char.name.replace(/-/g, ' ')}
+            {editName.trim() || displayName}
           </h2>
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-6 pb-4">
+      <div className="flex-1 overflow-y-auto px-4 sm:px-6 pb-4">
         <div className="flex gap-5">
           {/* Portrait — tappable to change photo */}
           <div className="flex-shrink-0">
@@ -1562,13 +1582,13 @@ function StoryDetailEditView({
               {(newHeadshotUrl || char.display_headshot_url || char.headshot_url) ? (
                 <img
                   src={newHeadshotUrl || char.display_headshot_url || char.headshot_url}
-                  alt={char.name}
+                  alt={editName.trim() || char.name}
                   className="w-full h-full"
                   style={{ objectFit: 'cover', objectPosition: 'center top' }}
                 />
               ) : (
                 <div className="w-full h-full flex items-center justify-center" style={{ background: 'rgba(255,255,255,0.05)', fontSize: '48px', color: 'rgba(255,255,255,0.2)' }}>
-                  {char.name[0]}
+                  {(editName.trim() || char.name)[0]}
                 </div>
               )}
               {/* Change Photo overlay */}
@@ -1597,9 +1617,20 @@ function StoryDetailEditView({
           <div className="flex-1 flex flex-col gap-4">
             <div>
               <label style={{ fontFamily: 'Outfit, sans-serif', fontSize: '13px', fontWeight: 700, color: 'rgba(255,255,255,0.6)', display: 'block', marginBottom: '6px' }}>Name</label>
-              <div className="px-3 py-2 rounded-xl" style={{ fontFamily: 'Outfit, sans-serif', fontSize: '14px', color: '#fff', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}>
-                {char.name.replace(/-/g, ' ')}
-              </div>
+              <input
+                type="text"
+                value={editName}
+                onChange={(e) => setEditName(e.target.value)}
+                placeholder="Character name"
+                className="w-full outline-none px-3 py-2 rounded-xl"
+                style={{
+                  fontFamily: 'Outfit, sans-serif',
+                  fontSize: '14px',
+                  color: '#fff',
+                  background: 'rgba(255,255,255,0.06)',
+                  border: `1px solid ${nameChanged ? 'rgba(255,255,255,0.3)' : 'rgba(255,255,255,0.1)'}`,
+                }}
+              />
             </div>
             <div>
               <label style={{ fontFamily: 'Outfit, sans-serif', fontSize: '13px', fontWeight: 700, color: 'rgba(255,255,255,0.6)', display: 'block', marginBottom: '6px' }}>Creator</label>
@@ -1654,20 +1685,31 @@ function StoryDetailEditView({
       </div>
 
       {/* Save Changes button */}
-      <div className="px-6 py-4 flex-shrink-0" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+      <div className="px-4 sm:px-6 py-3 sm:py-4 flex-shrink-0" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
         <button
           onClick={async () => {
-            if (!hasChanges || isSaving) return;
+            const trimmedName = editName.trim();
+            if (!hasChanges || isSaving || !trimmedName) return;
             setIsSaving(true);
             try {
-              await onEditCharacter(char.external_id, char.name.replace(/-/g, ' '), char.backstory ?? '', editBackstory, char.appearance ?? '', editAppearance, photoChanged, newHeadshotUrl ?? undefined);
+              await onEditCharacter(
+                char.external_id,
+                displayName,
+                trimmedName,
+                char.backstory ?? '',
+                editBackstory,
+                char.appearance ?? '',
+                editAppearance,
+                photoChanged,
+                newHeadshotUrl ?? undefined
+              );
             } catch (err) {
               // Error handled upstream
             } finally {
               setIsSaving(false);
             }
           }}
-          disabled={!hasChanges || isSaving}
+          disabled={!hasChanges || isSaving || !editName.trim()}
           className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl transition-all hover:brightness-125 disabled:opacity-40"
           style={{
             fontFamily: 'Outfit, sans-serif',

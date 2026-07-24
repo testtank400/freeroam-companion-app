@@ -3271,14 +3271,29 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
             }
           );
         }}
-        onEditCharacter={async (charId: string, charName: string, oldBackstory: string, newBackstory: string, oldAppearance: string, newAppearance: string, photoChanged?: boolean, newHeadshotUrl?: string) => {
+        onEditCharacter={async (
+          charId: string,
+          oldName: string,
+          newName: string,
+          oldBackstory: string,
+          newBackstory: string,
+          oldAppearance: string,
+          newAppearance: string,
+          photoChanged?: boolean,
+          newHeadshotUrl?: string
+        ) => {
+          const nameChanged = newName.trim() !== (oldName ?? '').trim();
           const backstoryChanged = newBackstory.trim() !== (oldBackstory ?? '').trim();
           const appearanceChanged = newAppearance.trim() !== (oldAppearance ?? '').trim();
-          if (!backstoryChanged && !appearanceChanged && !photoChanged) return;
+          if (!nameChanged && !backstoryChanged && !appearanceChanged && !photoChanged) return;
 
           // Build action_text and display_text based on what changed
           let actionText = 'A character has been edited by the user.';
           const displayParts: string[] = [];
+          if (nameChanged) {
+            actionText += ` Their name was changed from "${oldName.trim()}" to "${newName.trim()}".`;
+            displayParts.push('new name');
+          }
           if (appearanceChanged || photoChanged) {
             actionText += ` Their appearance was changed from "${oldAppearance}" to "${newAppearance}".`;
             displayParts.push('new appearance');
@@ -3288,13 +3303,13 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
             displayParts.push('updated personality');
           }
           actionText += ' Continue writing the story as though this character has always been this way. Do not acknowledge or address these changes in the narrative.';
-          const displayText = `(edited character ${charName}: ${displayParts.join(', ')})`;
+          const displayText = `(edited character ${newName.trim()}: ${displayParts.join(', ')})`;
 
           // Close panel and fire sendAction immediately — don't wait for character update
           setCharPanelOpen(false);
 
           // Fire character update and sendAction in parallel for minimum latency
-                    const [, ] = await Promise.all([
+          await Promise.all([
             // 1. Update character in Freeroam's database (background)
             fetch('/api/trpc/characters.update?batch=1', {
               method: 'POST',
@@ -3307,7 +3322,7 @@ export default function StoryReader({ world, initialPanelId, onClose: onClosePro
                 '0': {
                   json: {
                     characterId: charId,
-                    name: charName,
+                    name: newName.trim(),
                     backstory: newBackstory,
                     appearance: newAppearance,
                     ...(photoChanged && newHeadshotUrl ? { headshot_url: newHeadshotUrl } : {}),
