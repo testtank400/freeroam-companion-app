@@ -135,7 +135,23 @@ export default function NotificationsDropdown({ enabled, onOpenWorld }: Notifica
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   /** Server unread badge: GET /api/notifications/unread-count */
   const [serverUnreadCount, setServerUnreadCount] = useState(0);
+  /** Fixed panel coords so the dropdown stays on-screen after the mobile header reflow. */
+  const [panelPos, setPanelPos] = useState<{ top: number; left: number; width: number } | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
+
+  const updatePanelPosition = useCallback(() => {
+    const el = rootRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const margin = 12;
+    const maxWidth = 352; // 22rem
+    const width = Math.min(maxWidth, window.innerWidth - margin * 2);
+    // Prefer aligning panel's right edge with the bell; clamp into the viewport.
+    let left = rect.right - width;
+    left = Math.max(margin, Math.min(left, window.innerWidth - margin - width));
+    const top = Math.min(rect.bottom + 6, window.innerHeight - 80);
+    setPanelPos({ top, left, width });
+  }, []);
 
   const fetchUnreadCount = useCallback(async () => {
     if (!enabled) {
@@ -223,22 +239,34 @@ export default function NotificationsDropdown({ enabled, onOpenWorld }: Notifica
     return () => window.clearInterval(id);
   }, [enabled, fetchUnreadCount]);
 
-  // Close on outside click
+  // Close on outside click / reposition on resize-scroll while open
   useEffect(() => {
     if (!open) return;
-    const handler = (e: MouseEvent) => {
+    updatePanelPosition();
+    const onPointer = (e: MouseEvent) => {
       if (!rootRef.current?.contains(e.target as Node)) setOpen(false);
     };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [open]);
+    const onReposition = () => updatePanelPosition();
+    document.addEventListener('mousedown', onPointer);
+    window.addEventListener('resize', onReposition);
+    window.addEventListener('scroll', onReposition, true);
+    return () => {
+      document.removeEventListener('mousedown', onPointer);
+      window.removeEventListener('resize', onReposition);
+      window.removeEventListener('scroll', onReposition, true);
+    };
+  }, [open, updatePanelPosition]);
 
   const handleToggle = () => {
     const next = !open;
     setOpen(next);
     if (next && enabled) {
+      // Position before paint so first frame isn't off-screen
+      requestAnimationFrame(() => updatePanelPosition());
       void fetchNotifications();
       void fetchUnreadCount();
+    } else {
+      setPanelPos(null);
     }
   };
 
@@ -295,10 +323,13 @@ export default function NotificationsDropdown({ enabled, onOpenWorld }: Notifica
         )}
       </button>
 
-      {open && (
+      {open && panelPos && (
         <div
-          className="absolute right-0 mt-1 w-[min(100vw-1.5rem,22rem)] max-h-[min(70vh,28rem)] flex flex-col overflow-hidden rounded-sm"
+          className="fixed max-h-[min(70vh,28rem)] flex flex-col overflow-hidden rounded-sm"
           style={{
+            top: panelPos.top,
+            left: panelPos.left,
+            width: panelPos.width,
             background: 'oklch(0.13 0.01 264)',
             border: '1px solid oklch(1 0 0 / 0.12)',
             boxShadow: '0 12px 40px rgba(0,0,0,0.55)',
