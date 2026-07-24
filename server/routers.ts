@@ -87,6 +87,137 @@ const privacyStatusSchema = z
       : "private" as const
   );
 
+/** World row from GET /api/user/{username}/worlds (Bars or Lock tab). */
+type FreeroamWorldListItem = {
+  external_id: string;
+  name: string;
+  cover_image_url: string | null;
+  avg_color: { r: number; g: number; b: number } | null;
+  logline: string;
+  description: string;
+  interaction_count: number;
+  owner: { username: string; is_verified: boolean };
+  privacy_status: "private" | "public" | "unlisted";
+  is_draft: boolean;
+};
+
+const FREEROAM_FETCH_HEADERS = (cookie: string) => ({
+  accept: "*/*",
+  "accept-language": "en-US,en;q=0.9",
+  cookie,
+  origin: "https://getfreeroam.com",
+  referer: "https://getfreeroam.com",
+  "user-agent":
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36",
+});
+
+function coerceWorldPrivacy(status: string): "private" | "public" | "unlisted" {
+  return (["private", "public", "unlisted"].includes(status)
+    ? status
+    : "private") as "private" | "public" | "unlisted";
+}
+
+/**
+ * One page of user worlds.
+ * Freeroam: omit privacy → public+unlisted (Bars); privacy=private → Lock tab only.
+ */
+async function fetchFreeroamWorldsPage(opts: {
+  cookie: string;
+  username: string;
+  limit: number;
+  sort: string;
+  cursor?: string;
+  privacy?: "private";
+  /** When true, retry 429 with backoff (listAll). */
+  retry429?: boolean;
+}): Promise<{ worlds: FreeroamWorldListItem[]; has_more: boolean; next_cursor: string | null }> {
+  const encodedUsername = encodeURIComponent(opts.username);
+  const params = new URLSearchParams({
+    limit: String(opts.limit),
+    sort: opts.sort,
+    cursor: opts.cursor ?? "",
+  });
+  if (opts.privacy) params.set("privacy", opts.privacy);
+
+  const url = `https://getfreeroam.com/api/user/${encodedUsername}/worlds?${params.toString()}`;
+  const maxAttempts = opts.retry429 ? 3 : 1;
+  let response: Response | null = null;
+
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    if (attempt > 0) {
+      await new Promise((resolve) => setTimeout(resolve, 1000 * Math.pow(2, attempt - 1)));
+    }
+    response = await fetch(url, { headers: FREEROAM_FETCH_HEADERS(opts.cookie) });
+    if (response.status !== 429) break;
+  }
+
+  if (!response || !response.ok) {
+    const text = response ? await response.text() : "No response";
+    if (response?.status === 429) {
+      throw new Error("Rate limit exceeded. Please wait a moment and try again.");
+    }
+    if (response?.status === 401) {
+      throw new Error("SESSION_EXPIRED");
+    }
+    throw new Error(`Worlds API responded with status ${response?.status}: ${text}`);
+  }
+
+  const data = (await response.json()) as {
+    worlds: Array<{
+      external_id: string;
+      name: string;
+      cover_image_url: string | null;
+      avg_color: { r: number; g: number; b: number } | null;
+      logline: string;
+      description: string;
+      interaction_count: number;
+      owner: { username: string; is_verified: boolean };
+      privacy_status: string;
+      is_draft: boolean;
+    }>;
+    has_more: boolean;
+    next_cursor: string | null;
+  };
+
+  return {
+    worlds: data.worlds.map((w) => ({
+      ...w,
+      privacy_status: coerceWorldPrivacy(w.privacy_status),
+    })),
+    has_more: data.has_more,
+    next_cursor: data.next_cursor,
+  };
+}
+
+/** Walk all pages of a single worlds feed (default or privacy=private). */
+async function fetchAllFreeroamWorlds(opts: {
+  cookie: string;
+  username: string;
+  sort: string;
+  privacy?: "private";
+}): Promise<FreeroamWorldListItem[]> {
+  const all: FreeroamWorldListItem[] = [];
+  let cursor = "";
+  let hasMore = true;
+
+  while (hasMore) {
+    const page = await fetchFreeroamWorldsPage({
+      cookie: opts.cookie,
+      username: opts.username,
+      limit: 20,
+      sort: opts.sort,
+      cursor,
+      privacy: opts.privacy,
+      retry429: true,
+    });
+    all.push(...page.worlds);
+    hasMore = page.has_more;
+    cursor = page.next_cursor ?? "";
+  }
+
+  return all;
+}
+
 // Shape of a character returned by the getfreeroam API
 const CharacterSchema = z.object({
   external_id: z.string(),
@@ -780,7 +911,11 @@ export const appRouter = router({
 
   // ─── Worlds (Freeroam API proxy, no local DB) ──────────────────────────────────────────────────
   worlds: router({
-    /** Paginated list of worlds for a given user */
+    /** Paginated list of worlds for a given user.
+     *  Freeroam split private worlds into a separate feed:
+     *  - default (no privacy) = public + unlisted (Bars tab)
+     *  - privacy=private = private only (Lock tab)
+     */
     list: publicProcedure
       .input(
         z.object({
@@ -788,6 +923,8 @@ export const appRouter = router({
           limit: z.number().default(20),
           sort: z.string().default("recent"),
           cursor: z.string().optional(),
+          /** Omit for public+unlisted; pass "private" for the lock-tab feed */
+          privacy: z.enum(["private"]).optional(),
         })
       )
       .query(async ({ input, ctx }) => {
@@ -796,55 +933,26 @@ export const appRouter = router({
         const cookie = getFreeroamCookie(ctx);
         if (!cookie) throw new Error("Cookie not configured in environment");
 
-        const encodedUsername = encodeURIComponent(input.username);
-        const url = `https://getfreeroam.com/api/user/${encodedUsername}/worlds?limit=${input.limit}&sort=${input.sort}&cursor=${input.cursor ?? ""}`;
-
-        const response = await fetch(url, {
-          headers: {
-            accept: "*/*",
-            "accept-language": "en-US,en;q=0.9",
-            cookie: cookie,
-            origin: "https://getfreeroam.com",
-            referer: "https://getfreeroam.com",
-            "user-agent":
-              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36",
-          },
+        const page = await fetchFreeroamWorldsPage({
+          cookie,
+          username: input.username,
+          limit: input.limit,
+          sort: input.sort,
+          cursor: input.cursor ?? "",
+          privacy: input.privacy,
         });
 
-        if (!response.ok) {
-          const text = await response.text();
-          throw new Error(`Worlds API responded with status ${response.status}: ${text}`);
-        }
-
-        const data = await response.json() as {
-          worlds: Array<{
-            external_id: string;
-            name: string;
-            cover_image_url: string | null;
-            avg_color: { r: number; g: number; b: number } | null;
-            logline: string;
-            description: string;
-            interaction_count: number;
-            owner: { username: string; is_verified: boolean };
-            privacy_status: string;
-            is_draft: boolean;
-          }>;
-          has_more: boolean;
-          next_cursor: string | null;
+        return {
+          worlds: page.worlds,
+          has_more: page.has_more,
+          next_cursor: page.next_cursor,
         };
-
-        // Coerce privacy_status to known values
-        const worlds = data.worlds.map(w => ({
-          ...w,
-          privacy_status: (["private", "public", "unlisted"].includes(w.privacy_status)
-            ? w.privacy_status
-            : "private") as "private" | "public" | "unlisted",
-        }));
-
-        return { worlds, has_more: data.has_more, next_cursor: data.next_cursor };
       }),
 
-    /** Fetch all worlds at once (loads all pages) for the grid view */
+    /** Fetch all worlds at once (loads all pages) for the grid view.
+     *  Merges the Bars feed (public+unlisted) with the Lock feed (private),
+     *  since Freeroam no longer returns private worlds in the default list.
+     */
     listAll: publicProcedure
       .input(
         z.object({
@@ -858,91 +966,38 @@ export const appRouter = router({
         const cookie = getFreeroamCookie(ctx);
         if (!cookie) throw new Error("Cookie not configured in environment");
 
-        const encodedUsername = encodeURIComponent(input.username);
-        const allWorlds: Array<{
-          external_id: string;
-          name: string;
-          cover_image_url: string | null;
-          avg_color: { r: number; g: number; b: number } | null;
-          logline: string;
-          description: string;
-          interaction_count: number;
-          owner: { username: string; is_verified: boolean };
-          privacy_status: "private" | "public" | "unlisted";
-          is_draft: boolean;
-        }> = [];
+        // Default feed = public + unlisted; privacy=private = lock tab only.
+        const [publicish, privateWorlds] = await Promise.all([
+          fetchAllFreeroamWorlds({
+            cookie,
+            username: input.username,
+            sort: input.sort,
+          }),
+          fetchAllFreeroamWorlds({
+            cookie,
+            username: input.username,
+            sort: input.sort,
+            privacy: "private",
+          }),
+        ]);
 
-        let cursor = "";
-        let hasMore = true;
-
-        while (hasMore) {
-          const url = `https://getfreeroam.com/api/user/${encodedUsername}/worlds?limit=20&sort=${input.sort}&cursor=${cursor}`;
-
-          // Retry up to 3 times with backoff for 429
-          let response: Response | null = null;
-          for (let attempt = 0; attempt < 3; attempt++) {
-            if (attempt > 0) {
-              await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, attempt - 1)));
-            }
-            response = await fetch(url, {
-              headers: {
-                accept: "*/*",
-                "accept-language": "en-US,en;q=0.9",
-                cookie: cookie,
-                origin: "https://getfreeroam.com",
-                referer: "https://getfreeroam.com",
-                "user-agent":
-                  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36",
-              },
-            });
-            if (response.status !== 429) break;
-          }
-
-          if (!response || !response.ok) {
-            const text = response ? await response.text() : 'No response';
-            if (response?.status === 429) {
-              throw new Error('Rate limit exceeded. Please wait a moment and try again.');
-            }
-            if (response?.status === 401) {
-              throw new Error('SESSION_EXPIRED');
-            }
-            throw new Error(`Worlds fetch failed (${response?.status}): ${text}`);
-          }
-
-          const data = await response.json() as {
-            worlds: Array<{
-              external_id: string;
-              name: string;
-              cover_image_url: string | null;
-              avg_color: { r: number; g: number; b: number } | null;
-              logline: string;
-              description: string;
-              interaction_count: number;
-              owner: { username: string; is_verified: boolean };
-              privacy_status: string;
-              is_draft: boolean;
-            }>;
-            has_more: boolean;
-            next_cursor: string | null;
-          };
-
-          const coerced = data.worlds.map(w => ({
-            ...w,
-            privacy_status: (["private", "public", "unlisted"].includes(w.privacy_status)
-              ? w.privacy_status
-              : "private") as "private" | "public" | "unlisted",
-          }));
-
-          allWorlds.push(...coerced);
-          hasMore = data.has_more;
-          cursor = data.next_cursor ?? "";
+        // Dedupe by external_id (private wins if a world appears in both — shouldn't happen)
+        const seen = new Set<string>();
+        const merged: FreeroamWorldListItem[] = [];
+        for (const w of [...publicish, ...privateWorlds]) {
+          if (seen.has(w.external_id)) continue;
+          seen.add(w.external_id);
+          merged.push(w);
         }
 
-        // Preserve Freeroam's list order for the requested sort.
-        // The list payload has no created_at, but sort=recent|oldest|popular are
-        // honored server-side (recent matches sequential numeric world.id from
-        // the detail endpoint). Do NOT re-sort by external_id — those are random UUIDs.
-        return allWorlds;
+        // Each stream is already ordered by Freeroam for the requested sort, but they
+        // are separate feeds with no shared created_at. For popular we can re-merge
+        // globally by interaction_count; for recent/oldest keep Bars order then private.
+        if (input.sort === "popular") {
+          merged.sort((a, b) => b.interaction_count - a.interaction_count);
+        }
+
+        return merged;
       }),
 
     /** Get a single world (story) with full details: characters, tags, related worlds */
@@ -1717,6 +1772,365 @@ export const appRouter = router({
             type: "bookmark";
           }>;
         }>;
+      }),
+  }),
+
+  // ─── Notifications (bell feed) ─────────────────────────────────────────────────────────────
+  notifications: router({
+    /**
+     * Paginated freeroam notifications.
+     * Cursor-based: GET /api/notifications?limit=&cursor=
+     */
+    list: publicProcedure
+      .input(
+        z.object({
+          limit: z.number().int().min(1).max(50).default(25),
+          cursor: z.string().optional(),
+        })
+      )
+      .query(async ({ input, ctx }) => {
+        if (!hasUserCookie(ctx)) {
+          return { items: [], next_cursor: null };
+        }
+
+        const cookie = getFreeroamCookie(ctx);
+        if (!cookie) throw new Error("Cookie not configured in environment");
+
+        const params = new URLSearchParams({
+          limit: String(input.limit),
+        });
+        if (input.cursor) params.set("cursor", input.cursor);
+
+        const url = `https://getfreeroam.com/api/notifications?${params.toString()}`;
+
+        const response = await fetch(url, {
+          headers: {
+            accept: "application/json",
+            "accept-language": "en-US,en;q=0.9",
+            cookie,
+            origin: "https://getfreeroam.com",
+            referer: "https://getfreeroam.com",
+            "user-agent":
+              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36",
+          },
+        });
+
+        if (!response.ok) {
+          const text = await response.text();
+          if (response.status === 401) throw new Error("SESSION_EXPIRED");
+          throw new Error(`Notifications API responded with status ${response.status}: ${text}`);
+        }
+
+        const data = (await response.json()) as {
+          items: Array<{
+            external_id: string;
+            type: string;
+            created_at: string;
+            updated_at: string;
+            seen_at: string | null;
+            read_at: string | null;
+            actor_count: number;
+            primary_actor: {
+              username: string;
+              display_name: string | null;
+              avatar_url: string | null;
+              is_verified: boolean;
+            } | null;
+            recent_actors: Array<{
+              username: string;
+              display_name: string | null;
+              avatar_url: string | null;
+              is_verified: boolean;
+            }>;
+            world: {
+              external_id: string;
+              name: string;
+              cover_image_url: string | null;
+            } | null;
+            comment: unknown;
+            payload: Record<string, unknown> | null;
+          }>;
+          next_cursor: string | null;
+        };
+
+        return {
+          items: data.items ?? [],
+          next_cursor: data.next_cursor ?? null,
+        };
+      }),
+
+    /** Unread badge: GET /api/notifications/unread-count → { count } */
+    unreadCount: publicProcedure.query(async ({ ctx }) => {
+      if (!hasUserCookie(ctx)) return { count: 0 };
+
+      const cookie = getFreeroamCookie(ctx);
+      if (!cookie) throw new Error("Cookie not configured in environment");
+
+      const response = await fetch("https://getfreeroam.com/api/notifications/unread-count", {
+        headers: {
+          accept: "application/json",
+          "accept-language": "en-US,en;q=0.9",
+          "cache-control": "no-cache",
+          pragma: "no-cache",
+          cookie,
+          origin: "https://getfreeroam.com",
+          referer: "https://getfreeroam.com",
+          "user-agent":
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36",
+        },
+      });
+
+      if (!response.ok) {
+        const text = await response.text();
+        if (response.status === 401) throw new Error("SESSION_EXPIRED");
+        throw new Error(`Unread count API responded with status ${response.status}: ${text}`);
+      }
+
+      const data = (await response.json()) as { count?: number };
+      return { count: typeof data.count === "number" ? data.count : 0 };
+    }),
+
+    /** Mark entire feed read: POST /api/notifications/mark-all-read → { success } */
+    markAllRead: publicProcedure.mutation(async ({ ctx }) => {
+      if (!hasUserCookie(ctx)) return { success: false };
+
+      const cookie = getFreeroamCookie(ctx);
+      if (!cookie) throw new Error("Cookie not configured in environment");
+
+      const response = await fetch("https://getfreeroam.com/api/notifications/mark-all-read", {
+        method: "POST",
+        headers: {
+          accept: "application/json",
+          "accept-language": "en-US,en;q=0.9",
+          cookie,
+          origin: "https://getfreeroam.com",
+          referer: "https://getfreeroam.com",
+          "user-agent":
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36",
+        },
+      });
+
+      if (!response.ok) {
+        const text = await response.text();
+        if (response.status === 401) throw new Error("SESSION_EXPIRED");
+        throw new Error(`Mark-all-read API responded with status ${response.status}: ${text}`);
+      }
+
+      const data = (await response.json()) as { success?: boolean };
+      return { success: data.success !== false };
+    }),
+  }),
+
+  // ─── Journeys (continue-playing history; may include others' worlds) ───────────────────────
+  journeys: router({
+    /**
+     * Paginated profile journeys (compass tab on freeroam).
+     * Offset-based: GET /api/profile/journeys?offset=&limit=
+     */
+    list: publicProcedure
+      .input(
+        z.object({
+          offset: z.number().int().min(0).default(0),
+          limit: z.number().int().min(1).max(50).default(30),
+        })
+      )
+      .query(async ({ input, ctx }) => {
+        if (!hasUserCookie(ctx)) {
+          return { journeys: [], count: 0, has_more: false };
+        }
+
+        const cookie = getFreeroamCookie(ctx);
+        if (!cookie) throw new Error("Cookie not configured in environment");
+
+        const params = new URLSearchParams({
+          offset: String(input.offset),
+          limit: String(input.limit),
+        });
+        const url = `https://getfreeroam.com/api/profile/journeys?${params.toString()}`;
+
+        const response = await fetch(url, {
+          headers: {
+            accept: "application/json",
+            "accept-language": "en-US,en;q=0.9",
+            cookie,
+            origin: "https://getfreeroam.com",
+            referer: "https://getfreeroam.com",
+            "user-agent":
+              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36",
+          },
+        });
+
+        if (!response.ok) {
+          const text = await response.text();
+          if (response.status === 401) throw new Error("SESSION_EXPIRED");
+          throw new Error(`Journeys API responded with status ${response.status}: ${text}`);
+        }
+
+        const data = (await response.json()) as {
+          journeys: Array<{
+            world_id: number;
+            world_external_id: string;
+            world_name: string;
+            panel_id: number;
+            panel_external_id: string;
+            panel_image: string | null;
+            panel_depth: number;
+            updated_at: string;
+          }>;
+          count: number;
+          has_more: boolean;
+        };
+
+        return {
+          journeys: data.journeys ?? [],
+          count: data.count ?? (data.journeys?.length ?? 0),
+          has_more: Boolean(data.has_more),
+        };
+      }),
+  }),
+
+  // ─── Liked worlds (heart tab; may include others' worlds) ─────────────────────────────────
+  likedWorlds: router({
+    /**
+     * Paginated liked worlds for the signed-in profile.
+     * Offset-based: GET /api/profile/liked-worlds?offset=&limit=
+     */
+    list: publicProcedure
+      .input(
+        z.object({
+          offset: z.number().int().min(0).default(0),
+          limit: z.number().int().min(1).max(50).default(30),
+        })
+      )
+      .query(async ({ input, ctx }) => {
+        if (!hasUserCookie(ctx)) {
+          return { worlds: [], count: 0, has_more: false };
+        }
+
+        const cookie = getFreeroamCookie(ctx);
+        if (!cookie) throw new Error("Cookie not configured in environment");
+
+        const params = new URLSearchParams({
+          offset: String(input.offset),
+          limit: String(input.limit),
+        });
+        const url = `https://getfreeroam.com/api/profile/liked-worlds?${params.toString()}`;
+
+        const response = await fetch(url, {
+          headers: {
+            accept: "application/json",
+            "accept-language": "en-US,en;q=0.9",
+            cookie,
+            origin: "https://getfreeroam.com",
+            referer: "https://getfreeroam.com",
+            "user-agent":
+              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36",
+          },
+        });
+
+        if (!response.ok) {
+          const text = await response.text();
+          if (response.status === 401) throw new Error("SESSION_EXPIRED");
+          throw new Error(`Liked worlds API responded with status ${response.status}: ${text}`);
+        }
+
+        const data = (await response.json()) as {
+          worlds: Array<{
+            external_id: string;
+            name: string;
+            cover_image_url: string | null;
+            avg_color: { r: number; g: number; b: number } | null;
+            logline: string;
+            interaction_count: number;
+            owner_username: string;
+            owner_display_name: string | null;
+            owner_is_verified: boolean;
+            tag_name: string | null;
+            tag_is_fandom: boolean;
+            is_phone_experiment_world?: boolean;
+          }>;
+          count: number;
+          has_more: boolean;
+        };
+
+        return {
+          worlds: data.worlds ?? [],
+          count: data.count ?? (data.worlds?.length ?? 0),
+          has_more: Boolean(data.has_more),
+        };
+      }),
+  }),
+
+  // ─── Saved worlds (bookmark tab; may include others' worlds) ───────────────────────────────
+  savedWorlds: router({
+    /**
+     * Paginated saved worlds for the signed-in profile.
+     * Offset-based: GET /api/profile/saved-worlds?offset=&limit=
+     * Response shape matches liked-worlds.
+     */
+    list: publicProcedure
+      .input(
+        z.object({
+          offset: z.number().int().min(0).default(0),
+          limit: z.number().int().min(1).max(50).default(30),
+        })
+      )
+      .query(async ({ input, ctx }) => {
+        if (!hasUserCookie(ctx)) {
+          return { worlds: [], count: 0, has_more: false };
+        }
+
+        const cookie = getFreeroamCookie(ctx);
+        if (!cookie) throw new Error("Cookie not configured in environment");
+
+        const params = new URLSearchParams({
+          offset: String(input.offset),
+          limit: String(input.limit),
+        });
+        const url = `https://getfreeroam.com/api/profile/saved-worlds?${params.toString()}`;
+
+        const response = await fetch(url, {
+          headers: {
+            accept: "application/json",
+            "accept-language": "en-US,en;q=0.9",
+            cookie,
+            origin: "https://getfreeroam.com",
+            referer: "https://getfreeroam.com",
+            "user-agent":
+              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36",
+          },
+        });
+
+        if (!response.ok) {
+          const text = await response.text();
+          if (response.status === 401) throw new Error("SESSION_EXPIRED");
+          throw new Error(`Saved worlds API responded with status ${response.status}: ${text}`);
+        }
+
+        const data = (await response.json()) as {
+          worlds: Array<{
+            external_id: string;
+            name: string;
+            cover_image_url: string | null;
+            avg_color: { r: number; g: number; b: number } | null;
+            logline: string;
+            interaction_count: number;
+            owner_username: string;
+            owner_display_name: string | null;
+            owner_is_verified: boolean;
+            tag_name: string | null;
+            tag_is_fandom: boolean;
+            is_phone_experiment_world?: boolean;
+          }>;
+          count: number;
+          has_more: boolean;
+        };
+
+        return {
+          worlds: data.worlds ?? [],
+          count: data.count ?? (data.worlds?.length ?? 0),
+          has_more: Boolean(data.has_more),
+        };
       }),
   }),
 

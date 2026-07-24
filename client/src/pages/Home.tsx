@@ -16,13 +16,16 @@ import SettingsModal from '@/components/SettingsModal';
 import WorldCard, { ApiWorld } from '@/components/WorldCard';
 import WorldCollectionCard, { ApiWorldCollection } from '@/components/WorldCollectionCard';
 import WorldProfile from '@/components/WorldProfile';
+import JourneyCard, { ApiJourney } from '@/components/JourneyCard';
+import ProfileWorldCard, { ApiProfileWorld } from '@/components/ProfileWorldCard';
+import NotificationsDropdown from '@/components/NotificationsDropdown';
 import StoryReader from '@/components/StoryReader';
 import EditWorldCollectionModal from '@/components/EditWorldCollectionModal';
 import DeleteWorldCollectionDialog from '@/components/DeleteWorldCollectionDialog';
 import { Collection, useCollections } from '@/hooks/useCollections';
 import { useSavedCharacters } from '@/hooks/useSavedCharacters';
 import { trpc } from '@/lib/trpc';
-import { ArrowDownUp, ArrowLeft, ChevronDown, FolderPlus, Globe, Plus, RefreshCw, Search, Settings, UserPlus, Users, X as XIcon } from 'lucide-react';
+import { ArrowDownUp, ArrowLeft, Bookmark, ChevronDown, Compass, FolderPlus, Globe, Heart, Plus, RefreshCw, Search, Settings, UserPlus, Users, X as XIcon } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useFreeroamCookie } from '@/hooks/useFreeroamCookie';
 import { toast } from 'sonner';
@@ -79,10 +82,45 @@ function orderWorldsByRoster(worlds: ApiWorld[], roster: ApiWorld[]): ApiWorld[]
 }
 
 export type ViewMode = 'characters' | 'worlds';
+/** Sub-section inside Worlds: owned library, continue history, liked, saved */
+export type WorldsSection = 'my-worlds' | 'journeys' | 'liked' | 'saved';
+
+const JOURNEYS_PAGE_SIZE = 30;
+const PROFILE_WORLDS_PAGE_SIZE = 30;
+
+function profileWorldToApiWorld(w: ApiProfileWorld): ApiWorld {
+  return {
+    external_id: w.external_id,
+    name: w.name,
+    cover_image_url: w.cover_image_url,
+    avg_color: w.avg_color,
+    logline: w.logline ?? '',
+    description: w.logline ?? '',
+    interaction_count: w.interaction_count,
+    owner: {
+      username: w.owner_username || w.owner_display_name || '',
+      is_verified: w.owner_is_verified,
+    },
+    privacy_status: 'public',
+    is_draft: false,
+  };
+}
+
+function matchesProfileWorldSearch(w: ApiProfileWorld, q: string): boolean {
+  if (!q) return true;
+  return (
+    w.name.toLowerCase().includes(q) ||
+    (w.logline ?? '').toLowerCase().includes(q) ||
+    (w.owner_username ?? '').toLowerCase().includes(q) ||
+    (w.owner_display_name ?? '').toLowerCase().includes(q) ||
+    (w.tag_name ?? '').toLowerCase().includes(q)
+  );
+}
 
 export default function Home() {
   // ─── View Mode (Characters vs Worlds) ─────────────────────────────────────────
   const [viewMode, setViewMode] = useState<ViewMode>('characters');
+  const [worldsSection, setWorldsSection] = useState<WorldsSection>('my-worlds');
 
   // ─── Worlds State ─────────────────────────────────────────────────────────────
   const [allWorlds, setAllWorlds] = useState<ApiWorld[]>([]);
@@ -97,6 +135,26 @@ export default function Home() {
   const [worldsDraftFilter, setWorldsDraftFilter] = useState<boolean | null>(null);
   const [worldsSort, setWorldsSort] = useState<string>('recent');
   const utils = trpc.useUtils();
+
+  // ─── Journeys State (continue history; may include others' worlds) ────────────
+  const [journeys, setJourneys] = useState<ApiJourney[]>([]);
+  const [isLoadingJourneys, setIsLoadingJourneys] = useState(false);
+  const [isLoadingMoreJourneys, setIsLoadingMoreJourneys] = useState(false);
+  const [journeysHasMore, setJourneysHasMore] = useState(false);
+  const [journeysLoadedOnce, setJourneysLoadedOnce] = useState(false);
+
+  // ─── Liked / Saved (profile feeds; may include others' worlds) ────────────────
+  const [likedWorlds, setLikedWorlds] = useState<ApiProfileWorld[]>([]);
+  const [isLoadingLiked, setIsLoadingLiked] = useState(false);
+  const [isLoadingMoreLiked, setIsLoadingMoreLiked] = useState(false);
+  const [likedHasMore, setLikedHasMore] = useState(false);
+  const [likedLoadedOnce, setLikedLoadedOnce] = useState(false);
+
+  const [savedWorlds, setSavedWorlds] = useState<ApiProfileWorld[]>([]);
+  const [isLoadingSaved, setIsLoadingSaved] = useState(false);
+  const [isLoadingMoreSaved, setIsLoadingMoreSaved] = useState(false);
+  const [savedHasMore, setSavedHasMore] = useState(false);
+  const [savedLoadedOnce, setSavedLoadedOnce] = useState(false);
 
   // Fetch all worlds
   const fetchAllWorlds = useCallback(async (sortValue?: string) => {
@@ -125,15 +183,170 @@ export default function Home() {
     }
   }, [utils, worldsSort]);
 
-  // Load worlds when switching to worlds mode
+  const fetchJourneys = useCallback(async (opts?: { append?: boolean; fromOffset?: number }) => {
+    const append = opts?.append ?? false;
+    const offset = append ? (opts?.fromOffset ?? 0) : 0;
+    if (append) setIsLoadingMoreJourneys(true);
+    else {
+      setIsLoadingJourneys(true);
+      setJourneys([]);
+    }
+    try {
+      const result = await utils.journeys.list.fetch({
+        offset,
+        limit: JOURNEYS_PAGE_SIZE,
+      });
+      const page = (result.journeys ?? []) as ApiJourney[];
+      setJourneys((prev) => {
+        if (!append) return page;
+        const seen = new Set(prev.map((j) => j.panel_external_id));
+        const merged = [...prev];
+        for (const j of page) {
+          if (!seen.has(j.panel_external_id)) {
+            seen.add(j.panel_external_id);
+            merged.push(j);
+          }
+        }
+        return merged;
+      });
+      setJourneysHasMore(Boolean(result.has_more));
+      setJourneysLoadedOnce(true);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : '';
+      if (msg.includes('401') || msg.includes('SESSION_EXPIRED') || msg.includes('Unauthorized')) {
+        toast.error('Your Freeroam session has expired. Please update your cookie in Settings.', { duration: 8000 });
+      } else if (msg.includes('429') || msg.includes('Rate limit') || msg.includes('rate limit')) {
+        toast.error('Freeroam rate limit hit. Please try again in a moment.', { duration: 5000 });
+      } else {
+        toast.error('Failed to load journeys. Please refresh.');
+      }
+    } finally {
+      setIsLoadingJourneys(false);
+      setIsLoadingMoreJourneys(false);
+    }
+  }, [utils]);
+
+  // Load owned worlds when opening My Worlds (default worlds section)
   useEffect(() => {
-    if (viewMode === 'worlds' && allWorlds.length === 0 && !isLoadingWorlds) {
+    if (viewMode === 'worlds' && worldsSection === 'my-worlds' && allWorlds.length === 0 && !isLoadingWorlds) {
       fetchAllWorlds();
     }
-  }, [viewMode]);
+  }, [viewMode, worldsSection]);
+
+  const fetchLikedWorlds = useCallback(async (opts?: { append?: boolean; fromOffset?: number }) => {
+    const append = opts?.append ?? false;
+    const offset = append ? (opts?.fromOffset ?? 0) : 0;
+    if (append) setIsLoadingMoreLiked(true);
+    else {
+      setIsLoadingLiked(true);
+      setLikedWorlds([]);
+    }
+    try {
+      const result = await utils.likedWorlds.list.fetch({
+        offset,
+        limit: PROFILE_WORLDS_PAGE_SIZE,
+      });
+      const page = (result.worlds ?? []) as ApiProfileWorld[];
+      setLikedWorlds((prev) => {
+        if (!append) return page;
+        const seen = new Set(prev.map((w) => w.external_id));
+        const merged = [...prev];
+        for (const w of page) {
+          if (!seen.has(w.external_id)) {
+            seen.add(w.external_id);
+            merged.push(w);
+          }
+        }
+        return merged;
+      });
+      setLikedHasMore(Boolean(result.has_more));
+      setLikedLoadedOnce(true);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : '';
+      if (msg.includes('401') || msg.includes('SESSION_EXPIRED') || msg.includes('Unauthorized')) {
+        toast.error('Your Freeroam session has expired. Please update your cookie in Settings.', { duration: 8000 });
+      } else if (msg.includes('429') || msg.includes('Rate limit') || msg.includes('rate limit')) {
+        toast.error('Freeroam rate limit hit. Please try again in a moment.', { duration: 5000 });
+      } else {
+        toast.error('Failed to load liked worlds. Please refresh.');
+      }
+    } finally {
+      setIsLoadingLiked(false);
+      setIsLoadingMoreLiked(false);
+    }
+  }, [utils]);
+
+  const fetchSavedWorlds = useCallback(async (opts?: { append?: boolean; fromOffset?: number }) => {
+    const append = opts?.append ?? false;
+    const offset = append ? (opts?.fromOffset ?? 0) : 0;
+    if (append) setIsLoadingMoreSaved(true);
+    else {
+      setIsLoadingSaved(true);
+      setSavedWorlds([]);
+    }
+    try {
+      const result = await utils.savedWorlds.list.fetch({
+        offset,
+        limit: PROFILE_WORLDS_PAGE_SIZE,
+      });
+      const page = (result.worlds ?? []) as ApiProfileWorld[];
+      setSavedWorlds((prev) => {
+        if (!append) return page;
+        const seen = new Set(prev.map((w) => w.external_id));
+        const merged = [...prev];
+        for (const w of page) {
+          if (!seen.has(w.external_id)) {
+            seen.add(w.external_id);
+            merged.push(w);
+          }
+        }
+        return merged;
+      });
+      setSavedHasMore(Boolean(result.has_more));
+      setSavedLoadedOnce(true);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : '';
+      if (msg.includes('401') || msg.includes('SESSION_EXPIRED') || msg.includes('Unauthorized')) {
+        toast.error('Your Freeroam session has expired. Please update your cookie in Settings.', { duration: 8000 });
+      } else if (msg.includes('429') || msg.includes('Rate limit') || msg.includes('rate limit')) {
+        toast.error('Freeroam rate limit hit. Please try again in a moment.', { duration: 5000 });
+      } else {
+        toast.error('Failed to load saved worlds. Please refresh.');
+      }
+    } finally {
+      setIsLoadingSaved(false);
+      setIsLoadingMoreSaved(false);
+    }
+  }, [utils]);
+
+  // Load journeys when switching to Journeys section
+  useEffect(() => {
+    if (viewMode === 'worlds' && worldsSection === 'journeys' && !journeysLoadedOnce && !isLoadingJourneys) {
+      fetchJourneys();
+    }
+  }, [viewMode, worldsSection, journeysLoadedOnce, isLoadingJourneys, fetchJourneys]);
+
+  // Load liked worlds when switching to Liked section
+  useEffect(() => {
+    if (viewMode === 'worlds' && worldsSection === 'liked' && !likedLoadedOnce && !isLoadingLiked) {
+      fetchLikedWorlds();
+    }
+  }, [viewMode, worldsSection, likedLoadedOnce, isLoadingLiked, fetchLikedWorlds]);
+
+  // Load saved worlds when switching to Saved section
+  useEffect(() => {
+    if (viewMode === 'worlds' && worldsSection === 'saved' && !savedLoadedOnce && !isLoadingSaved) {
+      fetchSavedWorlds();
+    }
+  }, [viewMode, worldsSection, savedLoadedOnce, isLoadingSaved, fetchSavedWorlds]);
 
   // Open story reader — fetches panel_id from worlds.get then launches the reader
-  const openStoryReader = useCallback(async (world: ApiWorld) => {
+  const openStoryReader = useCallback(async (world: ApiWorld, resumePanelId?: string) => {
+    if (resumePanelId) {
+      setStoryReaderWorld(world);
+      setStoryReaderPanelId(resumePanelId);
+      return;
+    }
     setIsLoadingReaderPanel(true);
     try {
       const detail = await utils.worlds.get.fetch({ worldId: world.external_id });
@@ -150,6 +363,30 @@ export default function Home() {
       setIsLoadingReaderPanel(false);
     }
   }, [utils]);
+
+  /** Resume a journey at its saved panel (world may not be owned / in roster). */
+  const openJourney = useCallback((journey: ApiJourney) => {
+    const fromRoster = allWorlds.find((w) => w.external_id === journey.world_external_id);
+    const world: ApiWorld = fromRoster ?? {
+      external_id: journey.world_external_id,
+      name: journey.world_name,
+      cover_image_url: journey.panel_image,
+      avg_color: null,
+      logline: '',
+      description: '',
+      interaction_count: 0,
+      owner: { username: '', is_verified: false },
+      privacy_status: 'public',
+      is_draft: false,
+    };
+    void openStoryReader(world, journey.panel_external_id);
+  }, [allWorlds, openStoryReader]);
+
+  /** Open a liked/saved world in the story reader (often not in owned roster). */
+  const openProfileWorld = useCallback((profileWorld: ApiProfileWorld) => {
+    const fromRoster = allWorlds.find((w) => w.external_id === profileWorld.external_id);
+    void openStoryReader(fromRoster ?? profileWorldToApiWorld(profileWorld));
+  }, [allWorlds, openStoryReader]);
 
   // ─── World Collections State ──────────────────────────────────────────────═
   const [worldCollections, setWorldCollections] = useState<ApiWorldCollection[]>([]);
@@ -519,9 +756,9 @@ export default function Home() {
           borderBottom: '1px solid oklch(1 0 0 / 0.07)',
         }}
       >
-        {/* Mobile: Row 1 = title + ADD, Row 2 = search + sort + settings + refresh. Desktop: single row */}
+        {/* Mobile: 3 rows (title+Add / toggle+search / icons). Desktop: title | controls. */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1.5 sm:gap-2">
-        {/* Row 1 on mobile: title (left) + ADD button (right) */}
+        {/* Row 1: title (left) + ADD (mobile right) */}
         <div className="flex items-center justify-between sm:justify-start gap-2 min-w-0">
         <div className="flex items-center gap-2 min-w-0">
           {/* Back button when in collection view */}
@@ -600,7 +837,46 @@ export default function Home() {
               style={{ fontFamily: 'JetBrains Mono, monospace', color: 'oklch(0.45 0.01 264)' }}
             >
               {viewMode === 'worlds'
-                ? (isLoadingWorlds
+                ? (worldsSection === 'journeys'
+                    ? (isLoadingJourneys
+                        ? 'Loading journeys...'
+                        : (() => {
+                            const q = worldsSearchQuery.trim().toLowerCase();
+                            const total = journeys.length;
+                            const visible = q
+                              ? journeys.filter((j) => j.world_name.toLowerCase().includes(q)).length
+                              : total;
+                            return q
+                              ? `${visible} of ${total} journey${total !== 1 ? 's' : ''}`
+                              : `${total} journey${total !== 1 ? 's' : ''}${journeysHasMore ? '+' : ''} in progress`;
+                          })())
+                    : worldsSection === 'liked'
+                    ? (isLoadingLiked
+                        ? 'Loading liked...'
+                        : (() => {
+                            const q = worldsSearchQuery.trim().toLowerCase();
+                            const total = likedWorlds.length;
+                            const visible = q
+                              ? likedWorlds.filter((w) => matchesProfileWorldSearch(w, q)).length
+                              : total;
+                            return q
+                              ? `${visible} of ${total} liked`
+                              : `${total} liked world${total !== 1 ? 's' : ''}${likedHasMore ? '+' : ''}`;
+                          })())
+                    : worldsSection === 'saved'
+                    ? (isLoadingSaved
+                        ? 'Loading saved...'
+                        : (() => {
+                            const q = worldsSearchQuery.trim().toLowerCase();
+                            const total = savedWorlds.length;
+                            const visible = q
+                              ? savedWorlds.filter((w) => matchesProfileWorldSearch(w, q)).length
+                              : total;
+                            return q
+                              ? `${visible} of ${total} saved`
+                              : `${total} saved world${total !== 1 ? 's' : ''}${savedHasMore ? '+' : ''}`;
+                          })())
+                    : (isLoadingWorlds
                     ? 'Loading...'
                     : (() => {
                         const q = worldsSearchQuery.trim().toLowerCase();
@@ -615,7 +891,7 @@ export default function Home() {
                         return isFiltered
                           ? `${visible} of ${total} world${total !== 1 ? 's' : ''}`
                           : `${total} world${total !== 1 ? 's' : ''} on record`;
-                      })())
+                      })()))
                 : (isLoading
                 ? 'Loading...'
                 : (() => {
@@ -705,235 +981,301 @@ export default function Home() {
           </div>
         </div>
 
-        {/* Row 2 on mobile: search + sort + settings + refresh. On sm+: part of single row */}
-        <div className="flex flex-row sm:flex-row sm:items-center gap-1.5 sm:gap-2 sm:ml-auto">
+        {/*
+          Mobile header chrome (3 rows):
+            1) title + Add  (above)
+            2) Characters/Worlds + full-width search
+            3) sort · bell · settings · refresh
+          Desktop (sm+): single controls cluster on the right.
+        */}
+        <div className="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:gap-2 sm:ml-auto min-w-0 w-full sm:w-auto">
 
-          {/* Characters / Worlds toggle */}
-          <div className="flex items-center rounded-sm overflow-hidden flex-shrink-0" style={{ border: '1px solid oklch(1 0 0 / 0.1)' }}>
-            <button
-              onClick={() => setViewMode('characters')}
-              className="flex items-center gap-1 px-2.5 py-1.5 text-[11px] font-semibold tracking-wider uppercase transition-all"
-              style={{
-                fontFamily: 'Rajdhani, sans-serif',
-                background: viewMode === 'characters' ? 'oklch(0.769 0.188 70.08 / 0.15)' : 'oklch(0.15 0.01 264)',
-                color: viewMode === 'characters' ? 'oklch(0.769 0.188 70.08)' : 'oklch(0.45 0.01 264)',
-                borderRight: '1px solid oklch(1 0 0 / 0.1)',
-              }}
-              title="View Characters"
-            >
-              <Users size={12} strokeWidth={2} />
-              <span className="hidden sm:inline">Characters</span>
-            </button>
-            <button
-              onClick={() => setViewMode('worlds')}
-              className="flex items-center gap-1 px-2.5 py-1.5 text-[11px] font-semibold tracking-wider uppercase transition-all"
-              style={{
-                fontFamily: 'Rajdhani, sans-serif',
-                background: viewMode === 'worlds' ? 'oklch(0.769 0.188 70.08 / 0.15)' : 'oklch(0.15 0.01 264)',
-                color: viewMode === 'worlds' ? 'oklch(0.769 0.188 70.08)' : 'oklch(0.45 0.01 264)',
-              }}
-              title="View Worlds"
-            >
-              <Globe size={12} strokeWidth={2} />
-              <span className="hidden sm:inline">Worlds</span>
-            </button>
-          </div>
-
-          {/* Search bar — flex-1 on mobile, fixed width on sm+ */}
-          <div className="relative flex items-center flex-1 sm:w-48">
-            <Search
-              size={13}
-              strokeWidth={2}
-              className="absolute left-2.5 pointer-events-none"
-              style={{ color: 'oklch(0.45 0.01 264)' }}
-            />
-            <input
-              type="text"
-              value={viewMode === 'worlds' ? worldsSearchQuery : searchQuery}
-              onChange={(e) => viewMode === 'worlds' ? setWorldsSearchQuery(e.target.value) : setSearchQuery(e.target.value)}
-              placeholder={viewMode === 'worlds' ? 'Search worlds...' : (isFetching && !searchQuery ? 'Loading more...' : 'Search...')}
-              className="pl-8 pr-7 py-1.5 rounded-sm text-xs w-full transition-all"
-              style={{
-                fontFamily: 'JetBrains Mono, monospace',
-                background: 'oklch(0.15 0.01 264)',
-                border: `1px solid ${(viewMode === 'worlds' ? worldsSearchQuery : searchQuery) ? 'oklch(0.769 0.188 70.08 / 0.4)' : 'oklch(1 0 0 / 0.1)'}`,
-                color: 'oklch(0.88 0.005 65)',
-                outline: 'none',
-              }}
-              onFocus={(e) => (e.target.style.borderColor = 'oklch(0.769 0.188 70.08 / 0.5)')}
-              onBlur={(e) => (e.target.style.borderColor = (viewMode === 'worlds' ? worldsSearchQuery : searchQuery) ? 'oklch(0.769 0.188 70.08 / 0.4)' : 'oklch(1 0 0 / 0.1)')}
-            />
-            {(viewMode === 'worlds' ? worldsSearchQuery : searchQuery) && (
+          {/* Row 2 mobile / desktop: mode toggle + search */}
+          <div className="flex items-center gap-1.5 min-w-0 w-full sm:w-auto">
+            {/* Characters / Worlds toggle */}
+            <div className="flex items-center rounded-sm overflow-hidden flex-shrink-0" style={{ border: '1px solid oklch(1 0 0 / 0.1)' }}>
               <button
-                onClick={() => viewMode === 'worlds' ? setWorldsSearchQuery('') : setSearchQuery('')}
-                className="absolute right-2 flex items-center justify-center transition-colors hover:opacity-80"
-                style={{ color: 'oklch(0.45 0.01 264)' }}
-                title="Clear search"
+                onClick={() => setViewMode('characters')}
+                className="flex items-center gap-1 px-2.5 py-1.5 text-[11px] font-semibold tracking-wider uppercase transition-all"
+                style={{
+                  fontFamily: 'Rajdhani, sans-serif',
+                  background: viewMode === 'characters' ? 'oklch(0.769 0.188 70.08 / 0.15)' : 'oklch(0.15 0.01 264)',
+                  color: viewMode === 'characters' ? 'oklch(0.769 0.188 70.08)' : 'oklch(0.45 0.01 264)',
+                  borderRight: '1px solid oklch(1 0 0 / 0.1)',
+                }}
+                title="View Characters"
               >
-                <XIcon size={11} strokeWidth={2.5} />
+                <Users size={12} strokeWidth={2} />
+                <span className="hidden sm:inline">Characters</span>
               </button>
-            )}
+              <button
+                onClick={() => setViewMode('worlds')}
+                className="flex items-center gap-1 px-2.5 py-1.5 text-[11px] font-semibold tracking-wider uppercase transition-all"
+                style={{
+                  fontFamily: 'Rajdhani, sans-serif',
+                  background: viewMode === 'worlds' ? 'oklch(0.769 0.188 70.08 / 0.15)' : 'oklch(0.15 0.01 264)',
+                  color: viewMode === 'worlds' ? 'oklch(0.769 0.188 70.08)' : 'oklch(0.45 0.01 264)',
+                }}
+                title="View Worlds"
+              >
+                <Globe size={12} strokeWidth={2} />
+                <span className="hidden sm:inline">Worlds</span>
+              </button>
+            </div>
+
+            {/* Search — must keep min-w-0 so flex-1 can shrink correctly; full width on mobile */}
+            <div className="relative flex items-center flex-1 min-w-0 sm:flex-none sm:w-48">
+              <Search
+                size={13}
+                strokeWidth={2}
+                className="absolute left-2.5 pointer-events-none"
+                style={{ color: 'oklch(0.45 0.01 264)' }}
+              />
+              <input
+                type="text"
+                value={viewMode === 'worlds' ? worldsSearchQuery : searchQuery}
+                onChange={(e) => viewMode === 'worlds' ? setWorldsSearchQuery(e.target.value) : setSearchQuery(e.target.value)}
+                placeholder={
+                  viewMode === 'worlds'
+                    ? (worldsSection === 'journeys'
+                        ? 'Search journeys...'
+                        : worldsSection === 'liked'
+                          ? 'Search liked...'
+                          : worldsSection === 'saved'
+                            ? 'Search saved...'
+                            : 'Search worlds...')
+                    : (isFetching && !searchQuery ? 'Loading more...' : 'Search...')
+                }
+                className="pl-8 pr-7 py-1.5 rounded-sm text-xs w-full min-w-0 transition-all"
+                style={{
+                  fontFamily: 'JetBrains Mono, monospace',
+                  background: 'oklch(0.15 0.01 264)',
+                  border: `1px solid ${(viewMode === 'worlds' ? worldsSearchQuery : searchQuery) ? 'oklch(0.769 0.188 70.08 / 0.4)' : 'oklch(1 0 0 / 0.1)'}`,
+                  color: 'oklch(0.88 0.005 65)',
+                  outline: 'none',
+                }}
+                onFocus={(e) => (e.target.style.borderColor = 'oklch(0.769 0.188 70.08 / 0.5)')}
+                onBlur={(e) => (e.target.style.borderColor = (viewMode === 'worlds' ? worldsSearchQuery : searchQuery) ? 'oklch(0.769 0.188 70.08 / 0.4)' : 'oklch(1 0 0 / 0.1)')}
+              />
+              {(viewMode === 'worlds' ? worldsSearchQuery : searchQuery) && (
+                <button
+                  onClick={() => viewMode === 'worlds' ? setWorldsSearchQuery('') : setSearchQuery('')}
+                  className="absolute right-2 flex items-center justify-center transition-colors hover:opacity-80"
+                  style={{ color: 'oklch(0.45 0.01 264)' }}
+                  title="Clear search"
+                >
+                  <XIcon size={11} strokeWidth={2.5} />
+                </button>
+              )}
+            </div>
           </div>
 
-          {/* Icon buttons row — always on first row */}
-          <div className="flex items-center gap-1.5 sm:gap-2 flex-shrink-0">
+          {/* Row 3 mobile / desktop icons: sort · notifications · settings · refresh · (Add sm+) */}
+          <div className="flex items-center gap-1.5 sm:gap-2 flex-shrink-0 w-full sm:w-auto justify-start">
 
-          {/* Sort dropdown */}
-          <div ref={sortDropdownRef} className="relative">
-            <button
-              onClick={() => setSortDropdownOpen(o => !o)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-sm text-xs font-semibold tracking-wider uppercase transition-all hover:brightness-110"
-              style={{
-                fontFamily: 'Rajdhani, sans-serif',
-                background: 'oklch(0.18 0.01 264)',
-                border: `1px solid ${sortDropdownOpen ? 'oklch(0.769 0.188 70.08 / 0.4)' : 'oklch(1 0 0 / 0.1)'}`,
-                color: sortDropdownOpen ? 'oklch(0.769 0.188 70.08)' : 'oklch(0.65 0.01 264)',
-              }}
-              title="Sort order"
-            >
-              <ArrowDownUp size={12} strokeWidth={2.5} />
-              <span className="hidden sm:inline">{(viewMode === 'worlds' ? WORLD_SORT_OPTIONS : CHARACTER_SORT_OPTIONS).find(o => o.value === (viewMode === 'worlds' ? worldsSort : sort))?.label ?? 'Sort'}</span>
-              <ChevronDown
-                size={11}
-                strokeWidth={2.5}
+            {/* Sort dropdown — owned roster / characters only (other worlds tabs use freeroam order) */}
+            {!(viewMode === 'worlds' && worldsSection !== 'my-worlds') && (
+            <div ref={sortDropdownRef} className="relative">
+              <button
+                onClick={() => setSortDropdownOpen(o => !o)}
+                className="w-8 h-8 sm:w-auto sm:h-auto flex items-center justify-center sm:gap-1.5 sm:px-3 sm:py-1.5 rounded-sm text-xs font-semibold tracking-wider uppercase transition-all hover:brightness-110"
                 style={{
-                  transform: sortDropdownOpen ? 'rotate(180deg)' : 'rotate(0deg)',
-                  transition: 'transform 0.15s ease',
+                  fontFamily: 'Rajdhani, sans-serif',
+                  background: 'oklch(0.18 0.01 264)',
+                  border: `1px solid ${sortDropdownOpen ? 'oklch(0.769 0.188 70.08 / 0.4)' : 'oklch(1 0 0 / 0.1)'}`,
+                  color: sortDropdownOpen ? 'oklch(0.769 0.188 70.08)' : 'oklch(0.65 0.01 264)',
                 }}
+                title="Sort order"
+              >
+                <ArrowDownUp size={12} strokeWidth={2.5} />
+                <span className="hidden sm:inline">{(viewMode === 'worlds' ? WORLD_SORT_OPTIONS : CHARACTER_SORT_OPTIONS).find(o => o.value === (viewMode === 'worlds' ? worldsSort : sort))?.label ?? 'Sort'}</span>
+                <ChevronDown
+                  size={11}
+                  strokeWidth={2.5}
+                  className="hidden sm:block"
+                  style={{
+                    transform: sortDropdownOpen ? 'rotate(180deg)' : 'rotate(0deg)',
+                    transition: 'transform 0.15s ease',
+                  }}
+                />
+              </button>
+
+              {/* Dropdown panel */}
+              {sortDropdownOpen && (
+                <div
+                  className="absolute left-0 sm:left-auto sm:right-0 mt-1 w-44 rounded-sm overflow-hidden"
+                  style={{
+                    background: 'oklch(0.15 0.01 264)',
+                    border: '1px solid oklch(1 0 0 / 0.12)',
+                    boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
+                    zIndex: 50,
+                  }}
+                >
+                  {(viewMode === 'worlds' ? WORLD_SORT_OPTIONS : CHARACTER_SORT_OPTIONS).map((opt) => (
+                    <button
+                      key={opt.value}
+                      onClick={() => handleSortChange(opt.value)}
+                      className="w-full flex items-start gap-2 px-3 py-2.5 text-left transition-colors hover:bg-white/5"
+                      style={{
+                        borderBottom: '1px solid oklch(1 0 0 / 0.06)',
+                        background: (viewMode === 'worlds' ? worldsSort : sort) === opt.value ? 'oklch(0.769 0.188 70.08 / 0.08)' : 'transparent',
+                      }}
+                    >
+                      <div className="flex-1 min-w-0">
+                        <p
+                          className="text-xs font-semibold tracking-wider uppercase"
+                          style={{
+                            fontFamily: 'Rajdhani, sans-serif',
+                            color: (viewMode === 'worlds' ? worldsSort : sort) === opt.value ? 'oklch(0.769 0.188 70.08)' : 'oklch(0.82 0.005 65)',
+                          }}
+                        >
+                          {opt.label}
+                        </p>
+                        <p
+                          className="text-[10px] mt-0.5"
+                          style={{ fontFamily: 'JetBrains Mono, monospace', color: 'oklch(0.45 0.01 264)' }}
+                        >
+                          {opt.description}
+                        </p>
+                      </div>
+                      {(viewMode === 'worlds' ? worldsSort : sort) === opt.value && (
+                        <div
+                          className="w-1.5 h-1.5 rounded-full mt-1 flex-shrink-0"
+                          style={{ background: 'oklch(0.769 0.188 70.08)', marginTop: '4px' }}
+                        />
+                      )}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            )}
+
+            {/* Freeroam notifications */}
+            <NotificationsDropdown
+              enabled={!!hasCookie}
+              onOpenWorld={(world) => {
+                void openStoryReader(world);
+              }}
+            />
+
+            {/* Settings gear button */}
+            <button
+              onClick={() => setShowSettings(true)}
+              className="w-8 h-8 flex items-center justify-center rounded-sm transition-colors hover:brightness-110"
+              style={{
+                background: hasCookie ? 'oklch(0.55 0.15 145 / 0.12)' : 'oklch(0.18 0.01 264)',
+                border: hasCookie ? '1px solid oklch(0.55 0.15 145 / 0.35)' : '1px solid oklch(1 0 0 / 0.1)',
+                color: hasCookie ? 'oklch(0.65 0.15 145)' : 'oklch(0.55 0.01 264)',
+              }}
+              title={hasCookie ? 'Settings (cookie set)' : 'Settings (no cookie set)'}
+            >
+              <Settings size={13} strokeWidth={2} />
+            </button>
+
+            {/* Refresh button */}
+            <button
+              onClick={
+                viewMode === 'worlds'
+                  ? (worldsSection === 'journeys'
+                      ? () => void fetchJourneys()
+                      : worldsSection === 'liked'
+                        ? () => void fetchLikedWorlds()
+                        : worldsSection === 'saved'
+                          ? () => void fetchSavedWorlds()
+                          : () => fetchAllWorlds(worldsSort))
+                  : handleRefresh
+              }
+              disabled={
+                viewMode === 'worlds'
+                  ? (worldsSection === 'journeys'
+                      ? isLoadingJourneys || isLoadingMoreJourneys
+                      : worldsSection === 'liked'
+                        ? isLoadingLiked || isLoadingMoreLiked
+                        : worldsSection === 'saved'
+                          ? isLoadingSaved || isLoadingMoreSaved
+                          : isLoadingWorlds)
+                  : isFetching
+              }
+              className="w-8 h-8 flex items-center justify-center rounded-sm transition-colors hover:brightness-110 disabled:opacity-50"
+              style={{
+                background: 'oklch(0.18 0.01 264)',
+                border: '1px solid oklch(1 0 0 / 0.1)',
+                color: 'oklch(0.55 0.01 264)',
+              }}
+              title={viewMode === 'worlds' ? 'Refresh worlds' : 'Refresh characters'}
+            >
+              <RefreshCw
+                size={13}
+                strokeWidth={2}
+                className={
+                  (viewMode === 'worlds'
+                    ? (worldsSection === 'journeys'
+                        ? isLoadingJourneys
+                        : worldsSection === 'liked'
+                          ? isLoadingLiked
+                          : worldsSection === 'saved'
+                            ? isLoadingSaved
+                            : isLoadingWorlds)
+                    : isFetching)
+                    ? 'animate-spin'
+                    : ''
+                }
               />
             </button>
 
-            {/* Dropdown panel */}
-            {sortDropdownOpen && (
-              <div
-                className="absolute right-0 mt-1 w-44 rounded-sm overflow-hidden"
+            {/* + Add dropdown — hidden on mobile (shown in row 1 instead), visible on sm+ */}
+            <div ref={addRef} className="relative hidden sm:block">
+              <button
+                onClick={() => setAddOpen(o => !o)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-sm text-xs font-semibold tracking-wider uppercase transition-all hover:brightness-110"
                 style={{
-                  background: 'oklch(0.15 0.01 264)',
-                  border: '1px solid oklch(1 0 0 / 0.12)',
-                  boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
-                  zIndex: 50,
+                  fontFamily: 'Rajdhani, sans-serif',
+                  background: 'oklch(0.769 0.188 70.08 / 0.12)',
+                  border: `1px solid ${addOpen ? 'oklch(0.769 0.188 70.08 / 0.6)' : 'oklch(0.769 0.188 70.08 / 0.35)'}`,
+                  color: 'oklch(0.769 0.188 70.08)',
                 }}
               >
-                {(viewMode === 'worlds' ? WORLD_SORT_OPTIONS : CHARACTER_SORT_OPTIONS).map((opt) => (
-                  <button
-                    key={opt.value}
-                    onClick={() => handleSortChange(opt.value)}
-                    className="w-full flex items-start gap-2 px-3 py-2.5 text-left transition-colors hover:bg-white/5"
-                    style={{
-                      borderBottom: '1px solid oklch(1 0 0 / 0.06)',
-                      background: (viewMode === 'worlds' ? worldsSort : sort) === opt.value ? 'oklch(0.769 0.188 70.08 / 0.08)' : 'transparent',
-                    }}
-                  >
-                    <div className="flex-1 min-w-0">
-                      <p
-                        className="text-xs font-semibold tracking-wider uppercase"
-                        style={{
-                          fontFamily: 'Rajdhani, sans-serif',
-                          color: (viewMode === 'worlds' ? worldsSort : sort) === opt.value ? 'oklch(0.769 0.188 70.08)' : 'oklch(0.82 0.005 65)',
-                        }}
-                      >
-                        {opt.label}
-                      </p>
-                      <p
-                        className="text-[10px] mt-0.5"
-                        style={{ fontFamily: 'JetBrains Mono, monospace', color: 'oklch(0.45 0.01 264)' }}
-                      >
-                        {opt.description}
-                      </p>
-                    </div>
-                    {(viewMode === 'worlds' ? worldsSort : sort) === opt.value && (
-                      <div
-                        className="w-1.5 h-1.5 rounded-full mt-1 flex-shrink-0"
-                        style={{ background: 'oklch(0.769 0.188 70.08)', marginTop: '4px' }}
-                      />
-                    )}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
+                <Plus size={14} strokeWidth={2.5} />
+                Add
+                <ChevronDown size={11} strokeWidth={2.5} style={{ transform: addOpen ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.15s ease' }} />
+              </button>
 
-          {/* Settings gear button */}
-          <button
-            onClick={() => setShowSettings(true)}
-            className="w-8 h-8 flex items-center justify-center rounded-sm transition-colors hover:brightness-110"
-            style={{
-              background: hasCookie ? 'oklch(0.55 0.15 145 / 0.12)' : 'oklch(0.18 0.01 264)',
-              border: hasCookie ? '1px solid oklch(0.55 0.15 145 / 0.35)' : '1px solid oklch(1 0 0 / 0.1)',
-              color: hasCookie ? 'oklch(0.65 0.15 145)' : 'oklch(0.55 0.01 264)',
-            }}
-            title={hasCookie ? 'Settings (cookie set)' : 'Settings (no cookie set)'}
-          >
-            <Settings size={13} strokeWidth={2} />
-          </button>
-
-          {/* Refresh button */}
-          <button
-            onClick={viewMode === 'worlds' ? () => fetchAllWorlds(worldsSort) : handleRefresh}
-            disabled={viewMode === 'worlds' ? isLoadingWorlds : isFetching}
-            className="w-8 h-8 flex items-center justify-center rounded-sm transition-colors hover:brightness-110 disabled:opacity-50"
-            style={{
-              background: 'oklch(0.18 0.01 264)',
-              border: '1px solid oklch(1 0 0 / 0.1)',
-              color: 'oklch(0.55 0.01 264)',
-            }}
-            title={viewMode === 'worlds' ? 'Refresh worlds' : 'Refresh characters'}
-          >
-            <RefreshCw size={13} strokeWidth={2} className={(viewMode === 'worlds' ? isLoadingWorlds : isFetching) ? 'animate-spin' : ''} />
-          </button>
-
-          {/* + Add dropdown — hidden on mobile (shown in row 1 instead), visible on sm+ */}
-          <div ref={addRef} className="relative hidden sm:block">
-                <button
-                  onClick={() => setAddOpen(o => !o)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-sm text-xs font-semibold tracking-wider uppercase transition-all hover:brightness-110"
+              {addOpen && (
+                <div
+                  className="absolute right-0 mt-1 rounded-sm overflow-hidden"
                   style={{
-                    fontFamily: 'Rajdhani, sans-serif',
-                    background: 'oklch(0.769 0.188 70.08 / 0.12)',
-                    border: `1px solid ${addOpen ? 'oklch(0.769 0.188 70.08 / 0.6)' : 'oklch(0.769 0.188 70.08 / 0.35)'}`,
-                    color: 'oklch(0.769 0.188 70.08)',
+                    background: 'oklch(0.15 0.01 264)',
+                    border: '1px solid oklch(1 0 0 / 0.12)',
+                    boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
+                    zIndex: 50,
+                    minWidth: 160,
                   }}
                 >
-                  <Plus size={14} strokeWidth={2.5} />
-                  Add
-                  <ChevronDown size={11} strokeWidth={2.5} style={{ transform: addOpen ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.15s ease' }} />
-                </button>
-
-                {addOpen && (
-                  <div
-                    className="absolute right-0 mt-1 rounded-sm overflow-hidden"
-                    style={{
-                      background: 'oklch(0.15 0.01 264)',
-                      border: '1px solid oklch(1 0 0 / 0.12)',
-                      boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
-                      zIndex: 50,
-                      minWidth: 160,
-                    }}
+                  <button
+                    onClick={() => { setAddOpen(false); handleAddCharacter(); }}
+                    className="w-full flex items-center gap-2.5 px-3 py-2.5 text-left transition-colors hover:bg-white/5"
+                    style={{ borderBottom: '1px solid oklch(1 0 0 / 0.06)' }}
                   >
-                    <button
-                      onClick={() => { setAddOpen(false); handleAddCharacter(); }}
-                      className="w-full flex items-center gap-2.5 px-3 py-2.5 text-left transition-colors hover:bg-white/5"
-                      style={{ borderBottom: '1px solid oklch(1 0 0 / 0.06)' }}
-                    >
-                      <UserPlus size={13} strokeWidth={2} style={{ color: 'oklch(0.769 0.188 70.08)' }} />
-                      <div>
-                        <p className="text-[11px] font-semibold tracking-wide uppercase" style={{ fontFamily: 'Rajdhani, sans-serif', color: 'oklch(0.88 0.005 65)' }}>Character</p>
-                        <p className="text-[9px]" style={{ fontFamily: 'JetBrains Mono, monospace', color: 'oklch(0.45 0.01 264)' }}>Add a new character</p>
-                      </div>
-                    </button>
-                    <button
-                      onClick={() => { setAddOpen(false); setShowNewCollectionModal(true); }}
-                      className="w-full flex items-center gap-2.5 px-3 py-2.5 text-left transition-colors hover:bg-white/5"
-                    >
-                      <FolderPlus size={13} strokeWidth={2} style={{ color: 'oklch(0.769 0.188 70.08)' }} />
-                      <div>
-                        <p className="text-[11px] font-semibold tracking-wide uppercase" style={{ fontFamily: 'Rajdhani, sans-serif', color: 'oklch(0.88 0.005 65)' }}>Collection</p>
-                        <p className="text-[9px]" style={{ fontFamily: 'JetBrains Mono, monospace', color: 'oklch(0.45 0.01 264)' }}>Group characters together</p>
-                      </div>
-                    </button>
-                  </div>
-                )}
-          </div>
+                    <UserPlus size={13} strokeWidth={2} style={{ color: 'oklch(0.769 0.188 70.08)' }} />
+                    <div>
+                      <p className="text-[11px] font-semibold tracking-wide uppercase" style={{ fontFamily: 'Rajdhani, sans-serif', color: 'oklch(0.88 0.005 65)' }}>Character</p>
+                      <p className="text-[9px]" style={{ fontFamily: 'JetBrains Mono, monospace', color: 'oklch(0.45 0.01 264)' }}>Add a new character</p>
+                    </div>
+                  </button>
+                  <button
+                    onClick={() => { setAddOpen(false); setShowNewCollectionModal(true); }}
+                    className="w-full flex items-center gap-2.5 px-3 py-2.5 text-left transition-colors hover:bg-white/5"
+                  >
+                    <FolderPlus size={13} strokeWidth={2} style={{ color: 'oklch(0.769 0.188 70.08)' }} />
+                    <div>
+                      <p className="text-[11px] font-semibold tracking-wide uppercase" style={{ fontFamily: 'Rajdhani, sans-serif', color: 'oklch(0.88 0.005 65)' }}>Collection</p>
+                      <p className="text-[9px]" style={{ fontFamily: 'JetBrains Mono, monospace', color: 'oklch(0.45 0.01 264)' }}>Group characters together</p>
+                    </div>
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
         </div>
@@ -947,6 +1289,450 @@ export default function Home() {
             ═══════════════════════════════════════════════════════════════════════════ */}
         {viewMode === 'worlds' && (
           <>
+            {/* Worlds section switcher: My Worlds | Journeys | Liked | Saved */}
+            <div className="mb-6 flex items-center gap-2 overflow-x-auto">
+              <div
+                className="flex items-center rounded-sm overflow-hidden flex-shrink-0"
+                style={{ border: '1px solid oklch(1 0 0 / 0.1)' }}
+              >
+                {(
+                  [
+                    { id: 'my-worlds' as const, label: 'My Worlds', icon: <Globe size={12} strokeWidth={2} /> },
+                    { id: 'journeys' as const, label: 'Journeys', icon: <Compass size={12} strokeWidth={2} /> },
+                    { id: 'liked' as const, label: 'Liked', icon: <Heart size={12} strokeWidth={2} /> },
+                    { id: 'saved' as const, label: 'Saved', icon: <Bookmark size={12} strokeWidth={2} /> },
+                  ] as const
+                ).map((tab, i, arr) => (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => {
+                      setWorldsSection(tab.id);
+                      if (tab.id !== 'my-worlds') {
+                        setActiveWorldCollectionId(null);
+                        setWorldCollectionWorlds([]);
+                        setSelectedWorldIds(new Set());
+                      }
+                    }}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-semibold tracking-wider uppercase transition-all"
+                    style={{
+                      fontFamily: 'Rajdhani, sans-serif',
+                      background: worldsSection === tab.id ? 'oklch(0.769 0.188 70.08 / 0.15)' : 'oklch(0.15 0.01 264)',
+                      color: worldsSection === tab.id ? 'oklch(0.769 0.188 70.08)' : 'oklch(0.45 0.01 264)',
+                      borderRight: i < arr.length - 1 ? '1px solid oklch(1 0 0 / 0.1)' : undefined,
+                    }}
+                  >
+                    {tab.icon}
+                    <span className="hidden min-[400px]:inline">{tab.label}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* ── Journeys section ─────────────────────────────────────────────── */}
+            {worldsSection === 'journeys' && (
+              <>
+                {isLoadingJourneys && journeys.length === 0 && (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-x-3 gap-y-5">
+                    {Array.from({ length: 12 }).map((_, i) => (
+                      <div key={i} className="animate-pulse">
+                        <div
+                          className="rounded-md overflow-hidden"
+                          style={{ paddingBottom: '140%', background: 'oklch(0.14 0.01 264)' }}
+                        />
+                        <div className="mt-2.5 h-3.5 rounded" style={{ background: 'oklch(0.18 0.01 264)', width: '85%' }} />
+                        <div className="mt-1.5 h-3 rounded" style={{ background: 'oklch(0.16 0.01 264)', width: '55%' }} />
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {!isLoadingJourneys && journeys.length === 0 && (
+                  <div className="flex flex-col items-center justify-center py-16 gap-3">
+                    {!hasCookie ? (
+                      <>
+                        <p style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: '18px', fontWeight: 700, color: 'oklch(0.4 0.01 264)' }}>
+                          SESSION REQUIRED
+                        </p>
+                        <p style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '12px', color: 'oklch(0.35 0.01 264)', textAlign: 'center', maxWidth: 320 }}>
+                          Connect your Freeroam cookie in Settings to load journeys.
+                        </p>
+                        <button
+                          onClick={() => setShowSettings(true)}
+                          className="mt-2 flex items-center gap-2 px-4 py-2 rounded-sm text-xs font-semibold tracking-wider uppercase transition-all hover:brightness-110"
+                          style={{
+                            fontFamily: 'Rajdhani, sans-serif',
+                            background: 'oklch(0.769 0.188 70.08 / 0.12)',
+                            border: '1px solid oklch(0.769 0.188 70.08 / 0.4)',
+                            color: 'oklch(0.769 0.188 70.08)',
+                          }}
+                        >
+                          <Settings size={13} strokeWidth={2} />
+                          Open Settings
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <p style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: '18px', fontWeight: 700, color: 'oklch(0.4 0.01 264)' }}>
+                          NO JOURNEYS YET
+                        </p>
+                        <p style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '12px', color: 'oklch(0.35 0.01 264)', textAlign: 'center', maxWidth: 360 }}>
+                          Play a story on Freeroam and it will show up here so you can continue.
+                        </p>
+                      </>
+                    )}
+                  </div>
+                )}
+
+                {journeys.length > 0 && (() => {
+                  const q = worldsSearchQuery.trim().toLowerCase();
+                  const visible = journeys.filter(
+                    (j) => !q || j.world_name.toLowerCase().includes(q)
+                  );
+                  return (
+                    <>
+                      {visible.length === 0 ? (
+                        <div className="flex flex-col items-center justify-center py-16 gap-3">
+                          <p style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: '16px', fontWeight: 700, color: 'oklch(0.4 0.01 264)' }}>
+                            NO RESULTS
+                          </p>
+                          <p style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '12px', color: 'oklch(0.35 0.01 264)' }}>
+                            No journeys match your search.
+                          </p>
+                          <button
+                            onClick={() => setWorldsSearchQuery('')}
+                            className="mt-1 px-3 py-1.5 rounded-sm text-[11px] font-semibold tracking-wider uppercase transition-all"
+                            style={{
+                              fontFamily: 'Rajdhani, sans-serif',
+                              background: 'oklch(0.769 0.188 70.08 / 0.1)',
+                              border: '1px solid oklch(0.769 0.188 70.08 / 0.3)',
+                              color: 'oklch(0.769 0.188 70.08)',
+                            }}
+                          >
+                            Clear Search
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-x-3 gap-y-5">
+                          {visible.map((journey) => (
+                            <JourneyCard
+                              key={`${journey.world_external_id}-${journey.panel_external_id}`}
+                              journey={journey}
+                              onResume={openJourney}
+                              searchQuery={worldsSearchQuery}
+                            />
+                          ))}
+                        </div>
+                      )}
+
+                      {journeysHasMore && !q && (
+                        <div className="flex justify-center mt-6">
+                          <button
+                            type="button"
+                            onClick={() => fetchJourneys({ append: true, fromOffset: journeys.length })}
+                            disabled={isLoadingMoreJourneys}
+                            className="px-4 py-2 rounded-sm text-xs font-semibold tracking-wider uppercase transition-all hover:brightness-110 disabled:opacity-50"
+                            style={{
+                              fontFamily: 'Rajdhani, sans-serif',
+                              background: 'oklch(0.769 0.188 70.08 / 0.12)',
+                              border: '1px solid oklch(0.769 0.188 70.08 / 0.35)',
+                              color: 'oklch(0.769 0.188 70.08)',
+                            }}
+                          >
+                            {isLoadingMoreJourneys ? 'Loading…' : 'Load more journeys'}
+                          </button>
+                        </div>
+                      )}
+
+                      {!journeysHasMore && visible.length > 0 && (
+                        <div className="flex items-center gap-3 mt-6">
+                          <div className="h-px flex-1" style={{ background: 'oklch(1 0 0 / 0.05)' }} />
+                          <span
+                            className="text-[10px] uppercase tracking-[0.2em] px-3"
+                            style={{ fontFamily: 'Rajdhani, sans-serif', color: 'oklch(0.3 0.01 264)', fontWeight: 600 }}
+                          >
+                            {journeys.length} journey{journeys.length !== 1 ? 's' : ''}
+                          </span>
+                          <div className="h-px flex-1" style={{ background: 'oklch(1 0 0 / 0.05)' }} />
+                        </div>
+                      )}
+                    </>
+                  );
+                })()}
+              </>
+            )}
+
+            {/* ── Liked section (landscape freeroam discovery cards) ───────────── */}
+            {worldsSection === 'liked' && (
+              <>
+                {isLoadingLiked && likedWorlds.length === 0 && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                    {Array.from({ length: 6 }).map((_, i) => (
+                      <div
+                        key={i}
+                        className="animate-pulse overflow-hidden"
+                        style={{ borderRadius: 12, background: 'oklch(0.14 0.01 264)', border: '1px solid oklch(1 0 0 / 0.06)' }}
+                      >
+                        <div style={{ paddingBottom: '56%', background: 'oklch(0.16 0.01 264)' }} />
+                        <div className="p-3.5 space-y-2">
+                          <div className="h-3 rounded" style={{ background: 'oklch(0.18 0.01 264)', width: '100%' }} />
+                          <div className="h-3 rounded" style={{ background: 'oklch(0.17 0.01 264)', width: '80%' }} />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {!isLoadingLiked && likedWorlds.length === 0 && (
+                  <div className="flex flex-col items-center justify-center py-16 gap-3">
+                    {!hasCookie ? (
+                      <>
+                        <p style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: '18px', fontWeight: 700, color: 'oklch(0.4 0.01 264)' }}>
+                          SESSION REQUIRED
+                        </p>
+                        <p style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '12px', color: 'oklch(0.35 0.01 264)', textAlign: 'center', maxWidth: 320 }}>
+                          Connect your Freeroam cookie in Settings to load liked worlds.
+                        </p>
+                        <button
+                          onClick={() => setShowSettings(true)}
+                          className="mt-2 flex items-center gap-2 px-4 py-2 rounded-sm text-xs font-semibold tracking-wider uppercase transition-all hover:brightness-110"
+                          style={{
+                            fontFamily: 'Rajdhani, sans-serif',
+                            background: 'oklch(0.769 0.188 70.08 / 0.12)',
+                            border: '1px solid oklch(0.769 0.188 70.08 / 0.4)',
+                            color: 'oklch(0.769 0.188 70.08)',
+                          }}
+                        >
+                          <Settings size={13} strokeWidth={2} />
+                          Open Settings
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <p style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: '18px', fontWeight: 700, color: 'oklch(0.4 0.01 264)' }}>
+                          NO LIKED WORLDS
+                        </p>
+                        <p style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '12px', color: 'oklch(0.35 0.01 264)', textAlign: 'center', maxWidth: 360 }}>
+                          Worlds you heart on Freeroam will show up here — including ones you don't own.
+                        </p>
+                      </>
+                    )}
+                  </div>
+                )}
+
+                {likedWorlds.length > 0 && (() => {
+                  const q = worldsSearchQuery.trim().toLowerCase();
+                  const visible = likedWorlds.filter((w) => matchesProfileWorldSearch(w, q));
+                  return (
+                    <>
+                      {visible.length === 0 ? (
+                        <div className="flex flex-col items-center justify-center py-16 gap-3">
+                          <p style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: '16px', fontWeight: 700, color: 'oklch(0.4 0.01 264)' }}>
+                            NO RESULTS
+                          </p>
+                          <p style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '12px', color: 'oklch(0.35 0.01 264)' }}>
+                            No liked worlds match your search.
+                          </p>
+                          <button
+                            onClick={() => setWorldsSearchQuery('')}
+                            className="mt-1 px-3 py-1.5 rounded-sm text-[11px] font-semibold tracking-wider uppercase transition-all"
+                            style={{
+                              fontFamily: 'Rajdhani, sans-serif',
+                              background: 'oklch(0.769 0.188 70.08 / 0.1)',
+                              border: '1px solid oklch(0.769 0.188 70.08 / 0.3)',
+                              color: 'oklch(0.769 0.188 70.08)',
+                            }}
+                          >
+                            Clear Search
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                          {visible.map((world) => (
+                            <ProfileWorldCard
+                              key={world.external_id}
+                              world={world}
+                              onOpen={openProfileWorld}
+                              searchQuery={worldsSearchQuery}
+                            />
+                          ))}
+                        </div>
+                      )}
+
+                      {likedHasMore && !q && (
+                        <div className="flex justify-center mt-6">
+                          <button
+                            type="button"
+                            onClick={() => fetchLikedWorlds({ append: true, fromOffset: likedWorlds.length })}
+                            disabled={isLoadingMoreLiked}
+                            className="px-4 py-2 rounded-sm text-xs font-semibold tracking-wider uppercase transition-all hover:brightness-110 disabled:opacity-50"
+                            style={{
+                              fontFamily: 'Rajdhani, sans-serif',
+                              background: 'oklch(0.769 0.188 70.08 / 0.12)',
+                              border: '1px solid oklch(0.769 0.188 70.08 / 0.35)',
+                              color: 'oklch(0.769 0.188 70.08)',
+                            }}
+                          >
+                            {isLoadingMoreLiked ? 'Loading…' : 'Load more liked'}
+                          </button>
+                        </div>
+                      )}
+
+                      {!likedHasMore && visible.length > 0 && (
+                        <div className="flex items-center gap-3 mt-6">
+                          <div className="h-px flex-1" style={{ background: 'oklch(1 0 0 / 0.05)' }} />
+                          <span
+                            className="text-[10px] uppercase tracking-[0.2em] px-3"
+                            style={{ fontFamily: 'Rajdhani, sans-serif', color: 'oklch(0.3 0.01 264)', fontWeight: 600 }}
+                          >
+                            {likedWorlds.length} liked
+                          </span>
+                          <div className="h-px flex-1" style={{ background: 'oklch(1 0 0 / 0.05)' }} />
+                        </div>
+                      )}
+                    </>
+                  );
+                })()}
+              </>
+            )}
+
+            {/* ── Saved section (same landscape cards as Liked) ────────────────── */}
+            {worldsSection === 'saved' && (
+              <>
+                {isLoadingSaved && savedWorlds.length === 0 && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                    {Array.from({ length: 6 }).map((_, i) => (
+                      <div
+                        key={i}
+                        className="animate-pulse overflow-hidden"
+                        style={{ borderRadius: 12, background: 'oklch(0.14 0.01 264)', border: '1px solid oklch(1 0 0 / 0.06)' }}
+                      >
+                        <div style={{ paddingBottom: '56%', background: 'oklch(0.16 0.01 264)' }} />
+                        <div className="p-3.5 space-y-2">
+                          <div className="h-3 rounded" style={{ background: 'oklch(0.18 0.01 264)', width: '100%' }} />
+                          <div className="h-3 rounded" style={{ background: 'oklch(0.17 0.01 264)', width: '80%' }} />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {!isLoadingSaved && savedWorlds.length === 0 && (
+                  <div className="flex flex-col items-center justify-center py-16 gap-3">
+                    {!hasCookie ? (
+                      <>
+                        <p style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: '18px', fontWeight: 700, color: 'oklch(0.4 0.01 264)' }}>
+                          SESSION REQUIRED
+                        </p>
+                        <p style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '12px', color: 'oklch(0.35 0.01 264)', textAlign: 'center', maxWidth: 320 }}>
+                          Connect your Freeroam cookie in Settings to load saved worlds.
+                        </p>
+                        <button
+                          onClick={() => setShowSettings(true)}
+                          className="mt-2 flex items-center gap-2 px-4 py-2 rounded-sm text-xs font-semibold tracking-wider uppercase transition-all hover:brightness-110"
+                          style={{
+                            fontFamily: 'Rajdhani, sans-serif',
+                            background: 'oklch(0.769 0.188 70.08 / 0.12)',
+                            border: '1px solid oklch(0.769 0.188 70.08 / 0.4)',
+                            color: 'oklch(0.769 0.188 70.08)',
+                          }}
+                        >
+                          <Settings size={13} strokeWidth={2} />
+                          Open Settings
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <p style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: '18px', fontWeight: 700, color: 'oklch(0.4 0.01 264)' }}>
+                          NO SAVED WORLDS
+                        </p>
+                        <p style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '12px', color: 'oklch(0.35 0.01 264)', textAlign: 'center', maxWidth: 360 }}>
+                          Worlds you bookmark on Freeroam will show up here — including ones you don't own.
+                        </p>
+                      </>
+                    )}
+                  </div>
+                )}
+
+                {savedWorlds.length > 0 && (() => {
+                  const q = worldsSearchQuery.trim().toLowerCase();
+                  const visible = savedWorlds.filter((w) => matchesProfileWorldSearch(w, q));
+                  return (
+                    <>
+                      {visible.length === 0 ? (
+                        <div className="flex flex-col items-center justify-center py-16 gap-3">
+                          <p style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: '16px', fontWeight: 700, color: 'oklch(0.4 0.01 264)' }}>
+                            NO RESULTS
+                          </p>
+                          <p style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '12px', color: 'oklch(0.35 0.01 264)' }}>
+                            No saved worlds match your search.
+                          </p>
+                          <button
+                            onClick={() => setWorldsSearchQuery('')}
+                            className="mt-1 px-3 py-1.5 rounded-sm text-[11px] font-semibold tracking-wider uppercase transition-all"
+                            style={{
+                              fontFamily: 'Rajdhani, sans-serif',
+                              background: 'oklch(0.769 0.188 70.08 / 0.1)',
+                              border: '1px solid oklch(0.769 0.188 70.08 / 0.3)',
+                              color: 'oklch(0.769 0.188 70.08)',
+                            }}
+                          >
+                            Clear Search
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                          {visible.map((world) => (
+                            <ProfileWorldCard
+                              key={world.external_id}
+                              world={world}
+                              onOpen={openProfileWorld}
+                              searchQuery={worldsSearchQuery}
+                            />
+                          ))}
+                        </div>
+                      )}
+
+                      {savedHasMore && !q && (
+                        <div className="flex justify-center mt-6">
+                          <button
+                            type="button"
+                            onClick={() => fetchSavedWorlds({ append: true, fromOffset: savedWorlds.length })}
+                            disabled={isLoadingMoreSaved}
+                            className="px-4 py-2 rounded-sm text-xs font-semibold tracking-wider uppercase transition-all hover:brightness-110 disabled:opacity-50"
+                            style={{
+                              fontFamily: 'Rajdhani, sans-serif',
+                              background: 'oklch(0.769 0.188 70.08 / 0.12)',
+                              border: '1px solid oklch(0.769 0.188 70.08 / 0.35)',
+                              color: 'oklch(0.769 0.188 70.08)',
+                            }}
+                          >
+                            {isLoadingMoreSaved ? 'Loading…' : 'Load more saved'}
+                          </button>
+                        </div>
+                      )}
+
+                      {!savedHasMore && visible.length > 0 && (
+                        <div className="flex items-center gap-3 mt-6">
+                          <div className="h-px flex-1" style={{ background: 'oklch(1 0 0 / 0.05)' }} />
+                          <span
+                            className="text-[10px] uppercase tracking-[0.2em] px-3"
+                            style={{ fontFamily: 'Rajdhani, sans-serif', color: 'oklch(0.3 0.01 264)', fontWeight: 600 }}
+                          >
+                            {savedWorlds.length} saved
+                          </span>
+                          <div className="h-px flex-1" style={{ background: 'oklch(1 0 0 / 0.05)' }} />
+                        </div>
+                      )}
+                    </>
+                  );
+                })()}
+              </>
+            )}
+
+            {/* ── My Worlds section ────────────────────────────────────────────── */}
+            {worldsSection === 'my-worlds' && (
+            <>
             {/* World Collections strip — shown when not inside a collection and not searching */}
             {!activeWorldCollectionId && !worldsSearchQuery.trim() && (
               <div className="mb-8">
@@ -1404,6 +2190,8 @@ export default function Home() {
               </div>
             )}
             </>}
+            </>
+            )}
           </>
         )}
 
