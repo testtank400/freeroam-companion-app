@@ -1,4 +1,3 @@
-import { getLoginUrl } from "@/const";
 import { trpc } from "@/lib/trpc";
 import { TRPCClientError } from "@trpc/client";
 import { useCallback, useEffect, useMemo } from "react";
@@ -8,9 +7,12 @@ type UseAuthOptions = {
   redirectPath?: string;
 };
 
+/**
+ * Optional Manus-era session user (auth.me). Product login is SiteAuthGate + Freeroam cookie.
+ * Kept for any residual UI that still calls useAuth (e.g. DashboardLayout scaffold).
+ */
 export function useAuth(options?: UseAuthOptions) {
-  const { redirectOnUnauthenticated = false, redirectPath = getLoginUrl() } =
-    options ?? {};
+  const { redirectOnUnauthenticated = false, redirectPath = "/" } = options ?? {};
   const utils = trpc.useUtils();
 
   const meQuery = trpc.auth.me.useQuery(undefined, {
@@ -41,24 +43,21 @@ export function useAuth(options?: UseAuthOptions) {
     }
   }, [logoutMutation, utils]);
 
-  const state = useMemo(() => {
-    localStorage.setItem(
-      "manus-runtime-user-info",
-      JSON.stringify(meQuery.data)
-    );
-    return {
+  const state = useMemo(
+    () => ({
       user: meQuery.data ?? null,
       loading: meQuery.isLoading || logoutMutation.isPending,
       error: meQuery.error ?? logoutMutation.error ?? null,
       isAuthenticated: Boolean(meQuery.data),
-    };
-  }, [
-    meQuery.data,
-    meQuery.error,
-    meQuery.isLoading,
-    logoutMutation.error,
-    logoutMutation.isPending,
-  ]);
+    }),
+    [
+      meQuery.data,
+      meQuery.error,
+      meQuery.isLoading,
+      logoutMutation.error,
+      logoutMutation.isPending,
+    ]
+  );
 
   useEffect(() => {
     if (!redirectOnUnauthenticated) return;
@@ -67,7 +66,7 @@ export function useAuth(options?: UseAuthOptions) {
     if (typeof window === "undefined") return;
     if (window.location.pathname === redirectPath) return;
 
-    window.location.href = redirectPath
+    window.location.href = redirectPath;
   }, [
     redirectOnUnauthenticated,
     redirectPath,

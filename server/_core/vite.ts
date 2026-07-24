@@ -7,10 +7,17 @@ import { createServer as createViteServer } from "vite";
 import viteConfig from "../../vite.config";
 
 export async function setupVite(app: Express, server: Server) {
+  // Merge with vite.config server options so LAN / mobile HMR keeps working.
+  // Replacing `server` entirely drops host:true and can make the Vite client
+  // fall back to full page reloads when opened from a phone on the LAN.
   const serverOptions = {
+    ...(viteConfig.server ?? {}),
     middlewareMode: true,
-    hmr: { server },
     allowedHosts: true as const,
+    hmr: {
+      ...(typeof viteConfig.server?.hmr === "object" ? viteConfig.server.hmr : {}),
+      server,
+    },
   };
 
   const vite = await createViteServer({

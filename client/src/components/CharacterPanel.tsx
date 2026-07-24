@@ -95,7 +95,7 @@ function prefetchHeadshot(url: string | null | undefined) {
 /**
  * Collection list row with cover thumbnail. Falls back to a headshot mosaic or
  * folder icon when the cover URL is missing or fails (common for migrated
- * `/manus-storage/...` covers when local Forge files are absent).
+ * `/manus-storage/...` covers when storage files are absent).
  */
 function CollectionFolderRow({
   name,
@@ -123,8 +123,10 @@ function CollectionFolderRow({
       onClick={onOpen}
       className="flex items-center gap-3 p-3 rounded-2xl w-full text-left transition-all hover:brightness-125"
       style={{
-        background: 'rgba(255,255,255,0.05)',
-        border: '1px solid rgba(255,255,255,0.08)',
+        background: 'rgba(255,255,255,0.06)',
+        border: '1px solid rgba(255,255,255,0.1)',
+        backdropFilter: 'blur(12px)',
+        WebkitBackdropFilter: 'blur(12px)',
       }}
     >
       <div
@@ -764,73 +766,126 @@ export default function CharacterPanel({
   const renderLibraryCharCard = (char: LibraryCharacter) => {
     const inStory = storyCharIds.has(char.external_id);
     const isSelected = librarySelection.has(char.external_id);
+    const statusLabel = inStory
+      ? 'in story'
+      : isSelected
+        ? 'selected'
+        : char.is_yours
+          ? 'yours'
+          : char.is_saved
+            ? 'saved'
+            : null;
+    const statusColor = inStory
+      ? 'rgba(34,197,94,0.95)'
+      : isSelected
+        ? 'rgba(167,139,250,0.95)'
+        : char.is_yours
+          ? 'rgba(167,139,250,0.9)'
+          : char.is_saved
+            ? 'rgba(250,204,21,0.85)'
+            : 'rgba(255,255,255,0.4)';
+
     return (
       <div
         key={char.external_id}
-        className="relative flex flex-col items-center gap-2 p-4 rounded-2xl transition-all text-left"
+        className="relative flex flex-col items-center rounded-2xl transition-all text-left overflow-hidden"
         style={{
-          background: isSelected ? 'rgba(124,58,237,0.18)' : 'rgba(255,255,255,0.05)',
+          background: isSelected
+            ? 'rgba(124,58,237,0.22)'
+            : 'rgba(255,255,255,0.06)',
           border: `1px solid ${
             inStory
               ? 'rgba(34,197,94,0.35)'
               : isSelected
-                ? 'rgba(124,58,237,0.65)'
-                : 'rgba(255,255,255,0.08)'
+                ? 'rgba(167,139,250,0.55)'
+                : 'rgba(255,255,255,0.1)'
           }`,
-          opacity: inStory ? 0.7 : 1,
+          backdropFilter: 'blur(16px)',
+          WebkitBackdropFilter: 'blur(16px)',
+          opacity: inStory ? 0.72 : 1,
         }}
       >
         <button
           type="button"
           onClick={() => toggleLibrarySelection(char)}
           disabled={inStory}
-          className="flex flex-col items-center gap-2 w-full transition-all hover:brightness-125 disabled:hover:brightness-100"
-          style={{ border: 'none', background: 'transparent', padding: 0, cursor: inStory ? 'default' : 'pointer' }}
+          className="flex flex-col items-center gap-2.5 w-full px-3 pt-4 pb-3.5 transition-all hover:brightness-110 disabled:hover:brightness-100"
+          style={{ border: 'none', background: 'transparent', cursor: inStory ? 'default' : 'pointer' }}
         >
           {char.headshot_url ? (
             <img
               src={char.headshot_url}
               alt={char.name}
-              className="rounded-full"
-              style={{ width: '72px', height: '72px', objectFit: 'cover' }}
+              className="rounded-full flex-shrink-0"
+              style={{
+                width: '76px',
+                height: '76px',
+                objectFit: 'cover',
+                boxShadow: '0 4px 16px rgba(0,0,0,0.35)',
+              }}
             />
           ) : (
             <div
-              className="rounded-full flex items-center justify-center"
-              style={{ width: '72px', height: '72px', background: 'rgba(255,255,255,0.08)', fontSize: '28px', color: 'rgba(255,255,255,0.3)' }}
+              className="rounded-full flex items-center justify-center flex-shrink-0"
+              style={{
+                width: '76px',
+                height: '76px',
+                background: 'rgba(255,255,255,0.08)',
+                fontSize: '28px',
+                color: 'rgba(255,255,255,0.3)',
+              }}
             >
               {(char.name[0] || '?').toUpperCase()}
             </div>
           )}
-          <p style={{ fontFamily: 'Outfit, sans-serif', fontSize: '13px', fontWeight: 600, color: '#fff', textAlign: 'center', lineHeight: 1.3 }}>
-            {char.name.replace(/-/g, ' ')}
-          </p>
-          <p style={{ fontFamily: 'Outfit, sans-serif', fontSize: '11px', color: inStory ? 'rgba(34,197,94,0.9)' : isSelected ? 'rgba(167,139,250,0.95)' : 'rgba(255,255,255,0.4)' }}>
-            {inStory ? 'in story' : isSelected ? 'selected' : 'tap to select'}
-          </p>
-          {!inStory && char.is_saved && (
-            <p className="inline-flex items-center gap-1" style={{ fontFamily: 'Outfit, sans-serif', fontSize: '11px', color: 'rgba(250,204,21,0.85)' }}>
-              <Star size={10} fill="currentColor" strokeWidth={0} />
-              favorite
+          <div className="w-full min-w-0 text-center">
+            <p
+              className="truncate"
+              style={{
+                fontFamily: 'Outfit, sans-serif',
+                fontSize: '13px',
+                fontWeight: 600,
+                color: '#fff',
+                lineHeight: 1.25,
+              }}
+            >
+              {char.name.replace(/-/g, ' ')}
             </p>
-          )}
+            {statusLabel && (
+              <p
+                style={{
+                  fontFamily: 'Outfit, sans-serif',
+                  fontSize: '11px',
+                  fontWeight: 500,
+                  color: statusColor,
+                  marginTop: '3px',
+                  textTransform: statusLabel === 'yours' || statusLabel === 'saved' ? 'lowercase' : undefined,
+                }}
+              >
+                {statusLabel}
+              </p>
+            )}
+          </div>
         </button>
-        {/* Multi-select circle — top-right of the card square */}
+
+        {/* Multi-select circle — always visible so selection is discoverable */}
         {!inStory && (
           <div
             className="absolute top-2 right-2 flex items-center justify-center rounded-full pointer-events-none"
             style={{
-              width: '24px',
-              height: '24px',
-              background: isSelected ? '#7c3aed' : 'rgba(0,0,0,0.45)',
-              border: `1.5px solid ${isSelected ? '#a78bfa' : 'rgba(255,255,255,0.35)'}`,
+              width: '22px',
+              height: '22px',
+              background: isSelected ? '#7c3aed' : 'rgba(0,0,0,0.4)',
+              border: `1.5px solid ${isSelected ? '#a78bfa' : 'rgba(255,255,255,0.4)'}`,
+              backdropFilter: 'blur(6px)',
             }}
             aria-hidden
           >
-            {isSelected && <Check size={12} strokeWidth={3} color="#fff" />}
+            {isSelected && <Check size={11} strokeWidth={3} color="#fff" />}
           </div>
         )}
-        {/* Optional detail peek without leaving multi-select */}
+
+        {/* Details peek */}
         {!inStory && (
           <button
             type="button"
@@ -838,18 +893,19 @@ export default function CharacterPanel({
               e.stopPropagation();
               handleOpenDetail(char);
             }}
-            className="absolute top-2 left-2 flex items-center justify-center rounded-full transition-all hover:brightness-125"
+            className="absolute top-2 left-2 flex items-center justify-center rounded-full transition-opacity hover:brightness-125"
             style={{
-              width: '24px',
-              height: '24px',
-              background: 'rgba(0,0,0,0.45)',
-              border: '1px solid rgba(255,255,255,0.12)',
+              width: '22px',
+              height: '22px',
+              background: 'rgba(0,0,0,0.28)',
+              border: '1px solid rgba(255,255,255,0.1)',
               color: 'rgba(255,255,255,0.55)',
+              opacity: 0.75,
             }}
             title="View details"
             aria-label={`View details for ${char.name}`}
           >
-            <Info size={12} strokeWidth={2.5} />
+            <Info size={11} strokeWidth={2.5} />
           </button>
         )}
       </div>
@@ -867,9 +923,11 @@ export default function CharacterPanel({
       <div
         className="relative flex flex-col w-full sm:w-[min(92vw,820px)] h-[min(94dvh,100%)] sm:h-auto sm:max-h-[88dvh] rounded-t-[22px] sm:rounded-[20px]"
         style={{
-          background: 'rgba(18,18,26,0.97)',
-          border: '1px solid rgba(255,255,255,0.08)',
-          boxShadow: '0 24px 64px rgba(0,0,0,0.7)',
+          background: 'rgba(22,22,30,0.62)',
+          border: '1px solid rgba(255,255,255,0.14)',
+          boxShadow: '0 24px 64px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.08)',
+          backdropFilter: 'blur(40px) saturate(1.45)',
+          WebkitBackdropFilter: 'blur(40px) saturate(1.45)',
           overflow: 'hidden',
           paddingBottom: 'env(safe-area-inset-bottom, 0px)',
         }}
@@ -909,9 +967,11 @@ export default function CharacterPanel({
                   fontFamily: 'Outfit, sans-serif',
                   fontSize: '15px',
                   fontWeight: 600,
-                  color: 'rgba(255,255,255,0.85)',
-                  background: 'rgba(255,255,255,0.07)',
-                  border: '1px solid rgba(255,255,255,0.12)',
+                  color: 'rgba(255,255,255,0.9)',
+                  background: 'rgba(255,255,255,0.08)',
+                  border: '1px solid rgba(255,255,255,0.14)',
+                  backdropFilter: 'blur(12px)',
+                  WebkitBackdropFilter: 'blur(12px)',
                 }}
               >
                 <Plus size={16} strokeWidth={2.5} />
@@ -919,17 +979,14 @@ export default function CharacterPanel({
               </button>
             </div>
 
-            {/* Character cards grid — fluid 2-col on mobile, fills width like Freeroam */}
+            {/* Character cards grid — forced 2-up on mobile (Freeroam-style), wider auto-fill on desktop */}
             <div className={`flex-1 overflow-y-auto px-4 sm:px-6 ${hasPendingChanges ? 'pb-3' : 'pb-5 sm:pb-6'}`}>
               {isLoadingChars ? (
                 <div className="flex items-center justify-center py-12">
                   <Loader2 size={24} className="animate-spin" style={{ color: 'rgba(255,255,255,0.4)' }} />
                 </div>
               ) : (
-                <div
-                  className="grid gap-3"
-                  style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 148px), 1fr))' }}
-                >
+                <div className="grid grid-cols-2 gap-2.5 sm:gap-3 sm:grid-cols-[repeat(auto-fill,minmax(148px,1fr))]">
                   {storyChars.map((char) => {
                     const pending = pendingChanges.get(char.external_id);
                     const isRemoving = pending === 'remove';
@@ -1093,8 +1150,8 @@ export default function CharacterPanel({
         {/* ── VIEW 2: LIBRARY ── */}
         {view === 'library' && (
           <>
-            <div className="px-4 sm:px-6 pt-3 sm:pt-6 pb-3 sm:pb-4 flex-shrink-0">
-              <div className="flex items-center gap-3 mb-4">
+            <div className="px-4 sm:px-6 pt-2 sm:pt-5 pb-2 sm:pb-3 flex-shrink-0">
+              <div className="flex items-center gap-3 mb-3">
                 <button
                   onClick={() => {
                     if (selectedCollectionId !== null) {
@@ -1120,11 +1177,6 @@ export default function CharacterPanel({
                 {/* Spacer to balance back button */}
                 <div style={{ width: '52px' }} />
               </div>
-              {selectedCollection && (
-                <p className="text-center mb-3" style={{ fontFamily: 'Outfit, sans-serif', fontSize: '12px', color: 'rgba(255,255,255,0.4)' }}>
-                  Select characters to add to the story
-                </p>
-              )}
 
               {/* Create New Character — only on top-level library */}
               {!selectedCollection && (
@@ -1132,14 +1184,16 @@ export default function CharacterPanel({
                   href="https://getfreeroam.com/characters/new"
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl transition-all hover:brightness-125 mb-4"
+                  className="w-full flex items-center justify-center gap-2 py-2.5 rounded-2xl transition-all hover:brightness-125 mb-3"
                   style={{
                     fontFamily: 'Outfit, sans-serif',
                     fontSize: '15px',
                     fontWeight: 600,
-                    color: 'rgba(255,255,255,0.85)',
-                    background: 'rgba(255,255,255,0.07)',
-                    border: '1px solid rgba(255,255,255,0.12)',
+                    color: 'rgba(255,255,255,0.9)',
+                    background: 'rgba(255,255,255,0.08)',
+                    border: '1px solid rgba(255,255,255,0.14)',
+                    backdropFilter: 'blur(12px)',
+                    WebkitBackdropFilter: 'blur(12px)',
                     display: 'flex',
                   }}
                 >
@@ -1148,9 +1202,9 @@ export default function CharacterPanel({
                 </a>
               )}
 
-              {/* Search */}
+              {/* Search — light underline style, less vertical weight */}
               <div className="relative mb-3">
-                <Search size={14} strokeWidth={2} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: 'rgba(255,255,255,0.35)' }} />
+                <Search size={14} strokeWidth={2} className="absolute left-0 top-1/2 -translate-y-1/2" style={{ color: 'rgba(255,255,255,0.35)' }} />
                 <input
                   type="text"
                   value={librarySearch}
@@ -1166,18 +1220,19 @@ export default function CharacterPanel({
                   style={{
                     fontFamily: 'Outfit, sans-serif',
                     fontSize: '14px',
-                    color: 'rgba(255,255,255,0.8)',
-                    background: 'rgba(255,255,255,0.06)',
-                    border: '1px solid rgba(255,255,255,0.1)',
-                    borderRadius: '12px',
-                    padding: '10px 12px 10px 36px',
+                    color: 'rgba(255,255,255,0.85)',
+                    background: 'transparent',
+                    border: 'none',
+                    borderBottom: '1px solid rgba(255,255,255,0.14)',
+                    borderRadius: 0,
+                    padding: '8px 4px 10px 26px',
                   }}
                 />
               </div>
 
-              {/* Filter chips — hidden while browsing a collection folder */}
+              {/* Filter chips — single row, no wrap */}
               {!selectedCollection && (
-                <div className="flex gap-2 flex-wrap">
+                <div className="flex gap-2 flex-nowrap overflow-x-auto pb-0.5" style={{ scrollbarWidth: 'none' }}>
                   {LIBRARY_FILTERS.map((f) => (
                     <button
                       key={f.id}
@@ -1187,14 +1242,16 @@ export default function CharacterPanel({
                         setLibrarySearch('');
                         setLibrarySelection(new Set());
                       }}
-                      className="px-4 py-1.5 rounded-full transition-all inline-flex items-center gap-1.5"
+                      className="px-3.5 py-1.5 rounded-full transition-all inline-flex items-center gap-1.5 flex-shrink-0"
                       style={{
                         fontFamily: 'Outfit, sans-serif',
                         fontSize: '13px',
                         fontWeight: 600,
-                        color: libraryFilter === f.id ? '#fff' : 'rgba(255,255,255,0.45)',
-                        background: libraryFilter === f.id ? 'rgba(255,255,255,0.15)' : 'rgba(255,255,255,0.05)',
-                        border: `1px solid ${libraryFilter === f.id ? 'rgba(255,255,255,0.25)' : 'rgba(255,255,255,0.08)'}`,
+                        color: libraryFilter === f.id ? '#fff' : 'rgba(255,255,255,0.5)',
+                        background: libraryFilter === f.id ? 'rgba(255,255,255,0.16)' : 'rgba(255,255,255,0.06)',
+                        border: `1px solid ${libraryFilter === f.id ? 'rgba(255,255,255,0.28)' : 'rgba(255,255,255,0.1)'}`,
+                        backdropFilter: 'blur(10px)',
+                        WebkitBackdropFilter: 'blur(10px)',
                       }}
                     >
                       {f.id === 'favorites' && <Star size={12} strokeWidth={2.5} fill={libraryFilter === f.id ? 'currentColor' : 'none'} />}
@@ -1205,32 +1262,28 @@ export default function CharacterPanel({
                 </div>
               )}
 
-              {/* Multi-select toolbar for character grids (All / Favorites / collection folder) */}
-              {(selectedCollection || libraryFilter !== 'collections') && selectableLibraryChars.length > 0 && (
-                <div className="flex items-center justify-between gap-2 mt-3">
-                  <p style={{ fontFamily: 'Outfit, sans-serif', fontSize: '12px', color: 'rgba(255,255,255,0.4)' }}>
-                    {selectionCount > 0
-                      ? `${selectionCount} selected`
-                      : 'Tap to multi-select'}
+              {/* Multi-select toolbar — only once selection starts */}
+              {selectionCount > 0 && (selectedCollection || libraryFilter !== 'collections') && (
+                <div className="flex items-center justify-between gap-2 mt-2.5">
+                  <p style={{ fontFamily: 'Outfit, sans-serif', fontSize: '12px', color: 'rgba(255,255,255,0.45)' }}>
+                    {selectionCount} selected
                   </p>
                   <div className="flex items-center gap-2">
-                    {selectionCount > 0 && (
-                      <button
-                        type="button"
-                        onClick={clearLibrarySelection}
-                        className="px-3 py-1 rounded-full transition-all hover:brightness-125"
-                        style={{
-                          fontFamily: 'Outfit, sans-serif',
-                          fontSize: '12px',
-                          fontWeight: 600,
-                          color: 'rgba(255,255,255,0.55)',
-                          background: 'rgba(255,255,255,0.06)',
-                          border: '1px solid rgba(255,255,255,0.1)',
-                        }}
-                      >
-                        Clear
-                      </button>
-                    )}
+                    <button
+                      type="button"
+                      onClick={clearLibrarySelection}
+                      className="px-3 py-1 rounded-full transition-all hover:brightness-125"
+                      style={{
+                        fontFamily: 'Outfit, sans-serif',
+                        fontSize: '12px',
+                        fontWeight: 600,
+                        color: 'rgba(255,255,255,0.55)',
+                        background: 'rgba(255,255,255,0.06)',
+                        border: '1px solid rgba(255,255,255,0.1)',
+                      }}
+                    >
+                      Clear
+                    </button>
                     {visibleSelectableCount > 0 && (
                       <button
                         type="button"
@@ -1240,8 +1293,8 @@ export default function CharacterPanel({
                           fontFamily: 'Outfit, sans-serif',
                           fontSize: '12px',
                           fontWeight: 600,
-                          color: 'rgba(255,255,255,0.75)',
-                          background: 'rgba(255,255,255,0.08)',
+                          color: 'rgba(255,255,255,0.8)',
+                          background: 'rgba(255,255,255,0.1)',
                           border: '1px solid rgba(255,255,255,0.14)',
                         }}
                       >
@@ -1253,7 +1306,7 @@ export default function CharacterPanel({
               )}
             </div>
 
-            {/* Library body */}
+            {/* Library body — 2-up gallery */}
             <div className="flex-1 overflow-y-auto px-4 sm:px-6 pb-5 sm:pb-6">
               {/* Collection folder members */}
               {selectedCollection ? (
@@ -1266,7 +1319,7 @@ export default function CharacterPanel({
                     {searchLower ? 'No matching characters in this collection' : 'This collection is empty'}
                   </p>
                 ) : (
-                  <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))' }}>
+                  <div className="grid grid-cols-2 gap-2.5 sm:gap-3 sm:grid-cols-[repeat(auto-fill,minmax(148px,1fr))]">
                     {collectionMembers.map((char) => renderLibraryCharCard(char))}
                   </div>
                 )
@@ -1315,7 +1368,7 @@ export default function CharacterPanel({
                       : 'No characters found'}
                 </p>
               ) : (
-                <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))' }}>
+                <div className="grid grid-cols-2 gap-2.5 sm:gap-3 sm:grid-cols-[repeat(auto-fill,minmax(148px,1fr))]">
                   {filteredLibrary.map((char) => renderLibraryCharCard(char))}
                 </div>
               )}
@@ -1323,7 +1376,15 @@ export default function CharacterPanel({
 
             {/* Multi-select add footer */}
             {selectionCount > 0 && (
-              <div className="px-4 sm:px-6 py-3 sm:py-4 flex-shrink-0" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+              <div
+                className="px-4 sm:px-6 py-3 sm:py-4 flex-shrink-0"
+                style={{
+                  borderTop: '1px solid rgba(255,255,255,0.08)',
+                  background: 'rgba(18,18,26,0.35)',
+                  backdropFilter: 'blur(16px)',
+                  WebkitBackdropFilter: 'blur(16px)',
+                }}
+              >
                 <button
                   type="button"
                   onClick={handleAddSelectedToStory}
@@ -1333,8 +1394,9 @@ export default function CharacterPanel({
                     fontSize: '15px',
                     fontWeight: 600,
                     color: '#fff',
-                    background: '#7c3aed',
+                    background: 'rgba(124,58,237,0.88)',
                     border: '1px solid rgba(167,139,250,0.45)',
+                    boxShadow: '0 8px 24px rgba(124,58,237,0.28)',
                   }}
                 >
                   <Plus size={16} strokeWidth={2.5} />

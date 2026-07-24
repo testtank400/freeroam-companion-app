@@ -1,6 +1,6 @@
 // useCollections.ts
 // DB-backed collections via tRPC.
-// Collections are stored in the Manus database and persist across devices.
+// Collections are stored in the app database (TiDB/MySQL) and persist across devices.
 
 import { trpc } from "@/lib/trpc";
 import { useCallback } from "react";
